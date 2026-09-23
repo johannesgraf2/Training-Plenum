@@ -1,6 +1,31 @@
 # Training Plēnum — Training Data Platform
 
-Eine Trainings-Datenplattform inspiriert von TrainingPeaks. Fokussiert auf Daten-Upload und interne Nutzung.
+**Deine Trainingsdaten, vollständig, lokal und nachvollziehbar ausgewertet.**
+Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und Laufen, inspiriert von TrainingPeaks: FIT-Dateien importieren, Leistung analysieren, Workouts planen und direkt auf den Garmin bringen. Ohne Abo, ohne Cloud-Zwang, ohne Datenverlust.
+
+## Warum Training Plēnum?
+
+| Vorteil | Was das konkret bedeutet |
+|---------|--------------------------|
+| 🔒 **Deine Daten bleiben bei dir** | Läuft lokal auf dem eigenen Rechner (Windows-Launcher oder Docker). Aufzeichnungen, Datenbank und Originaldateien liegen auf deiner Festplatte und werden nicht versioniert. Die Karte wird im Browser gezeichnet, es gehen keine Tracks oder FIT-Dateien an einen Kartendienst. |
+| 📦 **Kompletter Umzug in Minuten** | Einen entpackten TrainingPeaks-Export als ganzen Ordner per Drag & Drop importieren. FIT, FIT.GZ, GPX und TCX werden der Reihe nach verarbeitet, Duplikate automatisch übersprungen, fehlerhafte Dateien einzeln gemeldet, ohne dass die Warteschlange abbricht. |
+| 🎯 **Ehrliche Zahlen statt geschönter Werte** | Jeder Messpunkt bleibt mit echtem UTC-Zeitstempel erhalten. Lücken, fehlende Sensoren und Pausen werden als solche erkannt, nie zu Nullen umgedeutet oder überbrückt. Fehlen Daten, steht ein Strich statt einer erfundenen Zahl. |
+| 📈 **Analysen wie bei den Profis** | Bestwerte (Leistung 30 s – 60 min, Laufzeiten 400 m – 21 km), Normalized Power und TSS, Zeit in HF- und Leistungszonen, Wochenumfänge, Sportarten-Mix und Jahresvergleiche. Jedes Diagramm zeigt exakte Werte und eine aufklappbare Datentabelle. |
+| 🗺️ **Route und Daten verbunden** | Interaktive OpenStreetMap-Route pro Aktivität: Mit der Maus über das Diagramm fahren und die Position mit Tempo, Puls und Watt auf der Karte sehen. |
+| 🚴 **Vom Plan direkt auf den Garmin** | Workouts mit Intervallen, Wiederholungen und Watt-/Pace-/HF-Zielen im Editor bauen oder aus Vorlagen wählen, im Kalender einplanen und als validierte Garmin-FIT-Datei exportieren. Per USB kopieren, fertig. Auf dem Edge 1050 getestet. |
+| 🤖 **KI-Coach mit Kontrolle** | Der AI Coach plant Makrozyklen und Wochen anhand von Zielen, Verfügbarkeit und Check-ins, mit eigenem OpenAI-Key (BYOK). Nichts wird ohne ausdrückliche Bestätigung übernommen, fixierte Einheiten bleiben unangetastet, und rohe Sensordaten verlassen nie den Rechner. |
+| ⚡ **Schnell, auch mit Jahren an Daten** | Versionierte SQLite-Caches speichern Berechnungen pro Aktivität. Filter- und Jahreswechsel laufen ohne erneutes Einlesen der Sensorstreams; FTP-Änderungen klassifizieren nur den Cache neu. |
+| 🧪 **Getestet und transparent** | Offene Formeln mit Quellenangaben, automatisierte Backend- und Frontend-Tests und jede exportierte FIT-Datei wird vor dem Download erneut dekodiert und geprüft. |
+
+### Für wen?
+
+- **Ambitionierte Radfahrer:innen und Läufer:innen**, die ihre Daten besitzen und genau verstehen wollen, wie Kennzahlen entstehen.
+- **Umsteiger:innen von TrainingPeaks & Co.**, die ihre komplette Historie mitnehmen möchten.
+- **Garmin-Nutzer:innen**, die strukturierte Workouts ohne Umweg über eine Cloud aufs Gerät bringen wollen.
+
+> **Hinweis:** Training Plēnum ist aktuell eine lokale Anwendung für eine:n Athlet:in. Für den Betrieb auf einem entfernten oder geteilten Server fehlen noch Authentifizierung und Härtung (siehe [Geplante Features](#geplante-features-v2)).
+
+**Schnell loslegen:** [Start unter Windows](#start-on-windows) · [Start mit Docker](#mit-docker-empfohlen) · [AI Coach einrichten](AI-COACH.md)
 
 
 ## FIT import — files and folders
