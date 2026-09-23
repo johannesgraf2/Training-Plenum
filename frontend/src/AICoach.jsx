@@ -96,8 +96,8 @@ function Proposal({ value, busy, onConfirm, onDiscard }) {
   </section>;
 }
 
-export default function AICoach({ apiBase = '', workouts = EMPTY_WORKOUTS, onWorkoutsChanged, onOpenWorkout }) {
-  const [tab, setTab] = useState('plan');
+export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = EMPTY_WORKOUTS, onWorkoutsChanged, onOpenWorkout }) {
+  const [tab, setTab] = useState(initialTab);
   const [snapshot, setSnapshot] = useState(null);
   const [profile, setProfile] = useState(null);
   const [provider, setProvider] = useState(null);

@@ -108,6 +108,15 @@ class FitTests(unittest.TestCase):
             self.assertEqual(self.client.put('/api/user', json=data).status_code, 400)
         self.assertEqual(self.client.put('/api/user', json={'ftp': None, 'maxHr': None}).status_code, 200)
 
+    def test_profile_fields_are_validated_and_saved(self):
+        for data in ({'name': ''}, {'name': '   '}, {'name': 5}, {'name': 'x' * 101}, {'age': 0}, {'age': 30.5},
+                     {'age': True}, {'weight': 5}, {'weight': '70'}, [], 'ftp'):
+            self.assertEqual(self.client.put('/api/user', json=data).status_code, 400, data)
+        saved = self.client.put('/api/user', json={'name': '  Alex Muster ', 'age': 41, 'weight': 68.5}).get_json()
+        self.assertEqual((saved['name'], saved['age'], saved['weight']), ('Alex Muster', 41, 68.5))
+        cleared = self.client.put('/api/user', json={'age': None, 'weight': None}).get_json()
+        self.assertEqual((cleared['name'], cleared['age'], cleared['weight']), ('Alex Muster', None, None))
+
     def upload(self, content, filename='activity.fit'):
         return self.client.post('/api/upload', data={'file': (io.BytesIO(content), filename)}, content_type='multipart/form-data')
 

@@ -51,7 +51,7 @@ function RecordingChart({ data, dataKey, label, unit, color, onSelectRecord }) {
   return <div className="recording-chart">
     <div className="recording-chart-heading"><h3>{label}</h3><span style={{ color }}>{hover ? `${duration(hover.time)} · ${number(hover[dataKey])} ${unit}` : `${number(plot.min)}–${number(plot.max)} ${unit}`}</span></div>
     <svg viewBox="0 0 800 152" role="img" aria-label={`${label} über die verstrichene Zeit`} onMouseMove={move} onMouseLeave={() => setHover(null)}>
-      {[24, 72, 120].map(y => <line key={y} x1="40" x2="760" y1={y} y2={y} stroke="#e2e8f0" />)}
+      {[24, 72, 120].map(y => <line key={y} x1="40" x2="760" y1={y} y2={y} style={{ stroke: 'var(--bd-e2e8f0)' }} />)}
       <text x="0" y="28">{number(plot.max, 0)}</text><text x="0" y="124">{number(plot.min, 0)}</text>
       <path d={plot.path} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
       {plot.present.length === 1 && <circle cx={plot.x(plot.present[0])} cy={plot.y(plot.present[0])} r="3" fill={color} />}

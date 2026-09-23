@@ -1,32 +1,32 @@
-.activity-detail { max-width: 1120px; margin: 0 auto 48px; color: #243248; }
-.activity-back { border: 0; background: none; color: #345e91; font-size: 13px; padding: 0; margin: 0 0 22px; cursor: pointer; }
+.activity-detail { max-width: 1120px; margin: 0 auto 48px; color: var(--fg-243248); }
+.activity-back { border: 0; background: none; color: var(--fg-345e91); font-size: 13px; padding: 0; margin: 0 0 22px; cursor: pointer; }
 .activity-heading { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 26px; }
-.activity-eyebrow { color: #3872a9; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+.activity-eyebrow { color: var(--fg-3872a9); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
 .activity-heading h1 { font-size: clamp(22px, 3vw, 30px); font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; margin: 0 0 8px; }
-.activity-heading p, .recording-info p, .activity-section p { color: #64748b; font-size: 13px; line-height: 1.7; }
-.original-download { flex-shrink: 0; color: #345e91; padding: 10px 14px; border: 1px solid #ccd8e6; border-radius: 6px; font-size: 12px; text-decoration: none; background: white; }
+.activity-heading p, .recording-info p, .activity-section p { color: var(--fg-64748b); font-size: 13px; line-height: 1.7; }
+.original-download { flex-shrink: 0; color: var(--fg-345e91); padding: 10px 14px; border: 1px solid var(--bd-ccd8e6); border-radius: 6px; font-size: 12px; text-decoration: none; background: var(--bg-ffffff); }
 .activity-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
-.activity-delete, .activity-confirm-actions button { padding: 10px 14px; border: 1px solid #ccd8e6; border-radius: 6px; background: white; font: inherit; font-size: 12px; cursor: pointer; }
-.activity-delete { color: #b42332; border-color: #edc9cd; white-space: nowrap; }
-.activity-delete:hover { background: #fff1f2; }
-.activity-delete-confirmation { border: 1px solid #edc9cd; border-radius: 10px; background: #fff7f7; padding: 20px; margin-bottom: 24px; }
-.activity-delete-confirmation h2 { margin-top: 0; color: #9c2531; }
+.activity-delete, .activity-confirm-actions button { padding: 10px 14px; border: 1px solid var(--bd-ccd8e6); border-radius: 6px; background: var(--bg-ffffff); font: inherit; font-size: 12px; cursor: pointer; }
+.activity-delete { color: var(--fg-b42332); border-color: var(--bd-edc9cd); white-space: nowrap; }
+.activity-delete:hover { background: var(--bg-fff1f2); }
+.activity-delete-confirmation { border: 1px solid var(--bd-edc9cd); border-radius: 10px; background: var(--bg-fff7f7); padding: 20px; margin-bottom: 24px; }
+.activity-delete-confirmation h2 { margin-top: 0; color: var(--fg-9c2531); }
 .activity-delete-confirmation p { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
-.activity-delete-error { color: #b42332; }
+.activity-delete-error { color: var(--fg-b42332); }
 .activity-confirm-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .activity-confirm-actions .activity-delete-confirm { color: white; border-color: #b42332; background: #b42332; }
 .activity-detail button:disabled { cursor: wait; opacity: .6; }
 .activity-detail button:focus-visible, .original-download:focus-visible { outline: 3px solid #3776c4; outline-offset: 3px; }
-.activity-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: #fff; border: 1px solid #dfe5ec; border-radius: 10px; overflow: hidden; }
-.activity-metrics > div { padding: 20px; border-right: 1px solid #edf0f4; border-bottom: 1px solid #edf0f4; }
-.activity-metrics span { display: block; font-size: 12px; color: #6b7889; margin-bottom: 10px; }
+.activity-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: var(--bg-ffffff); border: 1px solid var(--bd-dfe5ec); border-radius: 10px; overflow: hidden; }
+.activity-metrics > div { padding: 20px; border-right: 1px solid var(--bd-edf0f4); border-bottom: 1px solid var(--bd-edf0f4); }
+.activity-metrics span { display: block; font-size: 12px; color: var(--fg-6b7889); margin-bottom: 10px; }
 .activity-metrics strong { display: block; font-size: 23px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.activity-metrics small { color: #8090a2; font-size: 12px; font-weight: 400; }
+.activity-metrics small { color: var(--fg-8090a2); font-size: 12px; font-weight: 400; }
 .recording-info { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 24px 0; gap: 10px; }
 .activity-detail h2 { font-size: 15px; font-weight: 600; margin-bottom: 5px; }
 .sensor-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.sensor-chips span { font-size: 11px; color: #416682; border: 1px solid #d1dfe8; padding: 5px 8px; border-radius: 4px; background: #eff5f9; }
-.activity-section { padding: 24px; background: white; border: 1px solid #dfe5ec; border-radius: 10px; margin-bottom: 18px; }
+.sensor-chips span { font-size: 11px; color: var(--fg-416682); border: 1px solid var(--bd-d1dfe8); padding: 5px 8px; border-radius: 4px; background: var(--bg-eff5f9); }
+.activity-section { padding: 24px; background: var(--bg-ffffff); border: 1px solid var(--bd-dfe5ec); border-radius: 10px; margin-bottom: 18px; }
 .recording-chart { margin-top: 22px; }
 .recording-chart-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .recording-chart h3 { font-size: 12px; font-weight: 500; }
@@ -35,8 +35,8 @@
 .recording-chart text { font-size: 10px; fill: #8090a2; }
 .activity-table-scroll { overflow-x: auto; }
 .activity-detail table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; font-variant-numeric: tabular-nums; margin-top: 15px; }
-.activity-detail th { color: #7c8a9b; font-weight: 500; }
-.activity-detail td, .activity-detail th { padding: 10px 12px; border-bottom: 1px solid #edf0f4; white-space: nowrap; }
+.activity-detail th { color: var(--fg-7c8a9b); font-weight: 500; }
+.activity-detail td, .activity-detail th { padding: 10px 12px; border-bottom: 1px solid var(--bd-edf0f4); white-space: nowrap; }
 .activity-detail summary { cursor: pointer; font-size: 14px; font-weight: 500; }
 .activity-list { overflow-x: auto; }
 .activity-list > div { min-width: 760px; }

@@ -7,12 +7,20 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script>
+    // Apply the stored theme before the first paint (kept in sync by src/theme.js).
+    try {
+      var theme = localStorage.getItem('trainhub-theme');
+      var dark = theme === 'dark' || (theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    } catch (e) { document.documentElement.dataset.theme = 'light'; }
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Outfit', sans-serif; background: #f5f6f8; color: #1a1d23; -webkit-font-smoothing: antialiased; }
+    body { font-family: 'Outfit', sans-serif; background: var(--bg-f5f6f8); color: var(--fg-1a1d23); -webkit-font-smoothing: antialiased; }
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb { background: var(--bg-d0d5dd); border-radius: 3px; }
     input, select, textarea, button { font-family: inherit; }
   </style>
 </head>

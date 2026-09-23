@@ -50,14 +50,14 @@ export function BarChart({ rows, series, unit, label, digits = 0, calendar, empt
   return <div className={`analysis-chart${dense ? ' analysis-chart-dense' : ''}`}>
     {!available ? <div className="analysis-empty">{emptyText}</div> : <>
       <svg viewBox="0 0 600 220" role="img" aria-label={label}>
-        {[0, .5, 1].map(fraction => <g key={fraction}><line x1="57" x2="590" y1={176 - fraction * 140} y2={176 - fraction * 140} stroke="#e8edf3" strokeDasharray={fraction ? '3 4' : undefined} /><text x="48" y={180 - fraction * 140} textAnchor="end">{number(maximum * fraction, maximum < 10 ? 1 : 0)}</text></g>)}
+        {[0, .5, 1].map(fraction => <g key={fraction}><line x1="57" x2="590" y1={176 - fraction * 140} y2={176 - fraction * 140} style={{ stroke: 'var(--bd-e8edf3)' }} strokeDasharray={fraction ? '3 4' : undefined} /><text x="48" y={180 - fraction * 140} textAnchor="end">{number(maximum * fraction, maximum < 10 ? 1 : 0)}</text></g>)}
         <text x="57" y="18">{unit}</text>
         {rows.map((row, index) => {
           let offset = 0;
           const missing = series.every(item => !Number.isFinite(row[item.key]));
           return <g key={row.key} tabIndex="0" aria-label={describe(row)} onClick={() => setHover(row.key)} onMouseEnter={() => setHover(row.key)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(row.key)} onBlur={() => setHover(null)}>
             <title>{describe(row)}</title>
-            <rect x={60 + index * step} y="28" width={step} height="148" fill={hover === row.key ? '#e9eff7' : row.future ? '#f3f5f8' : 'transparent'} rx={dense ? 0 : 5} />
+            <rect x={60 + index * step} y="28" width={step} height="148" style={{ fill: hover === row.key ? 'var(--bg-e9eff7)' : row.future ? 'var(--bg-f3f5f8)' : 'transparent' }} rx={dense ? 0 : 5} />
             {series.map(item => {
               const value = row[item.key] || 0;
               const height = value / maximum * 140;
@@ -88,7 +88,7 @@ function SportShare({ rows }) {
     return `${SPORTS[row.key]?.[1] || '#94a3b8'} ${start}% ${cursor}%`;
   }).join(', ');
   return <>
-    <div className="sport-share-ring" style={{ background: total ? `conic-gradient(${gradient})` : '#e8edf3' }} role="img" aria-label={`Trainingszeit nach Sportart: ${sorted.map(row => `${SPORTS[row.key]?.[0] || row.key} ${hours(row.seconds)}`).join(', ')}`}><div><strong>{hours(total)}</strong><span>Trainingszeit</span></div></div>
+    <div className="sport-share-ring" style={{ background: total ? `conic-gradient(${gradient})` : 'var(--bg-e8edf3)' }} role="img" aria-label={`Trainingszeit nach Sportart: ${sorted.map(row => `${SPORTS[row.key]?.[0] || row.key} ${hours(row.seconds)}`).join(', ')}`}><div><strong>{hours(total)}</strong><span>Trainingszeit</span></div></div>
     <div className="sport-share-legend">{sorted.map(row => <div key={row.key}><i style={{ background: SPORTS[row.key]?.[1] || '#94a3b8' }} /><span>{SPORTS[row.key]?.[0] || row.key}</span><strong>{hours(row.seconds)}</strong><small>{total && row.seconds != null ? `${number(row.seconds / total * 100, 1)} %` : '—'}</small></div>)}</div>
     {!total && <p className="analysis-note">Noch keine Trainingszeiten im gewählten Zeitraum.</p>}
     {rows.some(row => row.known.seconds < row.count) && <p className="analysis-note">Anteile nur aus Einheiten mit bekannter Dauer.</p>}
@@ -177,10 +177,10 @@ export default function Dashboard({ apiBase, activities, loading, onOpenActivity
     {result?.requestKey === requestKey && result.status === 'error' && <div className="analysis-loading" role="alert">{result.error} <button type="button" onClick={() => setRetry(value => value + 1)}>Erneut versuchen</button></div>}
     {data && <>
       <div className="analysis-summary">{[
-        ['Trainingseinheiten', number(data.totals.count), 'count', '#345e91'],
-        ['Trainingszeit', hours(data.totals.seconds), 'seconds', '#278c78'],
-        ['Distanz', `${number(data.totals.distance, 1)} km`, 'distance', '#5b6cc1'],
-        ['Höhenmeter', `${number(data.totals.elevation)} m`, 'elevation', '#c08432'],
+        ['Trainingseinheiten', number(data.totals.count), 'count', 'var(--fg-345e91)'],
+        ['Trainingszeit', hours(data.totals.seconds), 'seconds', 'var(--fg-278c78)'],
+        ['Distanz', `${number(data.totals.distance, 1)} km`, 'distance', 'var(--fg-5b6cc1)'],
+        ['Höhenmeter', `${number(data.totals.elevation)} m`, 'elevation', 'var(--fg-c08432)'],
       ].map(([label, value, key, color]) => <div key={key}><span>{label}</span><strong style={{ color }}>{value}</strong><small>{scope} · {sportName}{key !== 'count' && data.totals.known[key] < data.totals.count ? ' · teilweise erfasst' : ''}</small></div>)}</div>
       {!data.totals.count && <p className="analysis-empty-banner">Keine Aktivitäten für diese Auswahl. Wähle ein anderes Jahr oder importiere deine Trainingsdateien.</p>}
       <div className="analysis-overview-grid">

@@ -590,10 +590,18 @@ def save_training_block():
 @app.route('/api/user', methods=['PUT'])
 def update_user():
     u = User.query.get(DEMO_USER_ID)
-    data = request.json
-    for field, lower, upper in [('ftp', 1, 1000), ('maxHr', 60, 250)]:
-        if field in data and data[field] is not None and (not valid(data[field]) or not lower <= data[field] <= upper):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Bitte gültige Profildaten senden.'}), 400
+    if 'name' in data:
+        if not isinstance(data['name'], str) or not 1 <= len(data['name'].strip()) <= 100:
+            return jsonify({'error': 'name: Bitte einen Namen mit 1 bis 100 Zeichen eingeben.'}), 400
+        data['name'] = data['name'].strip()
+    for field, lower, upper in [('ftp', 1, 1000), ('maxHr', 60, 250), ('age', 1, 120), ('weight', 20, 300)]:
+        if field in data and data[field] is not None and (isinstance(data[field], bool) or not valid(data[field]) or not lower <= data[field] <= upper):
             return jsonify({'error': f'{field}: Bitte einen Wert zwischen {lower} und {upper} eingeben.'}), 400
+    if data.get('age') is not None and data['age'] != int(data['age']):
+        return jsonify({'error': 'age: Bitte ein ganzzahliges Alter eingeben.'}), 400
     if 'name' in data: u.name = data['name']
     if 'age' in data: u.age = data['age']
     if 'weight' in data: u.weight = data['weight']
