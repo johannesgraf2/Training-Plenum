@@ -153,7 +153,6 @@ export default function AICoach({ apiBase = '', workouts = EMPTY_WORKOUTS, onWor
       .catch(e => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; contextVersion.current += 1; };
     // apiBase selects the backend; individual writes refresh their own state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase]);
 
   useEffect(() => {
@@ -162,7 +161,6 @@ export default function AICoach({ apiBase = '', workouts = EMPTY_WORKOUTS, onWor
     setWeekly({ overrides: override?.overrides || {}, note: override?.note || '' });
     setDirty(d => ({ ...d, weekly: false }));
     // A profile save must not replace a weekly draft the athlete is still editing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [week, profile?.weeklyOverrides]);
   useEffect(() => {
     if (priorWorkouts.current !== workouts) { priorWorkouts.current = workouts; contextVersion.current += 1; setProposal(null); setFeedback(null); }
