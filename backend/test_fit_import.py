@@ -68,6 +68,7 @@ class FitTests(unittest.TestCase):
 
     def setUp(self):
         with self.backend.app.app_context():
+            self.backend.PlannedWorkout.query.delete()
             self.backend.AnalyticsCache.query.delete()
             self.backend.BestEffortCache.query.delete()
             self.backend.Activity.query.delete()
@@ -219,6 +220,50 @@ class FitTests(unittest.TestCase):
         self.backend.initialize_database()
         self.backend.initialize_database()
         self.assertEqual(self.upload(fit_fixture()).status_code, 201)
+
+    def test_planned_workout_save_reload_edit_export_delete_keeps_activities_separate(self):
+        from test_workout_export import example
+        from garmin_fit_sdk import Decoder, Stream
+        workout = example()
+        self.client.post('/api/activities/manual', json={'title': 'Completed ride', 'sport': 'ride', 'date': '2026-09-23', 'duration': 60})
+        before = self.client.get('/api/activities').json
+        created = self.client.post('/api/workouts', json=workout)
+        self.assertEqual(created.status_code, 201)
+        identity = created.json['id']
+        self.backend.initialize_database()  # Existing activities and plans survive startup.
+        self.assertEqual(self.backend.app.test_client().get('/api/workouts').json, [created.json])
+        workout.update(name='Changed workout', date='2026-09-25', sport='ride')
+        updated = self.client.put(f'/api/workouts/{identity}', json=workout)
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json['id'], identity)
+        download = self.client.post('/api/workouts/export', json=updated.json)
+        self.assertEqual(download.status_code, 200)
+        self.assertIn('2026-09-25_Changed_workout.fit', download.headers['Content-Disposition'])
+        self.assertEqual(download.mimetype, 'application/vnd.ant.fit')
+        self.assertTrue(Decoder(Stream.from_byte_array(bytearray(download.data))).check_integrity())
+        decoded, errors = Decoder(Stream.from_byte_array(bytearray(download.data))).read()
+        self.assertEqual(errors, [])
+        self.assertEqual(decoded['workout_mesgs'][0]['wkt_name'], '25.09.2026 · Changed workout')
+        self.assertEqual(self.client.get('/api/workouts').json, [updated.json])
+        self.assertEqual(self.client.get('/api/activities').json, before)
+        self.assertEqual(self.client.delete(f'/api/workouts/{identity}').status_code, 204)
+        self.assertEqual(self.client.get('/api/workouts').json, [])
+        self.assertEqual(self.client.get('/api/activities').json, before)
+        self.assertEqual(self.client.put(f'/api/workouts/{identity}', json=workout).status_code, 404)
+
+    def test_invalid_workout_requests_do_not_save_or_export(self):
+        from test_workout_export import example
+        for payload in [None, [], {}, {**example(), 'steps': []}]:
+            for path in ['/api/workouts', '/api/workouts/export']:
+                response = self.client.post(path, json=payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('error', response.json)
+        self.assertEqual(self.client.get('/api/workouts').json, [])
+        created = self.client.post('/api/workouts', json=example()).json
+        self.assertEqual(self.client.put('/api/workouts/' + created['id'], json={'name': ''}).status_code, 400)
+        self.assertEqual(self.client.get('/api/workouts').json, [created])
+        with patch.object(self.backend, 'export_workout', side_effect=RuntimeError('CRC failed')):
+            self.assertEqual(self.client.post('/api/workouts/export', json=example()).status_code, 500)
 
     def add_effort_activity(self, identity, date, power, sport='ride'):
         self.client.get('/api/health')

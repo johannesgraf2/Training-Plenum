@@ -2,8 +2,10 @@ import os
 import json
 import hashlib
 import uuid
+import zipfile
+from io import BytesIO
 from datetime import datetime, timedelta, timezone
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
@@ -14,6 +16,8 @@ from dateutil.tz import gettz
 from fit_import import parse_fit_file, FitImportError, read_fit_bytes
 from best_efforts import TARGETS, VERSION as EFFORT_VERSION, activity_efforts
 from analytics import VERSION as ANALYTICS_VERSION, activity_summary, aggregate, valid
+from workout_export import WorkoutError, validate_workout, export_workout
+from training_plan import history_summary, make_block, date_range
 
 app = Flask(__name__)
 CORS(app)
@@ -102,6 +106,23 @@ class Activity(db.Model):
         return d
 
 
+class PlannedWorkout(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=False)
+    definition = db.Column(db.Text, nullable=False)
+    locked = db.Column(db.Boolean, nullable=False, default=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {**json.loads(self.definition), 'id': self.id, 'locked': bool(self.locked)}
+
+
+class TrainingBlock(db.Model):
+    id = db.Column(db.String(36), primary_key=True)
+    user_id = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=False)
+    definition = db.Column(db.Text, nullable=False)
+
+
 class BestEffortCache(db.Model):
     activity_id = db.Column(db.String(36), db.ForeignKey('activity.id'), primary_key=True)
     version = db.Column(db.Integer, nullable=False)
@@ -126,7 +147,10 @@ def initialize_database():
             with db.engine.begin() as connection:
                 connection.execute(text("ALTER TABLE activity ADD COLUMN fit_details TEXT DEFAULT '{}'"))
         user_columns = {column['name'] for column in inspect(db.engine).get_columns('user')}
+        workout_columns = {column['name'] for column in inspect(db.engine).get_columns('planned_workout')}
         with db.engine.begin() as connection:
+            if 'locked' not in workout_columns:
+                connection.execute(text('ALTER TABLE planned_workout ADD COLUMN locked BOOLEAN NOT NULL DEFAULT 0'))
             for column in ('ftp', 'max_hr'):
                 if column not in user_columns:
                     connection.execute(text(f'ALTER TABLE user ADD COLUMN {column} FLOAT'))
@@ -421,6 +445,148 @@ def get_user():
     return jsonify(u.to_dict())
 
 
+@app.errorhandler(WorkoutError)
+def invalid_workout(error):
+    return jsonify({'error': str(error)}), 400
+
+
+@app.route('/api/workouts', methods=['GET', 'POST'])
+def workouts():
+    if request.method == 'GET':
+        rows = PlannedWorkout.query.filter_by(user_id=DEMO_USER_ID).all()
+        return jsonify(sorted((row.to_dict() for row in rows), key=lambda w: (w['date'], w['name'])))
+    definition = validate_workout(request.get_json(silent=True))
+    row = PlannedWorkout(user_id=DEMO_USER_ID, definition=json.dumps(definition))
+    db.session.add(row)
+    db.session.commit()
+    return jsonify(row.to_dict()), 201
+
+
+@app.route('/api/workouts/<workout_id>', methods=['PUT', 'DELETE'])
+def saved_workout(workout_id):
+    row = PlannedWorkout.query.filter_by(id=workout_id, user_id=DEMO_USER_ID).first()
+    if row is None:
+        return jsonify({'error': 'Dieses Workout wurde nicht gefunden.'}), 404
+    if row.locked:
+        return jsonify({'error': 'Diese Einheit ist gesperrt. Bitte zuerst im AI Coach entsperren.'}), 409
+    if request.method == 'DELETE':
+        db.session.delete(row)
+        db.session.commit()
+        return '', 204
+    row.definition = json.dumps(validate_workout(request.get_json(silent=True)))
+    db.session.commit()
+    return jsonify(row.to_dict())
+
+
+@app.route('/api/workouts/export', methods=['POST'])
+def download_workout():
+    definition = validate_workout(request.get_json(silent=True))
+    try:
+        content = export_workout(definition)
+    except (ValueError, RuntimeError):
+        app.logger.exception('Workout FIT export failed')
+        return jsonify({'error': 'Die FIT-Datei konnte nicht geprüft werden. Bitte erneut versuchen.'}), 500
+    filename = definition['date'] + '_' + (secure_filename(definition['name']) or 'workout') + '.fit'
+    return send_file(BytesIO(content), mimetype='application/vnd.ant.fit', as_attachment=True,
+                     download_name=filename, max_age=0)
+
+
+@app.route('/api/workouts/export-range', methods=['GET'])
+def download_workout_range():
+    start, end = date_range(request.args.get('start'), request.args.get('end'))
+    sport = request.args.get('sport', 'all')
+    if sport not in ('all', 'ride', 'run'):
+        raise WorkoutError('Bitte alle Sportarten, Radfahren oder Laufen auswählen.')
+    selected = sorted((row.to_dict() for row in PlannedWorkout.query.filter_by(user_id=DEMO_USER_ID).all()),
+                      key=lambda w: (w['date'], w['name'], w['id']))
+    selected = [w for w in selected if start <= w['date'] <= end and (sport == 'all' or w['sport'] == sport)]
+    if not selected:
+        return jsonify({'error': 'Keine geplanten Workouts in diesem Zeitraum.'}), 404
+    if len(selected) > 500:
+        raise WorkoutError('Bitte einen Zeitraum mit höchstens 500 Workouts auswählen.')
+    archive = BytesIO()
+    try:
+        with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:
+            for index, workout in enumerate(selected, 1):
+                # The ordinal also preserves same-day workouts with identical names.
+                filename = f"{workout['date']}_{index:03d}_{secure_filename(workout['name']) or 'workout'}.fit"
+                bundle.writestr(filename, export_workout(workout))
+    except (ValueError, RuntimeError):
+        app.logger.exception('Batch FIT export failed')
+        return jsonify({'error': 'Ein Workout konnte nicht exportiert werden. Es wurde kein unvollständiges ZIP erstellt.'}), 500
+    archive.seek(0)
+    return send_file(archive, mimetype='application/zip', as_attachment=True,
+                     download_name=f'trainhub_{start}_{end}.zip', max_age=0)
+
+
+def planning_context():
+    zone = gettz(request.args.get('timezone', 'UTC'))
+    if zone is None:
+        raise WorkoutError('Ungültige Zeitzone.')
+    today = datetime.now(zone).date()
+    # Read summaries only; large sensor streams are unnecessary for volume planning.
+    rows = Activity.query.filter_by(user_id=DEMO_USER_ID).options(defer(Activity.time_series)).all()
+    history = history_summary([{'date': a.date.isoformat(), 'sport': a.sport, 'duration': a.duration,
+                                'details': json.loads(a.fit_details or '{}')} for a in rows], zone, today)
+    user = db.session.get(User, DEMO_USER_ID)
+    return history, user.ftp, today
+
+
+@app.route('/api/training-blocks/context', methods=['GET'])
+def training_context():
+    history, ftp, today = planning_context()
+    return jsonify({'history': history, 'ftp': ftp, 'today': today.isoformat()})
+
+
+@app.route('/api/training-blocks/preview', methods=['POST'])
+def preview_training_block():
+    history, ftp, today = planning_context()
+    return jsonify(make_block(request.get_json(silent=True), history, ftp, today))
+
+
+@app.route('/api/training-blocks', methods=['POST'])
+def save_training_block():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get('id'), str):
+        raise WorkoutError('Die Block-ID fehlt.')
+    try:
+        identity = str(uuid.UUID(data['id']))
+    except ValueError as exc:
+        raise WorkoutError('Ungültige Block-ID.') from exc
+    existing = db.session.get(TrainingBlock, identity)
+    if existing:
+        if existing.user_id != DEMO_USER_ID:
+            return jsonify({'error': 'Block-ID bereits vergeben.'}), 409
+        return jsonify(json.loads(existing.definition)), 200
+    items = data.get('workouts')
+    if not isinstance(items, list) or not 1 <= len(items) <= 32:
+        raise WorkoutError('Bitte 1 bis 32 Workouts übergeben.')
+    # Validate everything before writing any row. Repeated saves are idempotent.
+    definitions = [validate_workout(item) for item in items]
+    start, end = date_range(data.get('startDate'), data.get('endDate'))
+    if (datetime.fromisoformat(end) - datetime.fromisoformat(start)).days != 27:
+        raise WorkoutError('Ein Trainingsblock umfasst genau 28 Tage.')
+    if any(w['sport'] != 'ride' or not start <= w['date'] <= end for w in definitions):
+        raise WorkoutError('Alle Rad-Workouts müssen innerhalb des Blocks liegen.')
+    conflicts = [w.to_dict() for w in PlannedWorkout.query.filter_by(user_id=DEMO_USER_ID).all()
+                 if start <= json.loads(w.definition)['date'] <= end]
+    if conflicts:
+        return jsonify({'error': 'Im Block-Zeitraum sind bereits Workouts geplant. Bitte diese zuerst prüfen und verschieben oder entfernen.'}), 409
+    rows = [PlannedWorkout(id=str(uuid.uuid4()), user_id=DEMO_USER_ID, definition=json.dumps(w)) for w in definitions]
+    result = {'id': identity, 'workouts': [row.to_dict() for row in rows]}
+    db.session.add_all(rows)
+    db.session.add(TrainingBlock(id=identity, user_id=DEMO_USER_ID, definition=json.dumps(result)))
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        existing = db.session.get(TrainingBlock, identity)
+        if existing and existing.user_id == DEMO_USER_ID:
+            return jsonify(json.loads(existing.definition)), 200
+        raise
+    return jsonify(result), 201
+
+
 @app.route('/api/user', methods=['PUT'])
 def update_user():
     u = User.query.get(DEMO_USER_ID)
@@ -677,16 +843,8 @@ def best_efforts():
                     'efforts': [best.get(target, {'target': target, 'value': None, 'activity': None}) for target in TARGETS[sport]]})
 
 
-@app.route('/api/analytics', methods=['GET'])
-def analytics():
-    zone = gettz(request.args.get('timezone', 'Europe/Berlin'))
-    period = request.args.get('year', str(datetime.now().year))
-    sport = request.args.get('sport', 'all')
-    if zone is None or sport not in ('all', 'ride', 'run', 'swim', 'walking', 'hiking', 'multisport'):
-        return jsonify({'error': 'Ungültige Sportart oder Zeitzone.'}), 400
-    if period != 'all' and (not period.isascii() or not period.isdigit() or len(period) != 4 or not 1970 <= int(period) <= 9998):
-        return jsonify({'error': 'Bitte ein gültiges Jahr oder All-Time auswählen.'}), 400
-    user = db.session.get(User, DEMO_USER_ID)
+def load_analytics_rows():
+    """Shared versioned summaries for dashboards and athlete context; warm reads skip streams."""
     activities = Activity.query.filter_by(user_id=DEMO_USER_ID).options(
         load_only(Activity.id, Activity.sport), selectinload(Activity.analytics_cache)).order_by(Activity.date, Activity.id).all()
     rows = []
@@ -701,13 +859,58 @@ def analytics():
             cache.version, cache.sport, cache.summary = ANALYTICS_VERSION, activity.sport, json.dumps(summary)
         else:
             summary = json.loads(cache.summary)
-        rows.extend(summary)
+        rows.extend({**row, 'activityId': activity.id} for row in summary)
+    return rows
+
+
+@app.route('/api/analytics', methods=['GET'])
+def analytics():
+    zone = gettz(request.args.get('timezone', 'Europe/Berlin'))
+    period = request.args.get('year', str(datetime.now().year))
+    sport = request.args.get('sport', 'all')
+    if zone is None or sport not in ('all', 'ride', 'run', 'swim', 'walking', 'hiking', 'multisport'):
+        return jsonify({'error': 'Ungültige Sportart oder Zeitzone.'}), 400
+    if period != 'all' and (not period.isascii() or not period.isdigit() or len(period) != 4 or not 1970 <= int(period) <= 9998):
+        return jsonify({'error': 'Bitte ein gültiges Jahr oder All-Time auswählen.'}), 400
+    user = db.session.get(User, DEMO_USER_ID)
+    rows = load_analytics_rows()
     result = aggregate(rows, period, zone, user.ftp, user.max_hr, sport)
     try:
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
     return jsonify(result)
+
+
+def load_effort_rows():
+    """Reuse per-activity best efforts, retaining dates without exposing recordings."""
+    activities = Activity.query.filter_by(user_id=DEMO_USER_ID).filter(
+        Activity.sport.in_(['ride', 'run', 'multisport'])).options(
+        load_only(Activity.id, Activity.date, Activity.sport, Activity.fit_details),
+        selectinload(Activity.effort_cache)).order_by(Activity.date, Activity.id).all()
+    result = []
+    for activity in activities:
+        cache = activity.effort_cache
+        details = json.loads(activity.fit_details or '{}')
+        if cache is None or cache.version != EFFORT_VERSION or cache.sport != activity.sport:
+            with db.session.no_autoflush:
+                efforts = activity_efforts(json.loads(activity.time_series or '[]'), activity.sport, details, activity.date)
+            if cache is None:
+                cache = BestEffortCache(activity=activity)
+                db.session.add(cache)
+            cache.version, cache.sport, cache.efforts = EFFORT_VERSION, activity.sport, json.dumps(efforts)
+        else:
+            efforts = json.loads(cache.efforts)
+        for sport, items in efforts.items():
+            for effort in items:
+                effort_date = activity.date + timedelta(seconds=effort.get('startSeconds', 0))
+                result.append({'sport': sport, 'target': effort['target'], 'value': effort['value'],
+                               'date': effort_date.isoformat(), 'utc': bool(details), 'activityId': activity.id})
+    return result
+
+
+from coach_api import register_coach
+register_coach(app, db, User, Activity, PlannedWorkout, DEMO_USER_ID, load_analytics_rows, load_effort_rows)
 
 
 if __name__ == '__main__':

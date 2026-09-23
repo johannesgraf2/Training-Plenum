@@ -61,10 +61,35 @@ function RecordingChart({ data, dataKey, label, unit, color, onSelectRecord }) {
   </div>;
 }
 
-export default function ActivityDetail({ activity: a, onBack, apiBase }) {
+export default function ActivityDetail({ activity: a, onBack, onDelete, apiBase }) {
   const details = a.fitDetails || {};
   const data = a.timeSeries || EMPTY;
   const [selection, setSelection] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const deletePending = React.useRef(false);
+  const deleteButton = React.useRef(null);
+  const cancelDelete = () => {
+    if (deletePending.current) return;
+    setConfirmDelete(false);
+    setDeleteError('');
+    deleteButton.current?.focus();
+  };
+  const removeActivity = async () => {
+    if (deletePending.current) return;
+    deletePending.current = true;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await onDelete(a.id);
+    } catch (error) {
+      setDeleteError('Aktivität konnte nicht gelöscht werden. Bitte versuche es erneut.');
+    } finally {
+      deletePending.current = false;
+      setDeleting(false);
+    }
+  };
   const selectedRecord = selection?.data === data ? selection.record : null;
   const selectRecord = React.useCallback(record => {
     setSelection(previous => previous?.data === data && previous.record === record ? previous : { data, record });
@@ -84,14 +109,33 @@ export default function ActivityDetail({ activity: a, onBack, apiBase }) {
     ['Energie', number(a.calories, 0), 'kcal'],
   ];
   return <article className="activity-detail">
-    <button className="activity-back" onClick={onBack}>← Zurück zu den Aktivitäten</button>
+    <button className="activity-back" onClick={onBack} disabled={deleting}>← Zurück zu den Aktivitäten</button>
     <header className="activity-heading">
       <div><div className="activity-eyebrow">{sports[a.sport] || a.sport}</div>
         <h1>{a.title}</h1>
         <p>{new Date(a.date).toLocaleString('de-DE', { dateStyle: 'full', timeStyle: 'medium' })} · {timezone}</p>
       </div>
-      {a.originalFileUrl && <a className="original-download" href={`${apiBase}${a.originalFileUrl}`}>Originaldatei herunterladen ↓</a>}
+      <div className="activity-actions">
+        {a.originalFileUrl && <a className="original-download" href={`${apiBase}${a.originalFileUrl}`}>Originaldatei herunterladen ↓</a>}
+        {onDelete && <button type="button" className="activity-delete" ref={deleteButton}
+          aria-expanded={confirmDelete} aria-controls="activity-delete-confirmation" disabled={deleting}
+          onClick={() => { setConfirmDelete(true); setDeleteError(''); }}>Aktivität löschen</button>}
+      </div>
     </header>
+    {confirmDelete && <section id="activity-delete-confirmation" className="activity-delete-confirmation"
+      role="group" aria-labelledby="activity-delete-title" aria-busy={deleting}
+      onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); cancelDelete(); } }}>
+      <h2 id="activity-delete-title">Aktivität wirklich löschen?</h2>
+      <p><strong>{a.title}</strong> · {new Date(a.date).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+      <p>Die Aktivität wird aus deinem Kalender, deinen Listen und Auswertungen entfernt. Das lässt sich nicht rückgängig machen.</p>
+      {deleteError && <p role="alert" className="activity-delete-error">{deleteError}</p>}
+      <div className="activity-confirm-actions">
+        <button type="button" autoFocus disabled={deleting} onClick={cancelDelete}>Abbrechen</button>
+        <button type="button" className="activity-delete-confirm" disabled={deleting} onClick={removeActivity}>
+          {deleting ? 'Wird gelöscht…' : 'Endgültig löschen'}
+        </button>
+      </div>
+    </section>}
     <div className="activity-metrics">{metrics.map(([label, value, unit, explanation]) => <div key={label} title={explanation}>
       <span>{label}</span><strong>{value} {value !== '—' && <small>{unit}</small>}</strong>
     </div>)}</div>

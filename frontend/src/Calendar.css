@@ -1,0 +1,13 @@
+.calendar-day { min-width: 0; }
+.calendar-day-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; min-height: 34px; }
+.calendar-add-workout { width: 28px; height: 28px; flex-shrink: 0; display: grid; place-items: center; padding: 0; border: 1px solid #b8ceef; border-radius: 6px; background: #eff6ff; color: #1e40af; font: inherit; font-size: 22px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+.calendar-day:hover .calendar-add-workout, .calendar-day:focus-within .calendar-add-workout { opacity: 1; }
+.calendar-add-workout:hover { background: #dbeafe; }
+.calendar-add-workout:focus-visible, .calendar-planned-workout:focus-visible { outline: 3px solid #60a5fa; outline-offset: 2px; }
+.calendar-planned-workout { display: block; width: 100%; margin: 0 0 5px; padding: 8px 9px; border: 1px dashed #abc5e5; border-left: 4px solid var(--calendar-sport-color); border-radius: 6px; background: #f0f6ff; color: #1e3a5f; font: inherit; text-align: left; cursor: pointer; transition: background .12s, box-shadow .12s; }
+.calendar-planned-workout:hover { background: #e4efff; box-shadow: 0 2px 7px #1e40af18; }
+.calendar-plan-heading { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; }
+.calendar-plan-status { font-size: 9px; font-weight: 600; color: #4a6e9b; }
+.calendar-planned-workout strong { display: block; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.calendar-planned-workout small { display: block; margin-top: 5px; color: #58708d; font-size: 10px; line-height: 1.5; }
+@media (hover: none), (pointer: coarse) { .calendar-add-workout { opacity: 1; } }

@@ -1,0 +1,161 @@
+# AI Coach: Einrichtung, Daten und API
+
+TrainHub liefert einen verdichteten Athletenkontext und rendert geplante Einheiten deterministisch. Der AI-Provider entscheidet über Trainingsphasen, Wochenumfang und Template-Auswahl. Jede Empfehlung bleibt ein Vorschlag, bis der Athlet sie ausdrücklich übernimmt.
+
+## Einrichtung und erster Plan
+
+1. Backend-Abhängigkeiten aktualisieren: `backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt` aus dem TrainHub-Verzeichnis. Die Erweiterung benötigt zusätzlich `cryptography` und `jsonschema`.
+2. Einmal einen Fernet-Schlüssel erzeugen und sicher außerhalb von Repository und Datenbank aufbewahren:
+
+   ```powershell
+   backend/.venv/Scripts/python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+3. Diesen vorhandenen Schlüssel als `TRAINHUB_AI_ENCRYPTION_KEY` in der Umgebung des Backend-Prozesses bereitstellen. Bei jedem Neustart denselben Schlüssel verwenden. Eine `.env`-Datei wird vom Backend nicht automatisch eingelesen. Für einen lokalen Start aus PowerShell beispielsweise:
+
+   ```powershell
+   $env:TRAINHUB_AI_ENCRYPTION_KEY = '<gesicherter Fernet-Schlüssel>'
+   .\start-local.ps1
+   ```
+
+   Ein bereits laufendes Backend muss neu gestartet werden, damit es die Umgebungsvariable erhält. `start-local.ps1` ersetzt einen bereits auf Port 5000 laufenden Prozess nicht. Der Fernet-Schlüssel ist ein Servergeheimnis und kein OpenAI-API-Key.
+4. Nach Frontend-Änderungen in `frontend` mit `npm run build` neu bauen. Backend wie gewohnt über `app.py` starten; dessen Initialisierung ergänzt die Coach-Tabellen und das `locked`-Feld vorhandener geplanter Workouts.
+5. In **AI Coach → Athletenprofil** Ziel, normale Tagesverfügbarkeit und absolutes Wochenmaximum speichern. `preferredWeeklyHours` ist der gewünschte normale Umfang; `absoluteMaxWeeklyHours` ist eine verbindliche zeitliche Obergrenze. Ein offener Wert ist unbekannt, `0` bedeutet keine Zeit. Vor der Planung müssen alle sieben Tageswerte und das absolute Wochenmaximum ausgefüllt sein.
+6. Unter **AI Provider** den eigenen API-Key und eine Modell-ID speichern und die Verbindung testen. Aktuell ist OpenAI implementiert; das Modellfeld ist editierbar und verwendet im Code `gpt-4.1-mini` als Vorgabe. Die Vorschlagsliste ist keine live abgefragte Liste verfügbarer Modelle. Der Account muss Zugriff auf das gewählte Modell haben, und das Modell muss die verwendeten strukturierten Responses unterstützen.
+7. Einen Makroplan für 1–52 Wochen ab einem heutigen oder zukünftigen Montag vorschlagen lassen, prüfen und übernehmen. Danach einzelne ISO-Kalenderwochen innerhalb dieses Blocks konkret planen. Sobald konkrete Wochen existieren, werden Änderungen über Wochen-Patches vorgenommen.
+
+Ein Verbindungstest prüft API-Key und Zugriff auf die Modell-ID über den Modell-Endpunkt. Er erzeugt keinen Plan und bestätigt noch nicht, dass eine konkrete Planungsanfrage mit dem Schema erfolgreich sein wird. Generierungen werden über den eigenen Provider-Zugang abgerechnet.
+
+## Architektur und Speicherung
+
+| Modul | Verantwortung |
+| --- | --- |
+| `backend/athlete_context.py` | Reine Berechnung des Snapshots und abgeschlossener Zeiträume aus vorhandenen Cache-Zusammenfassungen; kein Datenbank- oder Providerzugriff. |
+| `backend/analytics.py`, `backend/best_efforts.py` | Bestehende deterministische Sensor-, Zonen-, Normalized-Power- und Bestwertberechnungen mit versionierten Aktivitäts-Caches. |
+| `backend/coach_domain.py` | JSON-Schemas, Athletenangaben, ISO-Wochen, effektive Verfügbarkeit und Patch-Operationen. |
+| `backend/coach_templates.py` | Template-Katalog, Parametergrenzen, konkrete Dauer und Watt-/HF-Ziele sowie geschätzte geplante Cycling-TSS. |
+| `backend/ai_provider.py` | Provider-Abstraktion, Fernet-Ver-/Entschlüsselung, OpenAI-Adapter und Prüfung strukturierter Antworten. |
+| `backend/coach_api.py` | Persistenz, Kontext-Auswahl, Vorschläge, serverseitige Beschränkungen, Fixierungen und ausdrückliche Übernahme. |
+| `frontend/src/AICoach.jsx` | Athletenprofil, Provider-Einrichtung, Wochenverfügbarkeit, Check-ins und Vorher-/Nachher-Prüfung. |
+
+`athlete_coach_state` speichert Athletenangaben, bestätigten Makroplan, konkrete Wochen und eine Revision. `ai_provider_settings` speichert Provider, Modell, verschlüsselten API-Key und die letzten vier Zeichen. `coach_proposal` speichert Vorschläge mit Status, Erstellungszeit und einem Fingerabdruck des Ausgangszustands. Bestätigte Rad- und Laufeinheiten verwenden die bestehende Tabelle `planned_workout`; importierte Aktivitäten bleiben davon getrennt.
+
+Das vorhandene `training_plan.py` wurde geprüft: Es enthält deterministische Logik für einen bestehenden vierwöchigen Radtrainingsblock und erzeugt validierte Workouts innerhalb des Backends. Es ist kein separater externer AI-Workflow und bleibt für die bestehenden Abläufe erhalten. Der neue AI Coach verwendet die gemeinsame Analytics- und Workout-Infrastruktur.
+
+## Athlete Snapshot und Datenherkunft
+
+`GET /api/athlete-snapshot?timezone=Europe%2FBerlin` liefert `schemaVersion`, `asOf`, `timezone` und die Bereiche `athlete`, `observed`, `selfReported`, `dataQuality`.
+
+| Herkunft | Bedeutung |
+| --- | --- |
+| `calculated` | Aus den gespeicherten Trainingsdaten berechnet. |
+| `athlete` | Vom Athleten eingetragen, einschließlich Alter, Gewicht, FTP, maximaler HF, Zielen, Verfügbarkeit und Check-ins. |
+| `aiRecommendation` | Vom Provider empfohlene Planentscheidungen. |
+
+Die `source`-Markierung eines Snapshot-Bereichs gilt für seine enthaltenen Felder. Eine eingetragene FTP ist keine automatisch gemessene FTP; subjektive Müdigkeit ist kein berechneter Fitnesswert. Die gerenderten Dauern und Belastungsschätzungen zu einer Empfehlung berechnet TrainHub aus deren Templates.
+
+`observed.currentTraining` enthält die letzten 7, 28 und 42 lokalen Kalendertage einschließlich `asOf`: Trainingsstunden, verschiedene Aktivitäten und Sport-Sessions, Kilometer, Höhenmeter, Sportanteile, Zonenzeiten, getrennte Intensitätsanteile und gegebenenfalls Cycling-TSS. Multisport-Sessions zählen einzeln für die Sportverteilung, ihre gemeinsame Aktivität zählt nur einmal. Sportanteile verwenden bekannte Trainingssekunden als Nenner.
+
+`observed.performanceHistory.bestEfforts` trennt `allTime`, `last365Days` und `last90Days`, jeweils mit `cycling` und `running`. Ein Eintrag enthält Watt bzw. Laufzeit in Sekunden, lokales Datum, `ageDays` und die Aktivitäts-ID. Fehlende Leistungen werden nicht ersetzt. Die Radziele reichen von `30s` bis `60min`; Laufziele reichen von `400m` bis `21km` (genau 21.000 m). Bei gleichem Bestwert wird das jüngere Datum verwendet.
+
+Importierte UTC-Zeitstempel werden in die gewählte Zeitzone umgerechnet. Ältere manuelle Daten behalten ihre lokale Uhrzeit. Rollierende Zeiträume haben inklusive Datumsgrenzen; zukünftige Datensätze werden ausgeschlossen. Datums- und Zeitperioden werden damit auch an Sommerzeitgrenzen als Kalendertage behandelt.
+
+### Trainingshistorie und beobachteter Umfang
+
+`observed.trainingHistory.last365Days.trainingHours` umfasst alle 365 Tage einschließlich des laufenden Tages. Wochenmittel, Median, Maximum und `activeWeeks` beziehen sich dagegen auf vollständig enthaltene Montag–Sonntag-Wochen, ohne laufende oder angeschnittene Woche. Kalenderwochen ohne gespeicherte Aktivitäten zählen mit null Stunden. Fehlende Dauern führen zu ausdrücklich unbekannten Wochenstatistiken.
+
+`observed.observedTrainingCapacity` liefert `maxSingleWeekHours`, `max4WeekAverageHours`, `max6WeekAverageHours` und `max8WeekAverageHours` über die gesamte vorhandene Historie. Gezählt werden vollständige Kalenderwochen ab dem frühesten aufgezeichneten Aktivitätsdatum bis zur letzten abgeschlossenen Woche. Beginnt die Historie mitten in einer Woche, wird diese Randwoche ausgeschlossen. Mehrwochenwerte beziehen sich auf zusammenhängende Fenster einschließlich inaktiver Wochen; Fenster mit unbekannten Dauern werden ausgeschlossen. Für zu kurze Historie ist der betreffende Wert `null` mit Begründung.
+
+Diese Werte beschreiben aufgezeichnetes Training. Eine Nullwoche bedeutet nur „keine Aktivität gespeichert“; unvollständige Importe können nicht als nachgewiesene Trainingspause gelten. Historische Spitzen sind weder eine medizinische Belastbarkeitsgrenze noch eine automatische Vorgabe für einen neuen Peak.
+
+### Fehlende und teilweise vorhandene Daten
+
+Sensorabdeckung ist zeitgewichtet. Cycling-Power-Abdeckung verwendet ausschließlich Rad-Sessions; HF-Abdeckung alle Sportarten. Die erfasste Zeit wird pro Session auf deren Timerdauer begrenzt. Ist eine relevante Trainingsdauer unbekannt, bleibt die Abdeckungsquote `null`, statt einen unbekannten Nenner vorzutäuschen.
+
+Powerzonen verwenden die konfigurierte aktuelle FTP, HF-Zonen die aktuelle maximale HF. Intensitätsanteile haben gemessene Sensorsekunden als Nenner und bleiben nach Power und HF getrennt: Power Z1–2/Z3/Z4–7, HF Z1–2/Z3/Z4–5. Die Gruppen sind beschreibende Zonen, keine individuell ermittelten physiologischen Schwellen.
+
+Stunden, Distanz und Höhenmeter sind bei teilweise fehlenden Angaben bekannte Teilsummen; fehlende Sessionwerte werden in `dataQuality` gezählt. Cycling-TSS eines Zeitraums wird nur summiert, wenn jede relevante Rad-Session die vorhandene Zuverlässigkeitsprüfung erfüllt: gültige Dauer, Normalized-Power-Faktor und Power-Abdeckung innerhalb von 95–105 % der Timerdauer. Fehlende FTP, unbekannte Dauer oder unvollständige Power führen zu `null` mit Begründung. Für andere Sportarten wird keine TSS erfunden. Die aktuellen Schwellen gelten auch für historische Daten; es existiert keine FTP-Zeitreihe.
+
+## Verfügbarkeit, Templates und Planänderungen
+
+Die Priorität lautet **Standardwoche → Wochen-Override → Tages-Override**. Wochen werden als `YYYY-Www`, Tage als `YYYY-MM-DD` gespeichert. `available: false` oder ein Tages-`action: "skip"` ergibt null verfügbare Minuten. Overrides ändern die Standardwerte nicht. Wochen-Overrides werden für höchstens 104 Wochen, Tages-Overrides für 366 Tage und Check-ins für 90 Datumswerte aufbewahrt.
+
+Der Katalog umfasst Regeneration, kurze/lange Grundlage, Tempo, Sweetspot, Schwelle und VO₂ am Rad sowie lockere, Schwellen- und lange Läufe, allgemeines Krafttraining und Ruhetage. Die AI wählt Template und Parameter. TrainHub prüft deren Grenzen und erzeugt Aufwärmen, Belastung, Erholung und Abwärmen. Radziele basieren auf FTP, Laufziele auf maximaler HF; ohne Schwelle bleiben Ziele offen. Dauer und geplante Cycling-TSS werden deterministisch berechnet. Die geplante TSS ist eine Schätzung aus den Zielwerten und bleibt von tatsächlich absolvierter Belastung getrennt.
+
+Rad- und Laufworkouts werden nach Bestätigung in den bestehenden Kalender übernommen und können dessen Editor/FIT-Export nutzen. Krafttraining und Ruhetage werden in der Coach-Woche gespeichert und angezeigt; sie erzeugen derzeit kein Garmin-Workout und keinen eigenen Eintrag im bestehenden Workout-Kalender. Krafttraining verlangt `gymAvailability: true`.
+
+Vorhandene eigene Kalenderworkouts zählen als feste Verpflichtungen zur verfügbaren Zeit. Bereits bearbeitete Coach-Workouts werden beim Laden mit dem Kalender abgeglichen. Rad-/Laufworkouts können fixiert werden; ein AI-Patch darf sie weder verschieben, ersetzen noch löschen. Auch bestehende nicht zum Coach gehörende Kalenderworkouts werden durch die Planung nicht überschrieben.
+
+Ein Wochen-Patch enthält ausschließlich `add`, `replace` oder `remove` für einzelne Session-IDs sowie aktualisierte Zielstunden und Fokus. Unbekannte oder doppelte IDs, Änderungen fixierter oder vergangener Einheiten, falsche Kalenderwochen, Zeitüberschreitungen und unplausible Abweichungen zwischen Zielstunden und gerenderter Dauer werden abgelehnt. Bei den Wochenstunden zählen auch vorhandene Kalendereinheiten mit. Die zulässige Rundungsabweichung ist ungefähr 15 Minuten.
+
+Die API speichert zunächst einen Vorschlag mit `before`, `after` und der strukturierten Entscheidung. **Verwerfen** ändert den Plan nicht. Erst die ausdrückliche Übernahme mit `{"confirm":true}` schreibt den bestätigten Plan und die betroffenen Workouts in einer Transaktion. Ein veränderter Ausgangszustand (Profil, Planung, Trainings-/Kalenderstand oder Provider-Einstellungen) macht den Vorschlag ungültig. Vorschläge verfallen nach 24 Stunden; Wiederholung einer erfolgreichen Bestätigung erzeugt keine doppelten Workouts.
+
+## Provider, Übertragung und Schlüssel
+
+Der Provider bekommt kompaktes JSON ohne vollständige Sensorstreams, GPS-Tracks, Original-FIT-Dateien oder API-Key im Planungskontext. Die lokalen Caches können bei Bedarf aus vorhandenen Aufzeichnungen aufgebaut werden; diese Rohdaten verlassen dabei TrainHub nicht. Ziele, Notizen und subjektive Check-ins gehören zum Kontext und werden bei entsprechenden Planungsanfragen an den gewählten Provider übertragen.
+
+Der Makroplan erhält den Snapshot, Startdatum und Wochenzahl; ältere Check-ins und Overrides werden aus diesem Provider-Kontext gekürzt. Eine neue konkrete Woche erhält nur die betreffende Makrowoche, aktuelle Verfügbarkeit, kompakte Plan-/Template-Informationen und jüngstes Training. Ein Patch verwendet den bestehenden kompakten Wochenplan und gegebenenfalls einen abgeschlossenen Wochenrückblick, ohne erneut die vollständige Historie zu schicken. Es wird kein fortlaufender Chatverlauf gespeichert oder übertragen.
+
+Der OpenAI-Adapter verwendet `POST /v1/responses`, `store: false` und `text.format` mit `type: "json_schema"` und `strict: true`, entsprechend der [offiziellen Dokumentation zu Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs). Das Backend validiert jede Antwort zusätzlich lokal gegen das JSON-Schema und anschließend gegen die fachlichen Regeln. Unvollständige Antworten, Ablehnungen, unbekannte Felder und ungültige Zahlen verändern keinen Plan. Requests haben ein 60-Sekunden-Zeitlimit, Antworten eine Grenze von 1 MiB; es gibt keine automatischen kostenpflichtigen Wiederholungen. `store: false` ist die verwendete API-Einstellung und kein Versprechen, dass beim Provider keinerlei Daten verarbeitet oder aufbewahrt werden.
+
+Der Browser übermittelt den eingegebenen API-Key einmal ans Backend und leert das Eingabefeld. TrainHub legt ihn nicht in Local Storage oder Session Storage ab und liefert ihn nach dem Speichern nicht zurück. Statusantworten enthalten nur Provider, Modell, `configured`, `keyLast4` und `encryptionConfigured`. Der Datenbankwert ist mit Fernet verschlüsselt; nur der Backend-Prozess entschlüsselt ihn für Provider-Anfragen. Provider-Fehler werden ohne fremde Fehlertexte oder Secrets zurückgegeben.
+
+Den Server-Schlüssel dauerhaft und getrennt von Datenbank-Backups sichern. Ein Datenbank-Backup allein reicht nicht zur Entschlüsselung des gespeicherten Provider-Keys. Geht der Server-Schlüssel verloren, muss ein neuer eingerichtet und der Provider-Key erneut hinterlegt werden; Trainingsdaten und Pläne benötigen ihn nicht.
+
+Es gibt keine automatische Schlüsselrotation oder Mehrfachschlüsselverwaltung. Für eine manuelle Rotation zuerst Datenbank und bisherigen Schlüssel getrennt sichern, einen neuen Server-Schlüssel einrichten, das Backend neu starten und den API-Key im Providerformular erneut speichern. Dadurch wird er mit dem neuen Schlüssel verschlüsselt. Alte Sicherungen bleiben an den alten Schlüssel gebunden. Das Entfernen eines gespeicherten Keys in TrainHub widerruft ihn nicht beim Provider.
+
+TrainHub verwendet weiterhin einen lokalen Athleten ohne Benutzeranmeldung. Die Coach-Endpunkte begrenzen Host/Origin, verlangen JSON für schreibende Anfragen und setzen `Cache-Control: no-store`. Weitere erlaubte Origins lassen sich über `TRAINHUB_COACH_ORIGINS` kommagetrennt ohne Leerzeichen konfigurieren. Diese Prüfung ersetzt keine Authentifizierung. Ein öffentlicher oder geteilter Betrieb benötigt zusätzlich Benutzeranmeldung, Autorisierung, TLS und eine passende Bereitstellung der Servergeheimnisse; das aktuelle lokale Modell ist dafür nicht ausgelegt.
+
+## API-Übersicht
+
+Alle schreibenden JSON-Anfragen verwenden `Content-Type: application/json`. Die Coach-Anfragegröße ist auf 64 KiB begrenzt. `timezone` ist bei Snapshot, Planung und Rückblick optional; ohne Angabe gilt `Europe/Berlin`.
+
+| Methode | Endpoint | Inhalt |
+| --- | --- | --- |
+| GET | `/api/athlete-snapshot` | Berechneter Snapshot und getrennte Athletenangaben. |
+| GET / PUT | `/api/athlete-profile` | Ziel, Verfügbarkeit, Präferenzen, Einschränkungen, aktuelle Selbsteinschätzung. PUT ersetzt die angegebenen vollständigen Teilbereiche. |
+| PUT | `/api/coach/weekly-overrides/<week>` | `{"overrides":{"thu":{"available":false},"sat":{"maxMinutes":300,"preferLong":true}},"note":"Reisewoche"}`. |
+| PUT | `/api/coach/daily-overrides/<date>` | Zum Beispiel `{"maxMinutes":45,"action":"reduce","note":"Wenig Zeit"}`. |
+| POST | `/api/coach/check-ins` | Datum, `fatigue`, `motivation`, `stress`, `sleepQuality`, `soreness` jeweils 1–5 sowie `notes`. |
+| GET / PUT / DELETE | `/api/ai-provider` | Status lesen, `{"provider":"openai","model":"gpt-4.1-mini","apiKey":"…"}` speichern oder gespeicherten Key entfernen. Beim Modellwechsel kann `apiKey` entfallen. |
+| POST | `/api/ai-provider/test` | `{}`; Zugang und Modell prüfen. |
+| GET | `/api/coach/templates` | Template-IDs, Defaults, Parametergrenzen und Dauerregeln. |
+| GET | `/api/coach/plan` | Bestätigter Makroplan, gespeicherte Wochen und Revision. |
+| POST | `/api/coach/proposals` | `kind: "macro"`, `"week"` oder `"patch"`; erzeugt einen Vorschlag. |
+| POST | `/api/coach/proposals/<id>/confirm` | Ausschließlich `{"confirm":true}`; geprüften Vorschlag übernehmen. |
+| POST | `/api/coach/proposals/<id>/discard` | `{}`; Vorschlag verwerfen. |
+| PUT | `/api/workouts/<id>/lock` | `{"locked":true}` bzw. `false`; Workout fixieren/lösen. |
+| GET | `/api/coach/feedback?week=2026-W39` | Geplante und tatsächlich aufgezeichnete Stunden/TSS einer abgeschlossenen Kalenderwoche, dazu passende Check-ins. |
+
+Beispiele für Vorschlagsanfragen; die Datumswerte müssen zum tatsächlichen Planungszeitpunkt passen:
+
+```json
+{"kind":"macro","startDate":"2026-09-28","weeks":16}
+```
+
+```json
+{"kind":"week","week":"2026-W40","instruction":"Lange Einheit am Samstag bevorzugen."}
+```
+
+```json
+{"kind":"patch","week":"2026-W41","feedbackWeek":"2026-W40","missedSessions":[],"instruction":"Donnerstag ist jetzt nicht verfügbar; gespeicherte Overrides beachten."}
+```
+
+`feedbackWeek` muss abgeschlossen sein. TrainHub ordnet absolvierte Aktivitäten nicht automatisch geplanten Einheiten zu. Daher ist `missedSessions` im berechneten Rückblick zunächst unbekannt; bei einer Vorschlagsanfrage können ausdrücklich athletenseitig gemeldete IDs der Rückblickwoche mitgesendet werden. Ein leeres Array ist die Aussage „keine ausgelassenen Einheiten gemeldet“, keine automatische Erkennung.
+
+## Verifikation
+
+Aus `backend` die Unit- und Integrationstests ausführen:
+
+```powershell
+.venv/Scripts/python.exe -m unittest discover -v
+```
+
+Aus `frontend`:
+
+```powershell
+npm test -- --watchAll=false --runInBand
+npm run build
+```
+
+Die Coach-Tests prüfen unter anderem Zeitgrenzen, Datenlücken, Bestwertalter, Umfangsfenster, Template-Arithmetik, verschlüsselte Secrets und Provider-Antworten mit Test-Doubles. Ein erfolgreicher Testlauf ist kein Nachweis einer Live-Anfrage an einen AI-Provider. Dafür sind ein vom Nutzer eingerichteter API-Key, passender Modellzugriff und ein bewusster Verbindungstest bzw. Planvorschlag erforderlich.

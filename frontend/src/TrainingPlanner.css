@@ -1,0 +1,48 @@
+.training-planner { padding: 30px 0; color: #1e293b; }
+.plan-heading { margin-bottom: 24px; }
+.plan-heading > span { color: #2563eb; font-size: 11px; font-weight: 700; letter-spacing: .12em; }
+.plan-heading h1 { font-size: 30px; margin: 9px 0; letter-spacing: -.7px; }
+.training-planner p, .range-export p { font-size: 13px; line-height: 1.65; color: #64748b; }
+.plan-columns { display: grid; grid-template-columns: 1fr 1.35fr; gap: 20px; }
+.plan-card, .range-export { padding: 24px; background: white; border: 1px solid #dde5ef; border-radius: 12px; margin-bottom: 20px; }
+.plan-card h2 { font-size: 18px; margin: 0 0 10px; }
+.training-planner fieldset, .range-fields { border: 0; padding: 0; margin: 0; display: flex; gap: 16px; }
+.training-planner form fieldset { flex-direction: column; }
+.training-planner label, .range-export label { display: flex; flex-direction: column; gap: 7px; font-size: 12px; color: #475569; font-weight: 600; }
+.training-planner input, .range-export input, .range-export select { font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: white; color: #1e293b; min-width: 0; }
+.training-planner button, .range-export button { cursor: pointer; border: 1px solid #cbd5e1; border-radius: 7px; padding: 11px 16px; font: inherit; font-size: 12px; background: white; color: #1e40af; }
+.training-planner .plan-primary, .range-export .plan-primary { background: #1d4ed8; color: white; border-color: #1d4ed8; font-weight: 600; }
+.training-planner button:disabled, .range-export button:disabled { opacity: .45; cursor: default; }
+.training-planner :focus-visible, .range-export :focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
+.training-planner small, .range-export small { font-size: 11px; line-height: 1.65; color: #64748b; }
+.plan-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0; }
+.plan-stats strong { display: block; font-size: 24px; color: #163b6b; }
+.plan-stats span { display: block; margin-top: 5px; font-size: 11px; color: #64748b; }
+.history-weeks { display: flex; flex-direction: column; gap: 6px; }
+.history-weeks > div { display: grid; grid-template-columns: 90px 1fr 65px; align-items: center; gap: 12px; font-size: 11px; }
+.history-weeks meter { width: 100%; height: 12px; accent-color: #3b82f6; }
+.history-weeks strong { text-align: right; }
+.training-planner .plan-note { background: #f1f5f9; padding: 9px 12px; border-radius: 6px; font-size: 12px; }
+.training-planner .plan-error, .range-export [role=alert] { color: #b91c1c; }
+.plan-preview-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.plan-week-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.plan-week { border: 1px solid #dbe5f3; border-radius: 9px; padding: 16px; background: #f8fbff; }
+.plan-week.recovery { background: #f0fdfa; border-color: #b9e4d9; }
+.plan-week > span { font-size: 10px; color: #315a92; letter-spacing: .06em; font-weight: 700; }
+.plan-week h3 { font-size: 26px; margin: 12px 0 0; }
+.plan-week details { border-top: 1px solid #dde5ef; padding: 12px 0; font-size: 12px; }
+.plan-week summary { cursor: pointer; }
+.plan-week summary time, .plan-week summary strong, .plan-week summary span { display: block; margin-bottom: 5px; }
+.plan-week summary time, .plan-week summary span { font-size: 11px; color: #64748b; }
+.plan-week ol, .plan-week ul { padding-left: 16px; line-height: 1.6; }
+.plan-week .plan-rest { font-size: 11px; }
+.range-export { margin: 16px 20px; }
+.training-planner .range-export { margin: 20px 0; }
+.range-fields { align-items: flex-end; flex-wrap: wrap; margin: 15px 0; }
+.range-export small { display: block; }
+.plan-saved-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.plan-saved-list button { display: flex; gap: 12px; text-align: left; align-items: center; }
+.plan-saved-list time { color: #64748b; white-space: nowrap; }
+.plan-saved-list span { margin-left: auto; white-space: nowrap; color: #64748b; }
+@media (max-width: 1000px) { .plan-week-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .plan-columns, .plan-week-grid, .plan-saved-list { grid-template-columns: 1fr; } .plan-card, .range-export { padding: 16px; } .plan-preview-header { flex-direction: column; align-items: flex-start; } .plan-heading h1 { font-size: 25px; } }

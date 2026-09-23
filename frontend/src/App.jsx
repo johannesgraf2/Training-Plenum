@@ -4,6 +4,10 @@ import ActivityDetail from './ActivityDetail';
 import BatchImport from './BatchImport';
 import BestEfforts from './BestEfforts';
 import Dashboard from './Dashboard';
+import AICoach from './AICoach';
+import WorkoutEditor, { PlannedWorkoutRows } from './WorkoutEditor';
+import { localDate, summary as workoutSummary } from './workoutModel';
+import './Calendar.css';
 import { collectDroppedFiles } from './importQueue';
 
 // ─── API HELPER ───
@@ -726,6 +730,9 @@ export default function App() {
   const [page, setPage] = useState('dashboard');
   const [selected, setSelected] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [workoutEditor, setWorkoutEditor] = useState(null);
+  const [plannedWorkouts, setPlannedWorkouts] = useState([]);
+  const [workoutLoadError, setWorkoutLoadError] = useState('');
   const [legacyUpload, setLegacyUpload] = useState(false);
   const [incomingDrop, setIncomingDrop] = useState(null);
   const [toast, setToast] = useState(null);
@@ -760,6 +767,15 @@ export default function App() {
     } catch (error) { setLoadError('Aktivität konnte nicht geladen werden: ' + error.message); }
   };
 
+  const deleteActivity = async (id) => {
+    await api(`/api/activities/${id}`, { method: 'DELETE' });
+    setActivities(current => current.filter(activity => activity.id !== id));
+    setSelected(current => current?.id === id ? null : current);
+    if (window.location.hash === `#activity/${id}`) window.location.hash = '';
+    setToast('Aktivität gelöscht.');
+    setTimeout(() => setToast(null), 3000);
+  };
+
   useEffect(() => {
     let active = true;
     async function load() {
@@ -781,12 +797,22 @@ export default function App() {
   }, []);
 
   // Today / Tomorrow activities
+  useEffect(() => {
+    let active = true;
+    api('/api/workouts').then(saved => { if (active) setPlannedWorkouts(saved); })
+      .catch(error => { if (active) setWorkoutLoadError('Geplante Workouts konnten nicht geladen werden. ' + error.message); });
+    return () => { active = false; };
+  }, []);
+
   const today = new Date();
   const todayStr = today.toDateString();
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = tomorrow.toDateString();
   const todayActs = activities.filter(a => new Date(a.date).toDateString() === todayStr);
   const tomorrowActs = activities.filter(a => new Date(a.date).toDateString() === tomorrowStr);
+  const todayPlans = plannedWorkouts.filter(w => w.date === localDate(today));
+  const tomorrowPlans = plannedWorkouts.filter(w => w.date === localDate(tomorrow));
+  const otherPlans = plannedWorkouts.filter(w => w.date !== localDate(today) && w.date !== localDate(tomorrow)).sort((a, b) => b.date.localeCompare(a.date));
 
   // Weekly stats
   const thisWeekActs = useMemo(() => {
@@ -817,7 +843,8 @@ export default function App() {
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(y, m, d);
       const dayActs = activities.filter(a => { const ad = new Date(a.date); return ad.getFullYear() === y && ad.getMonth() === m && ad.getDate() === d; });
-      cells.push({ date, day: d, activities: dayActs });
+      const plans = plannedWorkouts.filter(workout => workout.date === localDate(date));
+      cells.push({ date, day: d, activities: dayActs, plans });
     }
     // Pad end to fill last week
     while (cells.length % 7 !== 0) cells.push(null);
@@ -844,7 +871,7 @@ export default function App() {
       weeks.push({ cells: weekCells, summary });
     }
     return weeks;
-  }, [calMonth, activities]);
+  }, [calMonth, activities, plannedWorkouts]);
 
   // ─── RENDER ───
   return (
@@ -868,7 +895,7 @@ export default function App() {
             <span style={{ color: '#fff', fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>TRAINHUB</span>
           </div>
           <nav style={{ display: 'flex', gap: 4 }}>
-            {[['home', 'Startseite'], ['calendar', 'Kalender'], ['dashboard', 'Dashboard']].map(([id, label]) => (
+            {[['home', 'Startseite'], ['calendar', 'Kalender'], ['dashboard', 'Dashboard'], ['coach', 'AI Coach']].map(([id, label]) => (
               <button key={id} onClick={() => { setPage(id); setSelected(null); window.location.hash = ''; }} style={{
                 padding: '6px 14px', borderRadius: 6, border: 'none',
                 background: page === id && !selected ? 'rgba(255,255,255,0.12)' : 'transparent',
@@ -905,7 +932,8 @@ export default function App() {
       <div style={{ maxWidth: page === 'calendar' ? 'none' : 1340, margin: '0 auto', padding: page === 'calendar' ? '0' : '0 16px', transition: 'max-width 0.2s' }}>
         {selected ? (
           <div style={{ padding: '20px 0' }}>
-            <ActivityDetail activity={selected} apiBase={API} onBack={() => { setSelected(null); window.location.hash = ''; }} />
+            <ActivityDetail key={selected.id} activity={selected} apiBase={API} onDelete={deleteActivity}
+              onBack={() => { setSelected(null); window.location.hash = ''; }} />
           </div>
         ) : page === 'home' ? (
           /* ─── STARTSEITE (3-column TrainingPeaks layout) ─── */
@@ -961,8 +989,9 @@ export default function App() {
               <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e5e7eb' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #e5e7eb' }}>
                   <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Heute</h3>
-                  <span style={{ color: '#9ca3af', cursor: 'pointer', fontSize: 18 }}>+</span>
+                  <button aria-label="Workout für heute hinzufügen" onClick={() => setWorkoutEditor({ date: localDate(today) })} style={{ color: '#1e40af', cursor: 'pointer', fontSize: 22, border: 0, background: 'none' }}>+</button>
                 </div>
+                <PlannedWorkoutRows workouts={todayPlans} onOpen={setWorkoutEditor} />
                 {todayActs.length > 0 ? todayActs.map(a => (
                   <div key={a.id} onClick={() => openActivity(a)} style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', transition: 'background 0.1s' }}
                     onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'} onMouseLeave={e => e.currentTarget.style.background = ''}>
@@ -980,23 +1009,24 @@ export default function App() {
                       {a.power && <span>⚡ {a.power} W</span>}
                     </div>
                   </div>
-                )) : (
+                )) : todayPlans.length === 0 ? (
                   <div style={{ padding: '40px 20px', textAlign: 'center' }}>
                     <p style={{ color: '#9ca3af', fontSize: 14, marginBottom: 14 }}>Du hast heute keine geplanten Workouts.</p>
-                    <button onClick={() => setShowUpload(true)} style={{
+                    <button onClick={() => setWorkoutEditor({ date: localDate(today) })} style={{
                       padding: '10px 24px', borderRadius: 8, border: 'none', background: '#1e40af', color: '#fff',
                       fontSize: 13, fontWeight: 600, cursor: 'pointer'
                     }}>Workout hinzufügen</button>
                   </div>
-                )}
+                ) : null}
               </div>
 
               {/* Morgen */}
               <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e5e7eb' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #e5e7eb' }}>
                   <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Morgen</h3>
-                  <span style={{ color: '#9ca3af', cursor: 'pointer', fontSize: 18 }}>+</span>
+                  <button aria-label="Workout für morgen hinzufügen" onClick={() => setWorkoutEditor({ date: localDate(tomorrow) })} style={{ color: '#1e40af', cursor: 'pointer', fontSize: 22, border: 0, background: 'none' }}>+</button>
                 </div>
+                <PlannedWorkoutRows workouts={tomorrowPlans} onOpen={setWorkoutEditor} />
                 {tomorrowActs.length > 0 ? tomorrowActs.map(a => (
                   <div key={a.id} onClick={() => openActivity(a)} style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', cursor: 'pointer' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -1005,16 +1035,22 @@ export default function App() {
                     </div>
                     <div style={{ fontSize: 12, color: '#6b7280' }}>⏱ {fmt.dur(a.duration)} · 📏 {a.distance == null ? '—' : a.distance.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km</div>
                   </div>
-                )) : (
+                )) : tomorrowPlans.length === 0 ? (
                   <div style={{ padding: '36px 20px', textAlign: 'center' }}>
                     <p style={{ color: '#9ca3af', fontSize: 14, marginBottom: 14 }}>Du hast morgen keine geplanten Workouts.</p>
-                    <button onClick={() => setShowUpload(true)} style={{
+                    <button onClick={() => setWorkoutEditor({ date: localDate(tomorrow) })} style={{
                       padding: '10px 24px', borderRadius: 8, border: 'none', background: '#1e40af', color: '#fff',
                       fontSize: 13, fontWeight: 600, cursor: 'pointer'
                     }}>Workout hinzufügen</button>
                   </div>
-                )}
+                ) : null}
               </div>
+
+              {workoutLoadError && <p role="alert" style={{ color: '#b91c1c', fontSize: 13 }}>{workoutLoadError} <button onClick={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); }).catch(error => setWorkoutLoadError(error.message))}>Erneut laden</button></p>}
+              {otherPlans.length > 0 && <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+                <h3 style={{ padding: '14px 20px', fontSize: 15, margin: 0 }}>Weitere geplante Workouts</h3>
+                <PlannedWorkoutRows workouts={otherPlans} onOpen={setWorkoutEditor} showDate />
+              </div>}
 
               {/* Letzte Aktivitäten */}
               <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e5e7eb' }}>
@@ -1132,10 +1168,12 @@ export default function App() {
                   const now = new Date();
                   setCalMonth(new Date(now.getFullYear(), now.getMonth(), 1));
                 }} style={{ padding: '5px 14px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', color: '#374151' }}>Heute</button>
-                <button onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))} style={{ padding: '5px 12px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', fontSize: 16, cursor: 'pointer', color: '#6b7280', lineHeight: 1 }}>‹</button>
-                <button onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1))} style={{ padding: '5px 12px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', fontSize: 16, cursor: 'pointer', color: '#6b7280', lineHeight: 1 }}>›</button>
+                <button aria-label="Vorheriger Monat" onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))} style={{ padding: '5px 12px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', fontSize: 16, cursor: 'pointer', color: '#6b7280', lineHeight: 1 }}>‹</button>
+                <button aria-label="Nächster Monat" onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1))} style={{ padding: '5px 12px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', fontSize: 16, cursor: 'pointer', color: '#6b7280', lineHeight: 1 }}>›</button>
               </div>
             </div>
+
+            {workoutLoadError && <p role="alert" style={{ color: '#b91c1c', fontSize: 13, padding: '0 20px' }}>{workoutLoadError} <button onClick={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); }).catch(error => setWorkoutLoadError(error.message))}>Erneut laden</button></p>}
 
             {/* Day-of-week header + SUMMARY */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr) 240px', borderBottom: '2px solid #d1d5db', background: '#fff' }}>
@@ -1153,11 +1191,12 @@ export default function App() {
                   if (!cell) return <div key={`e${wi}-${ci}`} style={{ background: '#f9fafb', borderRight: '1px solid #e5e7eb', minHeight: 160 }} />;
                   const isToday = cell.date.toDateString() === todayStr;
                   return (
-                    <div key={`${wi}-${ci}`} style={{
+                    <div key={`${wi}-${ci}`} className="calendar-day" data-date={localDate(cell.date)} role="group" aria-label={`Kalendertag ${fmt.dateFull(cell.date)}`} style={{
                       borderRight: '1px solid #e5e7eb', padding: '4px 6px',
                       background: isToday ? '#dbeafe' : '#fff',
                       display: 'flex', flexDirection: 'column', minHeight: 160,
                     }}>
+                      <div className="calendar-day-header">
                       {/* Day number badge */}
                       {isToday ? (
                         <div style={{ background: '#1e40af', color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: "'IBM Plex Mono'", padding: '3px 8px', borderRadius: 4, alignSelf: 'flex-start', marginBottom: 6 }}>
@@ -1168,6 +1207,19 @@ export default function App() {
                           {cell.day === 1 ? `1 ${calMonth.toLocaleDateString('de-DE', { month: 'short' })}` : cell.day}
                         </div>
                       )}
+                      <button type="button" className="calendar-add-workout"
+                        aria-label={`Workout am ${cell.date.toLocaleDateString('de-DE')} planen`}
+                        title="Workout planen"
+                        onClick={() => setWorkoutEditor({ date: localDate(cell.date) })}>+</button>
+                      </div>
+
+                      {cell.plans.map(workout => <button type="button" className="calendar-planned-workout" key={workout.id}
+                        style={{ '--calendar-sport-color': sportColors[workout.sport] || '#3b82f6' }}
+                        aria-label={`${workout.name} am ${cell.date.toLocaleDateString('de-DE')} bearbeiten`}
+                        onClick={() => setWorkoutEditor(workout)}>
+                        <span className="calendar-plan-heading"><span aria-hidden="true">{sportEmoji[workout.sport]}</span><span className="calendar-plan-status">Geplant</span></span>
+                        <strong>{workout.name}</strong><small>{workoutSummary(workout)}</small>
+                      </button>)}
 
                       {/* Activity cards — larger, matching TP screenshot */}
                       {cell.activities.map(a => {
@@ -1264,6 +1316,9 @@ export default function App() {
             ))}
           </div>
 
+        ) : page === 'coach' ? (
+          <AICoach apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
+            onWorkoutsChanged={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })} />
         ) : page === 'dashboard' ? (
           /* ─── DASHBOARD ─── */
           <div style={{ padding: '20px 0' }}>
@@ -1300,6 +1355,11 @@ export default function App() {
       </div>
 
       {/* Upload Modal */}
+      {workoutEditor && <WorkoutEditor apiBase={API} initial={workoutEditor.id ? workoutEditor : null} date={workoutEditor.date}
+        onClose={() => setWorkoutEditor(null)}
+        onSaved={workout => setPlannedWorkouts(current => [workout, ...current.filter(w => w.id !== workout.id)])}
+        onDeleted={id => setPlannedWorkouts(current => current.filter(w => w.id !== id))}
+        onImport={() => { setWorkoutEditor(null); setLegacyUpload(false); setShowUpload(true); }} />}
       {showUpload && !legacyUpload && <BatchImport apiBase={API} initialSelection={incomingDrop}
         onImported={activity => setActivities(current => [activity, ...current.filter(a => a.id !== activity.id)].sort((a, b) => new Date(b.date) - new Date(a.date)))}
         onClose={() => { setShowUpload(false); setIncomingDrop(null); setSelected(null); setPage('dashboard'); window.location.hash = ''; }}

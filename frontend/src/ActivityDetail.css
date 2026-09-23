@@ -5,6 +5,18 @@
 .activity-heading h1 { font-size: clamp(22px, 3vw, 30px); font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; margin: 0 0 8px; }
 .activity-heading p, .recording-info p, .activity-section p { color: #64748b; font-size: 13px; line-height: 1.7; }
 .original-download { flex-shrink: 0; color: #345e91; padding: 10px 14px; border: 1px solid #ccd8e6; border-radius: 6px; font-size: 12px; text-decoration: none; background: white; }
+.activity-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.activity-delete, .activity-confirm-actions button { padding: 10px 14px; border: 1px solid #ccd8e6; border-radius: 6px; background: white; font: inherit; font-size: 12px; cursor: pointer; }
+.activity-delete { color: #b42332; border-color: #edc9cd; white-space: nowrap; }
+.activity-delete:hover { background: #fff1f2; }
+.activity-delete-confirmation { border: 1px solid #edc9cd; border-radius: 10px; background: #fff7f7; padding: 20px; margin-bottom: 24px; }
+.activity-delete-confirmation h2 { margin-top: 0; color: #9c2531; }
+.activity-delete-confirmation p { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.activity-delete-error { color: #b42332; }
+.activity-confirm-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.activity-confirm-actions .activity-delete-confirm { color: white; border-color: #b42332; background: #b42332; }
+.activity-detail button:disabled { cursor: wait; opacity: .6; }
+.activity-detail button:focus-visible, .original-download:focus-visible { outline: 3px solid #3776c4; outline-offset: 3px; }
 .activity-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: #fff; border: 1px solid #dfe5ec; border-radius: 10px; overflow: hidden; }
 .activity-metrics > div { padding: 20px; border-right: 1px solid #edf0f4; border-bottom: 1px solid #edf0f4; }
 .activity-metrics span { display: block; font-size: 12px; color: #6b7889; margin-bottom: 10px; }
@@ -33,5 +45,5 @@
   .app-header > div { flex-wrap: wrap; gap: 10px !important; }
   .app-header nav { flex-wrap: wrap; }
 }
-@media (max-width: 900px) { .activity-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } .activity-heading { flex-direction: column; } }
+@media (max-width: 900px) { .activity-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } .activity-heading { flex-direction: column; } .activity-actions { justify-content: flex-start; } }
 @media (max-width: 560px) { .activity-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .activity-metrics > div { padding: 16px; } .activity-section { padding: 16px; } .activity-metrics strong { font-size: 21px; } }

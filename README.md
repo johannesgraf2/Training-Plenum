@@ -48,6 +48,37 @@ Cycling TSS is an estimate: `hours × (normalized power / FTP)² × 100`. The po
 
 `GET /api/analytics?year=2026&sport=all&timezone=Europe%2FBerlin` returns all summary, annual and weekly/day series. `PUT /api/user` accepts nullable numeric `ftp` (1–1000 W) and `maxHr` (60–250 bpm). Startup adds these profile columns and the analytics cache table without replacing activities. Check with `.venv/Scripts/python.exe -m unittest -v test_analytics test_fit_import test_best_efforts` from the backend directory and the frontend test/build commands below.
 
+### AI Coach and athlete context
+
+**AI Coach** combines a compact athlete snapshot with goals, default availability, weekly/daily overrides and subjective check-ins. Connect your own OpenAI API key, review a macro plan, then generate individual weeks or patches. TrainHub renders workout templates, enforces availability and locked sessions, and only applies recommendations after explicit confirmation. Imported sensor streams are never sent to the provider.
+
+Install the updated backend requirements and configure the server-side `TRAINHUB_AI_ENCRYPTION_KEY` before saving a provider key. See [AI Coach setup, data definitions, security and API](AI-COACH.md) for key backup/rotation, provenance, calendar boundaries, current limitations and the complete workflow. This remains a local single-athlete application; remote/shared deployments require authentication and deployment hardening.
+
+### Plan a workout and export it to Garmin
+
+On **Startseite**, click **Workout hinzufügen** under **Heute** or **Morgen** (or the corresponding **+**). The editor starts with that day's date. Choose running or cycling and add, remove or reorder steps and repeat blocks. Templates are filtered by the selected sport; selecting one replaces the draft's name and steps, preserving the date. All values are editable.
+
+- Cycling templates: 30 minutes at 180 W; 60 minutes at 140 W; five repetitions of 4 minutes at 330 W and 4 minutes recovery at 120 W; and **3 × 7 × 40/20 s**, with 40 seconds at 330 W and 20 seconds at 120 W. Both interval templates include 10 minutes warmup at 120 W and 10 minutes cooldown at 100 W. The 40/20 workout has exactly two additional 5-minute rests at 120 W between its three sets (51 minutes total). Its three independent repeat blocks remain editable and export without nested repeats.
+- Running templates: **10 × 400 m / 200 m jog**, **5 × 1 km / 400 m jog**, and **3 × 2 km / 600 m jog**. Each includes 2 km warmup and 1 km cooldown. Work intervals start with an editable example pace of 4:00–4:10/km; recovery has no target. These templates cover 9 km, 10 km and 10.8 km respectively.
+
+The **Gesamtübersicht** expands all repetitions in an interactive profile and shows total duration/distance, work, recovery and average target power when available. All-time workouts use a proportional time axis; all-distance workouts use a proportional distance axis. Mixed/open workouts use equal-width steps explicitly labelled as a sequence. Watt-target bars use their target (the midpoint for a range); unspecified targets are never presented as zero watts. Click any repetition to jump to its shared editor. Average target power is time-weighted and only shown when every step has a known time and power target.
+
+In **Kalender**, hover over a day to reveal **+** and plan a workout with that date already selected. The button also appears with keyboard focus and stays visible on touch devices. Saved plans appear as **Geplant** cards on their local calendar dates. Click a card to edit it; moving its date or deleting it updates the calendar immediately. Plans remain separate from completed activities and the completed weekly totals.
+
+Selecting **Intervalle mit Pause** or **+ Intervalle mit Pause** creates a complete repeated block with independent work/recovery durations and targets. The two halves appear side by side. A **Fester Wert** power target stores the same lower/upper watt value; **Zielbereich** keeps separate bounds. Every repeat includes its final recovery step, as shown in the overview. Existing saved workouts can still be opened and edited, including standalone interval steps.
+
+- Duration: time in `min:ss`, distance in metres, or an open step ended with the Lap button.
+- Targets: none, pace in `min:ss/km`, speed in km/h, absolute heart rate in bpm, power in watts, or cadence in rpm. Enter the faster pace first. Intensities include warmup, active, interval, recovery and cooldown.
+- Repeat blocks contain ordinary steps, with 2–99 repetitions; nested repeats are not supported. The editor permits up to 50 encoded steps including repeat markers. Device-specific limits may be lower.
+- **Workout speichern** persists the plan in SQLite. Today/tomorrow plans appear in the corresponding cards; other dates appear under **Weitere geplante Workouts**. Open a saved plan to edit, download or delete it. Plans are stored separately from completed activities and do not affect training statistics.
+- **Garmin FIT herunterladen** exports the current editor contents, including unsaved edits. Saving is a separate action. The selected date prefixes the actual Garmin workout name, e.g. `24.09.2026 · 30 min konstant`, and the downloaded filename, e.g. `2026-09-24_30_min_konstant.fit`. The editor previews the device name. The saved plan keeps its original name; the FIT file contains the workout instructions and a dated name, not a device calendar entry.
+
+Connect a compatible Garmin by USB, copy the downloaded `.fit` into `GARMIN/NewFiles`, then safely eject it and select the workout with the matching date in its training menu. Available USB access, targets and workout support depend on the device. The user confirmed the five-minute USB test workout appears in the Edge 1050 workout library; the separate schedule-file experiment did not produce a confirmed calendar entry. Date prefixes are checked in the exported FIT bytes. See [Garmin's transfer guidance](https://support.garmin.com/en-GB/?faq=AXV7LuWgc73v21nq6nbDa6).
+
+The internal model is versioned JSON with `name`, `sport` (`run`/`ride`), a local `date` (`YYYY-MM-DD`) and `steps`. Ordinary steps have `kind: "step"`, `name`, `intensity`, `duration` and `target`; repeats have `kind: "repeat"`, `count` and ordinary `steps`. Model units are seconds, metres, seconds/km, km/h, bpm, watts and rpm. `POST /api/workouts` saves a plan, `GET /api/workouts` lists it, `PUT`/`DELETE /api/workouts/:id` edit/remove it, and `POST /api/workouts/export` downloads a validated FIT file from a model.
+
+The official [Garmin Python FIT SDK](https://github.com/garmin/fit-python-sdk#encoder) handles encoding and CRC. `workout_export.py` implements the [Garmin workout mapping](https://developer.garmin.com/fit/articles/file-types/workout.html), including pace-to-speed conversion, absolute HR/power offsets and indexed repeat messages. Every exported file is decoded again and checked for integrity, step count, indices, repeat references and exact target values before download. Tests also use the existing independent `fitparse` decoder. Install the updated backend requirements before starting an existing checkout. Run `.venv/Scripts/python.exe -m unittest -v test_workout_export test_fit_import test_best_efforts test_analytics` from the backend directory, and the frontend test/build commands below.
+
 ### Start on Windows
 
 After the first setup, run from this folder:
@@ -91,6 +122,7 @@ Tests use a temporary database and do not modify personal activities. On startup
 - **Manuelle Eingabe** — Workouts manuell eintragen
 - **Kalender** — Monatsübersicht mit täglichen Aktivitäten
 - **Dashboard** — Sportarten-Anteile, Rad-Jahresvergleich, Bestwerte, Wochenumfang, Kalorien, TSS und Zonenzeiten mit interaktiven Charts
+- **AI Coach** — Athlete Snapshot, Athletenprofil, BYOK-Provider, Makro-/Wochenpläne und bestätigte Patches mit fixierten Einheiten; [Einrichtung und API](AI-COACH.md)
 - **Aktivitäts-Detail** — Zusammenfassung + interaktive Zeitreihen-Charts (HF, Geschwindigkeit, Leistung, Höhe)
 - **Duplikat-Erkennung** — Verhindert doppelte Uploads
 - **Herzfrequenz-Zonen** — Visuelle Darstellung der HR-Zonen
@@ -160,6 +192,8 @@ npm start
 | GET | `/api/analytics` | Sportarten-, Jahres-, Wochen-, Tages- und Zonenanalysen |
 
 ## Datei-Upload
+
+Absolvierte Aktivitäten lassen sich in ihrer Detailansicht über **Aktivität löschen** entfernen. Die Bestätigung zeigt Name und Datum; erst **Endgültig löschen** führt die Löschung aus. Kalender, Aktivitätslisten und Auswertungen aktualisieren sich anschließend. Bei einem Fehler bleibt die Aktivität geöffnet und die Löschung kann erneut versucht werden.
 
 Unterstützte Formate:
 - **.fit** — Garmin FIT-Dateien (vollständiges Parsing mit fitparse)
