@@ -2,14 +2,16 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 import ActivityDetail from './ActivityDetail';
 import BatchImport from './BatchImport';
-import BestEfforts from './BestEfforts';
 import Dashboard from './Dashboard';
 import AICoach from './AICoach';
+import Home from './Home';
 import UserMenu from './UserMenu';
-import WorkoutEditor, { PlannedWorkoutRows } from './WorkoutEditor';
+import WorkoutEditor from './WorkoutEditor';
 import { localDate, summary as workoutSummary } from './workoutModel';
 import './Calendar.css';
 import { collectDroppedFiles } from './importQueue';
+import { SportMark, sportColor, sportLabels } from './sports';
+import './App.css';
 
 // ─── API HELPER ───
 const API = process.env.REACT_APP_API_URL || 'http://localhost:5000';
@@ -43,9 +45,6 @@ const fmt = {
   num: (n) => n?.toLocaleString('de-DE') ?? '—',
 };
 
-const sportLabels = { run: 'Laufen', ride: 'Radfahren', swim: 'Schwimmen', multisport: 'Multisport', walking: 'Gehen', hiking: 'Wandern' };
-const sportEmoji = { run: '🏃', ride: '🚴', swim: '🏊' };
-const sportColors = { run: '#22c55e', ride: '#3b82f6', swim: '#06b6d4' };
 
 // ─── CLIENT-SIDE CSV PARSER ───
 function parseCSVClient(text) {
@@ -500,19 +499,18 @@ const UploadModal = ({ onClose, onUpload, onBulkImport }) => {
 
         <div style={{ padding: '20px 24px' }}>
           {step === 1 && <>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-6b7280)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'IBM Plex Mono'", marginBottom: 8 }}>Aktivitätstyp</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-6b7280)', textTransform: 'uppercase', letterSpacing: '0.06em',  marginBottom: 8 }}>Aktivitätstyp</div>
             <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
               {['run', 'ride', 'swim'].map(s => (
                 <button key={s} onClick={() => setSport(s)} style={{
-                  flex: 1, padding: '14px 8px', borderRadius: 8, border: `2px solid ${sport === s ? sportColors[s] : 'var(--bd-e5e7eb)'}`,
-                  background: sport === s ? sportColors[s] + '10' : 'var(--bg-ffffff)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                  flex: 1, padding: '14px 8px', borderRadius: 8, border: `2px solid ${sport === s ? sportColor(s) : 'var(--line)'}`,
+                  background: sport === s ? 'var(--tint)' : 'var(--surface)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
                 }}>
-                  <div style={{ fontSize: 22, marginBottom: 4 }}>{sportEmoji[s]}</div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: sport === s ? sportColors[s] : 'var(--fg-6b7280)' }}>{sportLabels[s]}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: sport === s ? 'var(--ink)' : 'var(--muted)' }}>{sportLabels[s]}</div>
                 </button>
               ))}
             </div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-6b7280)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'IBM Plex Mono'", marginBottom: 8 }}>Methode</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-6b7280)', textTransform: 'uppercase', letterSpacing: '0.06em',  marginBottom: 8 }}>Methode</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
               {[['file', 'Datei hochladen'], ['manual', 'Manuell eingeben']].map(([k, l]) => (
                 <button key={k} onClick={() => setMethod(k)} style={{
@@ -576,7 +574,7 @@ const UploadModal = ({ onClose, onUpload, onBulkImport }) => {
             {/* CSV Preview Panel */}
             {preview && (
               <div style={{ background: 'var(--bg-f8fafc)', borderRadius: 8, border: '1px solid var(--bd-e2e8f0)', padding: 14, marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-1e40af)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'IBM Plex Mono'", marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-1e40af)', textTransform: 'uppercase', letterSpacing: '0.06em',  marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                   ✓ CSV geparst — Vorschau
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
@@ -592,12 +590,12 @@ const UploadModal = ({ onClose, onUpload, onBulkImport }) => {
                     { l: 'Datenpunkte', v: preview.session.dataPoints },
                   ].filter(Boolean).map((s, i) => (
                     <div key={i} style={{ padding: '6px 8px', background: 'var(--bg-ffffff)', borderRadius: 6, border: '1px solid var(--bd-e5e7eb)' }}>
-                      <div style={{ fontSize: 9, color: '#9ca3af', fontFamily: "'IBM Plex Mono'", textTransform: 'uppercase' }}>{s.l}</div>
+                      <div style={{ fontSize: 9, color: '#9ca3af',  textTransform: 'uppercase' }}>{s.l}</div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--fg-1e293b)' }}>{s.v}</div>
                     </div>
                   ))}
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--fg-6b7280)', fontFamily: "'IBM Plex Mono'" }}>
+                <div style={{ fontSize: 10, color: 'var(--fg-6b7280)' }}>
                   Erkannte Spalten: {preview.session.columnsFound?.join(', ') || '—'}
                 </div>
               </div>
@@ -617,13 +615,13 @@ const UploadModal = ({ onClose, onUpload, onBulkImport }) => {
           {step === 2 && method === 'manual' && <>
             {[['title', 'Titel', 'text', 'z.B. Morgenlauf'], ['duration', 'Dauer (Minuten)', 'number', 'z.B. 45'], ['distance', 'Distanz (km)', 'number', 'z.B. 8.5'], ['hrAvg', 'Ø Herzfrequenz', 'number', 'z.B. 148']].map(([k, l, t, p]) => (
               <div key={k} style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-6b7280)', textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: "'IBM Plex Mono'", display: 'block', marginBottom: 5 }}>{l}</label>
+                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-6b7280)', textTransform: 'uppercase', letterSpacing: '0.05em',  display: 'block', marginBottom: 5 }}>{l}</label>
                 <input type={t} placeholder={p} value={manual[k]} onChange={e => setManual(prev => ({ ...prev, [k]: e.target.value }))}
                   style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--bd-e5e7eb)', fontSize: 13, outline: 'none' }} />
               </div>
             ))}
             <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-6b7280)', textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: "'IBM Plex Mono'", display: 'block', marginBottom: 5 }}>Notizen</label>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-6b7280)', textTransform: 'uppercase', letterSpacing: '0.05em',  display: 'block', marginBottom: 5 }}>Notizen</label>
               <textarea value={manual.notes} onChange={e => setManual(p => ({ ...p, notes: e.target.value }))} placeholder="Wie war das Training?" rows={3}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--bd-e5e7eb)', fontSize: 13, outline: 'none', resize: 'vertical' }} />
             </div>
@@ -647,24 +645,21 @@ const UploadModal = ({ onClose, onUpload, onBulkImport }) => {
             <div style={{ background: 'var(--bg-f8fafc)', borderRadius: 10, border: '1px solid var(--bd-e2e8f0)', padding: 16, marginBottom: 16 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                 <div style={{ background: 'var(--bg-ffffff)', borderRadius: 8, padding: '10px 12px', border: '1px solid var(--bd-e5e7eb)' }}>
-                  <div style={{ fontSize: 10, color: '#9ca3af', fontFamily: "'IBM Plex Mono'", textTransform: 'uppercase' }}>Aktivitäten</div>
+                  <div style={{ fontSize: 10, color: '#9ca3af',  textTransform: 'uppercase' }}>Aktivitäten</div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--fg-1e40af)' }}>{stravaPreview.total.toLocaleString()}</div>
                 </div>
                 <div style={{ background: 'var(--bg-ffffff)', borderRadius: 8, padding: '10px 12px', border: '1px solid var(--bd-e5e7eb)' }}>
-                  <div style={{ fontSize: 10, color: '#9ca3af', fontFamily: "'IBM Plex Mono'", textTransform: 'uppercase' }}>Gesamtdistanz</div>
+                  <div style={{ fontSize: 10, color: '#9ca3af',  textTransform: 'uppercase' }}>Gesamtdistanz</div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--fg-22c55e)' }}>{Math.round(stravaPreview.totalDist).toLocaleString()} <span style={{ fontSize: 12, fontWeight: 400, color: '#9ca3af' }}>km</span></div>
                 </div>
               </div>
 
               {/* Sport breakdown */}
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-6b7280)', textTransform: 'uppercase', fontFamily: "'IBM Plex Mono'", letterSpacing: '0.05em', marginBottom: 8 }}>Aufschlüsselung nach Sportart</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-6b7280)', textTransform: 'uppercase',  letterSpacing: '0.05em', marginBottom: 8 }}>Aufschlüsselung nach Sportart</div>
               {Object.entries(stravaPreview.bySport).sort((a, b) => b[1].count - a[1].count).map(([sport, data]) => (
                 <div key={sport} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--bd-f3f4f6)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 14 }}>{sportEmoji[sport] || '🏋️'}</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg-374151)' }}>{sportLabels[sport] || sport}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--fg-6b7280)', fontFamily: "'IBM Plex Mono'" }}>
+                  <SportMark sport={sport} />
+                  <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--fg-6b7280)' }}>
                     <span>{data.count}x</span>
                     <span>{Math.round(data.distance).toLocaleString()} km</span>
                     <span>{fmt.dur(data.duration)}</span>
@@ -678,7 +673,7 @@ const UploadModal = ({ onClose, onUpload, onBulkImport }) => {
               <div style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--fg-6b7280)', marginBottom: 6 }}>
                   <span>Importiere Aktivitäten…</span>
-                  <span style={{ fontFamily: "'IBM Plex Mono'", fontWeight: 600 }}>{importProgress.done} / {importProgress.total}</span>
+                  <span style={{ fontWeight: 600 }}>{importProgress.done} / {importProgress.total}</span>
                 </div>
                 <div style={{ height: 8, background: 'var(--bg-e5e7eb)', borderRadius: 4, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${(importProgress.done / importProgress.total) * 100}%`, background: '#22c55e', borderRadius: 4, transition: 'width 0.3s' }} />
@@ -710,17 +705,6 @@ const UploadModal = ({ onClose, onUpload, onBulkImport }) => {
       </div>
     </div>
   );
-};
-
-// ─── MINI HR CHART ───
-const MiniHR = ({ data, w = 80, h = 28 }) => {
-  if (!data?.length) return null;
-  const vals = data.filter((_, i) => i % 3 === 0).map(d => d.hr).filter(v => v != null);
-  if (vals.length < 2) return null;
-  const min = Math.min(...vals); const max = Math.max(...vals); const range = max - min || 1;
-  const step = w / (vals.length - 1);
-  const pts = vals.map((v, i) => `${i * step},${h - ((v - min) / range) * (h - 4) - 2}`).join(' ');
-  return <svg width={w} height={h}><polyline points={pts} fill="none" stroke="#ef4444" strokeWidth="1.2" opacity="0.6" /></svg>;
 };
 
 // ─── MAIN APP ───
@@ -806,7 +790,6 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
-  // Today / Tomorrow activities
   useEffect(() => {
     let active = true;
     api('/api/workouts').then(saved => { if (active) setPlannedWorkouts(saved); })
@@ -814,31 +797,11 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
-  const today = new Date();
-  const todayStr = today.toDateString();
-  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toDateString();
-  const todayActs = activities.filter(a => new Date(a.date).toDateString() === todayStr);
-  const tomorrowActs = activities.filter(a => new Date(a.date).toDateString() === tomorrowStr);
-  const todayPlans = plannedWorkouts.filter(w => w.date === localDate(today));
-  const tomorrowPlans = plannedWorkouts.filter(w => w.date === localDate(tomorrow));
-  const otherPlans = plannedWorkouts.filter(w => w.date !== localDate(today) && w.date !== localDate(tomorrow)).sort((a, b) => b.date.localeCompare(a.date));
+  const reloadWorkouts = () => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })
+    .catch(error => setWorkoutLoadError(error.message));
+  const openCoachProfile = () => { setCoachTab(t => ({ tab: 'profile', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
 
-  // Weekly stats
-  const thisWeekActs = useMemo(() => {
-    const start = new Date(today);
-    start.setDate(start.getDate() - (start.getDay() + 6) % 7);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start); end.setDate(end.getDate() + 7);
-    return activities.filter(a => new Date(a.date) >= start && new Date(a.date) < end);
-  }, [activities]);
-
-  const weekStats = useMemo(() => ({
-    count: thisWeekActs.length,
-    duration: thisWeekActs.reduce((s, a) => s + (a.duration || 0), 0),
-    distance: thisWeekActs.reduce((s, a) => s + (a.distance || 0), 0),
-    calories: thisWeekActs.reduce((s, a) => s + (a.calories || 0), 0),
-  }), [thisWeekActs]);
+  const todayStr = new Date().toDateString();
 
   // Calendar data
   // Build calendar as weekly rows (for TrainingPeaks-style layout with weekly summary sidebar)
@@ -882,10 +845,11 @@ export default function App() {
     }
     return weeks;
   }, [calMonth, activities, plannedWorkouts]);
+  const maxSportDuration = Math.max(1, ...calWeeks.flatMap(w => Object.values(w.summary.bySport).map(sport => sport.duration)));
 
   // ─── RENDER ───
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-f5f6f8)' }}
+    <div className="app"
       onDragOver={event => { if (Array.from(event.dataTransfer.types || []).includes('Files')) event.preventDefault(); }}
       onDrop={event => {
         event.preventDefault();
@@ -895,465 +859,148 @@ export default function App() {
         setLegacyUpload(false);
         setShowUpload(true);
       }}>
-      {/* TOP NAV BAR — TrainingPeaks style */}
-      <header className="app-header" style={{ background: '#1e293b', height: 48, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', position: 'sticky', top: 0, zIndex: 100 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 26, height: 26, borderRadius: 6, background: 'linear-gradient(135deg, #3b82f6, #1e40af)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: '#fff', fontSize: 14, fontWeight: 800 }}>T</span>
-            </div>
-            <span style={{ color: '#fff', fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>Training Plēnum</span>
-          </div>
-          <nav style={{ display: 'flex', gap: 4 }}>
+      <header className="app-header">
+        <div className="app-header-start">
+          <span className="app-wordmark">Training Plēnum</span>
+          <nav aria-label="Hauptnavigation" className="app-nav">
             {[['home', 'Startseite'], ['calendar', 'Kalender'], ['dashboard', 'Dashboard'], ['coach', 'AI Coach']].map(([id, label]) => (
-              <button key={id} onClick={() => { setPage(id); setSelected(null); window.location.hash = ''; }} style={{
-                padding: '6px 14px', borderRadius: 6, border: 'none',
-                background: page === id && !selected ? 'rgba(255,255,255,0.12)' : 'transparent',
-                color: page === id && !selected ? '#fff' : '#94a3b8',
-                fontSize: 13, fontWeight: page === id ? 600 : 400, cursor: 'pointer', transition: 'all 0.15s',
-              }}>{label}</button>
+              <button key={id} type="button" aria-current={page === id && !selected ? 'page' : undefined}
+                onClick={() => { setPage(id); setSelected(null); window.location.hash = ''; }}>{label}</button>
             ))}
           </nav>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <button onClick={() => setShowUpload(true)} style={{
-            padding: '6px 16px', borderRadius: 6, border: '1px solid #3b82f6', background: 'transparent',
-            color: '#60a5fa', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5
-          }}>+ Upload</button>
+        <div className="app-header-end">
+          <button type="button" className="app-import" onClick={() => setShowUpload(true)}>Datei importieren</button>
           <UserMenu apiBase={API} user={user}
             onSaved={(saved, changed) => { setUser(saved); if (changed) { setProfileVersion(v => v + 1); setToast('Profil gespeichert.'); setTimeout(() => setToast(null), 3000); } }}
-            onOpenCoachProfile={() => { setCoachTab(t => ({ tab: 'profile', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; }} />
+            onOpenCoachProfile={openCoachProfile} />
         </div>
       </header>
 
-      {loading && <p role="status" style={{ padding: 20 }}>Aktivitäten werden geladen…</p>}
-      {loadError && <div role="alert" style={{ padding: 16, margin: 16, background: 'var(--bg-fef2f2)', color: 'var(--fg-b91c1c)' }}>{loadError} <button onClick={() => window.location.reload()}>Erneut versuchen</button></div>}
-      {!loading && !loadError && !activities.length && <div style={{ padding: 24, textAlign: 'center' }}>Noch keine Aktivitäten. Über „+ Upload“ eine FIT-Datei importieren.</div>}
-      {/* MAIN CONTENT */}
-      <div style={{ maxWidth: page === 'calendar' ? 'none' : 1340, margin: '0 auto', padding: page === 'calendar' ? '0' : '0 16px', transition: 'max-width 0.2s' }}>
+      {loading && <p role="status" className="app-notice">Aktivitäten werden geladen…</p>}
+      {loadError && <div role="alert" className="app-notice app-notice-error">{loadError} <button type="button" onClick={() => window.location.reload()}>Erneut versuchen</button></div>}
+      {!loading && !loadError && !activities.length && <p className="app-notice">Noch keine Aktivitäten. Über „Datei importieren“ eine FIT-Datei hochladen.</p>}
+      <main className={`app-main${page === 'calendar' && !selected ? ' app-main-wide' : ''}`}>
         {selected ? (
           <div style={{ padding: '20px 0' }}>
             <ActivityDetail key={selected.id} activity={selected} apiBase={API} onDelete={deleteActivity}
               onBack={() => { setSelected(null); window.location.hash = ''; }} />
           </div>
         ) : page === 'home' ? (
-          /* ─── STARTSEITE (3-column TrainingPeaks layout) ─── */
-          <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 300px', gap: 20, padding: '20px 0', alignItems: 'start' }}>
-            {/* LEFT COLUMN — Trainingspläne, Veranstaltungen, Ziele */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* Trainingspläne */}
-              <div style={{ background: 'var(--bg-ffffff)', borderRadius: 10, border: '1px solid var(--bd-e5e7eb)', padding: 20 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 8px' }}>Trainingspläne</h3>
-                <p style={{ fontSize: 13, color: 'var(--fg-6b7280)', margin: '0 0 12px', lineHeight: 1.5 }}>Übertriff dich selbst mit diesen Trainingsplänen.</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {['Schwelle verbessern', 'Grundlagenausdauer', '100km Fahrt', 'Intervalltraining', 'Krafttraining'].map(p => (
-                    <span key={p} style={{ padding: '5px 12px', borderRadius: 20, border: '1px solid #1e40af', color: 'var(--fg-1e40af)', fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>{p}</span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Veranstaltungen */}
-              <div style={{ background: 'var(--bg-ffffff)', borderRadius: 10, border: '1px solid var(--bd-e5e7eb)', padding: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Veranstaltungen</h3>
-                  <span style={{ color: '#9ca3af', cursor: 'pointer' }}>+</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <span style={{ fontSize: 24 }}>🏆</span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>Wofür trainierst du?</div>
-                    <div style={{ fontSize: 12, color: 'var(--fg-6b7280)', lineHeight: 1.4 }}>Behalte bevorstehende Ereignisse im Blick.</div>
-                  </div>
-                </div>
-                <button style={{ padding: '7px 16px', borderRadius: 20, border: '1px solid #1e40af', background: 'var(--bg-ffffff)', color: 'var(--fg-1e40af)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>Ereignis hinzufügen</button>
-              </div>
-
-              {/* Ziele */}
-              <div style={{ background: 'var(--bg-ffffff)', borderRadius: 10, border: '1px solid var(--bd-e5e7eb)', padding: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Ziele</h3>
-                  <span style={{ color: '#9ca3af', cursor: 'pointer' }}>+</span>
-                </div>
-                <p style={{ fontSize: 13, color: 'var(--fg-6b7280)', lineHeight: 1.5, margin: '0 0 8px' }}>Bleiben Sie auf Kurs, indem Sie Trainingsziele hinzufügen.</p>
-                <div style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic', lineHeight: 1.5 }}>
-                  Beispiele:<br />
-                  Arbeite an einem gleichmäßigen Tritt<br />
-                  Dehne dich nach jeder Fahrt
-                </div>
-                <button style={{ marginTop: 10, padding: '7px 16px', borderRadius: 20, border: '1px solid #1e40af', background: 'var(--bg-ffffff)', color: 'var(--fg-1e40af)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>Ziel hinzufügen</button>
-              </div>
-            </div>
-
-            {/* CENTER COLUMN — Heute / Morgen */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* Heute */}
-              <div style={{ background: 'var(--bg-ffffff)', borderRadius: 10, border: '1px solid var(--bd-e5e7eb)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid var(--bd-e5e7eb)' }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Heute</h3>
-                  <button aria-label="Workout für heute hinzufügen" onClick={() => setWorkoutEditor({ date: localDate(today) })} style={{ color: 'var(--fg-1e40af)', cursor: 'pointer', fontSize: 22, border: 0, background: 'none' }}>+</button>
-                </div>
-                <PlannedWorkoutRows workouts={todayPlans} onOpen={setWorkoutEditor} />
-                {todayActs.length > 0 ? todayActs.map(a => (
-                  <div key={a.id} onClick={() => openActivity(a)} style={{ padding: '14px 20px', borderBottom: '1px solid var(--bd-f3f4f6)', cursor: 'pointer', transition: 'background 0.1s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-f9fafb)'} onMouseLeave={e => e.currentTarget.style.background = ''}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span>{sportEmoji[a.sport]}</span>
-                        <span style={{ fontWeight: 600, fontSize: 14 }}>{a.title}</span>
-                      </div>
-                      <span style={{ fontSize: 12, color: '#9ca3af' }}>{fmt.time(a.date)}</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--fg-6b7280)' }}>
-                      <span>⏱ {fmt.dur(a.duration)}</span>
-                      <span>📏 {a.distance == null ? '—' : a.distance.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km</span>
-                      {a.hrAvg && <span>❤️ {a.hrAvg} bpm</span>}
-                      {a.power && <span>⚡ {a.power} W</span>}
-                    </div>
-                  </div>
-                )) : todayPlans.length === 0 ? (
-                  <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-                    <p style={{ color: '#9ca3af', fontSize: 14, marginBottom: 14 }}>Du hast heute keine geplanten Workouts.</p>
-                    <button onClick={() => setWorkoutEditor({ date: localDate(today) })} style={{
-                      padding: '10px 24px', borderRadius: 8, border: 'none', background: '#1e40af', color: '#fff',
-                      fontSize: 13, fontWeight: 600, cursor: 'pointer'
-                    }}>Workout hinzufügen</button>
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Morgen */}
-              <div style={{ background: 'var(--bg-ffffff)', borderRadius: 10, border: '1px solid var(--bd-e5e7eb)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid var(--bd-e5e7eb)' }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Morgen</h3>
-                  <button aria-label="Workout für morgen hinzufügen" onClick={() => setWorkoutEditor({ date: localDate(tomorrow) })} style={{ color: 'var(--fg-1e40af)', cursor: 'pointer', fontSize: 22, border: 0, background: 'none' }}>+</button>
-                </div>
-                <PlannedWorkoutRows workouts={tomorrowPlans} onOpen={setWorkoutEditor} />
-                {tomorrowActs.length > 0 ? tomorrowActs.map(a => (
-                  <div key={a.id} onClick={() => openActivity(a)} style={{ padding: '14px 20px', borderBottom: '1px solid var(--bd-f3f4f6)', cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <span>{sportEmoji[a.sport]}</span>
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>{a.title}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--fg-6b7280)' }}>⏱ {fmt.dur(a.duration)} · 📏 {a.distance == null ? '—' : a.distance.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km</div>
-                  </div>
-                )) : tomorrowPlans.length === 0 ? (
-                  <div style={{ padding: '36px 20px', textAlign: 'center' }}>
-                    <p style={{ color: '#9ca3af', fontSize: 14, marginBottom: 14 }}>Du hast morgen keine geplanten Workouts.</p>
-                    <button onClick={() => setWorkoutEditor({ date: localDate(tomorrow) })} style={{
-                      padding: '10px 24px', borderRadius: 8, border: 'none', background: '#1e40af', color: '#fff',
-                      fontSize: 13, fontWeight: 600, cursor: 'pointer'
-                    }}>Workout hinzufügen</button>
-                  </div>
-                ) : null}
-              </div>
-
-              {workoutLoadError && <p role="alert" style={{ color: 'var(--fg-b91c1c)', fontSize: 13 }}>{workoutLoadError} <button onClick={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); }).catch(error => setWorkoutLoadError(error.message))}>Erneut laden</button></p>}
-              {otherPlans.length > 0 && <div style={{ background: 'var(--bg-ffffff)', borderRadius: 10, border: '1px solid var(--bd-e5e7eb)', overflow: 'hidden' }}>
-                <h3 style={{ padding: '14px 20px', fontSize: 15, margin: 0 }}>Weitere geplante Workouts</h3>
-                <PlannedWorkoutRows workouts={otherPlans} onOpen={setWorkoutEditor} showDate />
-              </div>}
-
-              {/* Letzte Aktivitäten */}
-              <div style={{ background: 'var(--bg-ffffff)', borderRadius: 10, border: '1px solid var(--bd-e5e7eb)' }}>
-                <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--bd-e5e7eb)' }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Letzte Aktivitäten</h3>
-                </div>
-                {activities.slice(0, 6).map(a => (
-                  <div key={a.id} onClick={() => openActivity(a)} style={{ padding: '12px 20px', borderBottom: '1px solid var(--bd-f3f4f6)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transition: 'background 0.1s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-f9fafb)'} onMouseLeave={e => e.currentTarget.style.background = ''}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>{sportEmoji[a.sport]}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{a.title}</div>
-                      <div style={{ fontSize: 11, color: '#9ca3af' }}>{fmt.date(a.date)} · {fmt.time(a.date)}</div>
-                    </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0, marginRight: 8 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{a.distance == null ? '—' : a.distance.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km</div>
-                      <div style={{ fontSize: 11, color: '#9ca3af' }}>{fmt.dur(a.duration)}</div>
-                    </div>
-                    <MiniHR data={a.timeSeries} />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* RIGHT COLUMN — Wochenübersicht */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* Wochenübersicht */}
-              <div style={{ background: 'var(--bg-ffffff)', borderRadius: 10, border: '1px solid var(--bd-e5e7eb)', padding: 20 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 16px' }}>Wochenübersicht</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-                  {[
-                    { l: 'Aktivitäten', v: weekStats.count, c: '#3b82f6' },
-                    { l: 'Dauer', v: fmt.dur(weekStats.duration), c: '#22c55e' },
-                    { l: 'Distanz', v: `${weekStats.distance.toFixed(1)} km`, c: '#f59e0b' },
-                    { l: 'Kalorien', v: `${weekStats.calories}`, c: '#ef4444' },
-                  ].map((s, i) => (
-                    <div key={i} style={{ padding: '10px 12px', borderRadius: 8, background: s.c + '08', border: `1px solid ${s.c}18` }}>
-                      <div style={{ fontSize: 10, color: '#9ca3af', fontFamily: "'IBM Plex Mono'", textTransform: 'uppercase', marginBottom: 3 }}>{s.l}</div>
-                      <div style={{ fontSize: 17, fontWeight: 700, color: s.c }}>{s.v}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Sport breakdown */}
-                {(() => {
-                  const byS = {};
-                  thisWeekActs.forEach(a => { byS[a.sport] = (byS[a.sport] || 0) + a.duration; });
-                  const entries = Object.entries(byS);
-                  if (!entries.length) return null;
-                  const total = entries.reduce((s, [, v]) => s + v, 0) || 1;
-                  return (
-                    <div>
-                      <div style={{ fontSize: 11, color: '#9ca3af', fontFamily: "'IBM Plex Mono'", textTransform: 'uppercase', marginBottom: 8 }}>Sportaufteilung</div>
-                      <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
-                        {entries.map(([s, d]) => <div key={s} style={{ width: `${(d / total) * 100}%`, background: sportColors[s], transition: 'width 0.3s' }} />)}
-                      </div>
-                      <div style={{ display: 'flex', gap: 12 }}>
-                        {entries.map(([s, d]) => (
-                          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--fg-6b7280)' }}>
-                            <div style={{ width: 8, height: 8, borderRadius: 2, background: sportColors[s] }} />
-                            {sportLabels[s]} · {fmt.dur(d)}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Herzfrequenz-Zonen */}
-              <div style={{ background: 'var(--bg-ffffff)', borderRadius: 10, border: '1px solid var(--bd-e5e7eb)', padding: 20 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>Herzfrequenz-Zonen</h3>
-                {[
-                  { z: 'Z1 Erholung', range: '< 120 bpm', pct: 15, c: '#93c5fd' },
-                  { z: 'Z2 Grundlage', range: '120–140', pct: 35, c: '#22c55e' },
-                  { z: 'Z3 Tempo', range: '140–160', pct: 25, c: '#eab308' },
-                  { z: 'Z4 Schwelle', range: '160–175', pct: 18, c: '#f97316' },
-                  { z: 'Z5 VO2max', range: '> 175', pct: 7, c: '#ef4444' },
-                ].map(z => (
-                  <div key={z.z} style={{ marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
-                      <span style={{ fontWeight: 500, color: 'var(--fg-374151)' }}>{z.z}</span>
-                      <span style={{ color: '#9ca3af', fontFamily: "'IBM Plex Mono'" }}>{z.range}</span>
-                    </div>
-                    <div style={{ height: 5, background: 'var(--bg-f3f4f6)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${z.pct}%`, background: z.c, borderRadius: 3 }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <BestEfforts apiBase={API} activities={activities} viewedYear={calMonth.getFullYear()} onOpenActivity={openActivity} />
-            </div>
-          </div>
-
+          <Home apiBase={API} activities={activities} plannedWorkouts={plannedWorkouts} workoutLoadError={workoutLoadError}
+            onReloadWorkouts={reloadWorkouts} onOpenActivity={openActivity} onOpenWorkout={setWorkoutEditor}
+            onEditGoal={openCoachProfile} bestEffortsYear={calMonth.getFullYear()} />
         ) : page === 'calendar' ? (
-          /* ─── KALENDER (TrainingPeaks fullwidth) ─── */
-          <div style={{ padding: 0 }}>
-            {/* Calendar Header Bar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 20px', background: 'var(--bg-ffffff)', borderBottom: '1px solid var(--bd-e5e7eb)' }}>
-              <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>
-                {calMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}
-              </h2>
-              <select
-                value={`${calMonth.getFullYear()}-${calMonth.getMonth()}`}
-                onChange={e => { const [y, m] = e.target.value.split('-'); setCalMonth(new Date(+y, +m, 1)); }}
-                style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--bd-d1d5db)', fontSize: 12, color: 'var(--fg-6b7280)', background: 'var(--bg-ffffff)', cursor: 'pointer' }}
-              >
+          <div className="calendar">
+            <div className="calendar-toolbar">
+              <h2>{calMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</h2>
+              <select aria-label="Monat wählen" value={`${calMonth.getFullYear()}-${calMonth.getMonth()}`}
+                onChange={e => { const [y, m] = e.target.value.split('-'); setCalMonth(new Date(+y, +m, 1)); }}>
                 {Array.from({ length: 12 }, (_, i) => {
                   const d = new Date(calMonth.getFullYear(), i, 1);
                   return <option key={i} value={`${d.getFullYear()}-${i}`}>{d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</option>;
                 })}
               </select>
-              <div style={{ display: 'flex', gap: 2, marginLeft: 4 }}>
-                <button onClick={() => {
-                  const now = new Date();
-                  setCalMonth(new Date(now.getFullYear(), now.getMonth(), 1));
-                }} style={{ padding: '5px 14px', borderRadius: 4, border: '1px solid var(--bd-d1d5db)', background: 'var(--bg-ffffff)', fontSize: 13, fontWeight: 500, cursor: 'pointer', color: 'var(--fg-374151)' }}>Heute</button>
-                <button aria-label="Vorheriger Monat" onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))} style={{ padding: '5px 12px', borderRadius: 4, border: '1px solid var(--bd-d1d5db)', background: 'var(--bg-ffffff)', fontSize: 16, cursor: 'pointer', color: 'var(--fg-6b7280)', lineHeight: 1 }}>‹</button>
-                <button aria-label="Nächster Monat" onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1))} style={{ padding: '5px 12px', borderRadius: 4, border: '1px solid var(--bd-d1d5db)', background: 'var(--bg-ffffff)', fontSize: 16, cursor: 'pointer', color: 'var(--fg-6b7280)', lineHeight: 1 }}>›</button>
+              <div className="calendar-nav">
+                <button type="button" onClick={() => { const now = new Date(); setCalMonth(new Date(now.getFullYear(), now.getMonth(), 1)); }}>Heute</button>
+                <button type="button" aria-label="Vorheriger Monat" onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))}>‹</button>
+                <button type="button" aria-label="Nächster Monat" onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1))}>›</button>
               </div>
             </div>
 
-            {workoutLoadError && <p role="alert" style={{ color: 'var(--fg-b91c1c)', fontSize: 13, padding: '0 20px' }}>{workoutLoadError} <button onClick={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); }).catch(error => setWorkoutLoadError(error.message))}>Erneut laden</button></p>}
+            {workoutLoadError && <p role="alert" className="calendar-error">{workoutLoadError} <button type="button" onClick={reloadWorkouts}>Erneut laden</button></p>}
 
-            {/* Day-of-week header + SUMMARY */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr) 240px', borderBottom: '2px solid var(--bd-d1d5db)', background: 'var(--bg-ffffff)' }}>
-              {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => (
-                <div key={d} style={{ padding: '10px 8px', fontSize: 12, fontWeight: 600, color: 'var(--fg-6b7280)', fontFamily: "'IBM Plex Mono'", letterSpacing: '0.05em', textAlign: 'center', borderRight: '1px solid var(--bd-e5e7eb)' }}>{d}</div>
-              ))}
-              <div style={{ padding: '10px 12px', fontSize: 12, fontWeight: 600, color: 'var(--fg-6b7280)', fontFamily: "'IBM Plex Mono'", letterSpacing: '0.05em', textAlign: 'center' }}>SUMMARY</div>
+            <div className="calendar-head">
+              {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(d => <div key={d}>{d}</div>)}
+              <div>Woche</div>
             </div>
 
-            {/* Weekly rows */}
             {calWeeks.map((week, wi) => (
-              <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr) 240px', borderBottom: '1px solid var(--bd-e5e7eb)' }}>
-                {/* 7 Day cells */}
+              <div key={wi} className="calendar-week">
                 {week.cells.map((cell, ci) => {
-                  if (!cell) return <div key={`e${wi}-${ci}`} style={{ background: 'var(--bg-f9fafb)', borderRight: '1px solid var(--bd-e5e7eb)', minHeight: 160 }} />;
+                  if (!cell) return <div key={`e${wi}-${ci}`} className="calendar-day-empty" />;
                   const isToday = cell.date.toDateString() === todayStr;
                   return (
-                    <div key={`${wi}-${ci}`} className="calendar-day" data-date={localDate(cell.date)} role="group" aria-label={`Kalendertag ${fmt.dateFull(cell.date)}`} style={{
-                      borderRight: '1px solid var(--bd-e5e7eb)', padding: '4px 6px',
-                      background: isToday ? 'var(--bg-dbeafe)' : 'var(--bg-ffffff)',
-                      display: 'flex', flexDirection: 'column', minHeight: 160,
-                    }}>
+                    <div key={`${wi}-${ci}`} className={`calendar-day${isToday ? ' today' : ''}`} data-date={localDate(cell.date)} role="group" aria-label={`Kalendertag ${fmt.dateFull(cell.date)}`}>
                       <div className="calendar-day-header">
-                      {/* Day number badge */}
-                      {isToday ? (
-                        <div style={{ background: '#1e40af', color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: "'IBM Plex Mono'", padding: '3px 8px', borderRadius: 4, alignSelf: 'flex-start', marginBottom: 6 }}>
-                          Heute {cell.day}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg-4b5563)', fontFamily: "'IBM Plex Mono'", padding: '2px 4px', marginBottom: 6 }}>
-                          {cell.day === 1 ? `1 ${calMonth.toLocaleDateString('de-DE', { month: 'short' })}` : cell.day}
-                        </div>
-                      )}
-                      <button type="button" className="calendar-add-workout"
-                        aria-label={`Workout am ${cell.date.toLocaleDateString('de-DE')} planen`}
-                        title="Workout planen"
-                        onClick={() => setWorkoutEditor({ date: localDate(cell.date) })}>+</button>
+                        <span className="calendar-day-number">{isToday ? `Heute ${cell.day}` : cell.day === 1 ? `1. ${calMonth.toLocaleDateString('de-DE', { month: 'short' })}` : cell.day}</span>
+                        <button type="button" className="calendar-add-workout"
+                          aria-label={`Workout am ${cell.date.toLocaleDateString('de-DE')} planen`}
+                          title="Workout planen"
+                          onClick={() => setWorkoutEditor({ date: localDate(cell.date) })}>+</button>
                       </div>
 
                       {cell.plans.map(workout => <button type="button" className="calendar-planned-workout" key={workout.id}
-                        style={{ '--calendar-sport-color': sportColors[workout.sport] || '#3b82f6' }}
+                        style={{ '--calendar-sport-color': sportColor(workout.sport) }}
                         aria-label={`${workout.name} am ${cell.date.toLocaleDateString('de-DE')} bearbeiten`}
                         onClick={() => setWorkoutEditor(workout)}>
-                        <span className="calendar-plan-heading"><span aria-hidden="true">{sportEmoji[workout.sport]}</span><span className="calendar-plan-status">Geplant</span></span>
+                        <span className="calendar-plan-heading">{sportLabels[workout.sport] || 'Training'} · <span className="calendar-plan-status">Geplant</span></span>
                         <strong>{workout.name}</strong><small>{workoutSummary(workout)}</small>
                       </button>)}
 
-                      {/* Activity cards — larger, matching TP screenshot */}
-                      {cell.activities.map(a => {
-                        return (
-                          <div key={a.id} onClick={() => openActivity(a)} style={{
-                            background: 'var(--bg-ffffff)',
-                            border: `1px solid ${a.sport === 'ride' ? 'var(--bd-c7d2fe)' : a.sport === 'run' ? 'var(--bd-bbf7d0)' : 'var(--bd-a5f3fc)'}`,
-                            borderLeft: `4px solid ${sportColors[a.sport]}`,
-                            borderRadius: 6, padding: '8px 10px', marginBottom: 4, cursor: 'pointer',
-                            transition: 'box-shadow 0.15s, transform 0.1s',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                          }}
-                            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)'; e.currentTarget.style.transform = 'none'; }}
-                          >
-                            {/* Sport icon + title row */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5 }}>
-                              <span style={{ fontSize: 14 }}>{sportEmoji[a.sport]}</span>
-                              <span style={{ fontWeight: 600, color: 'var(--fg-1e293b)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{a.title}</span>
-                            </div>
-                            {/* Metrics */}
-                            <div style={{ color: 'var(--fg-374151)', fontFamily: "'IBM Plex Mono'", fontSize: 11, lineHeight: 1.7 }}>
-                              <div style={{ fontWeight: 600 }}>{fmt.durHM(a.duration)}</div>
-                              <div>{a.distance == null ? '—' : a.distance.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km</div>
-                            </div>
-                            {/* Bottom icons */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, color: '#9ca3af', fontSize: 10 }}>
-                              {a.hrAvg && <span>❤️ {a.hrAvg}</span>}
-                              {a.power && <span>⚡ {a.power}W</span>}
-                            </div>
-                          </div>
-                        );
-                      })}
+                      {cell.activities.map(a => (
+                        <button type="button" key={a.id} className="calendar-activity" style={{ '--calendar-sport-color': sportColor(a.sport) }} onClick={() => openActivity(a)}>
+                          <span className="calendar-plan-heading">{sportLabels[a.sport] || a.sport}</span>
+                          <span className="calendar-activity-title">{a.title}</span>
+                          <span className="calendar-activity-stats">{fmt.durHM(a.duration)} · {a.distance == null ? '—' : a.distance.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km</span>
+                          {(a.hrAvg || a.power) && <small>{[a.hrAvg && `Ø ${a.hrAvg} bpm`, a.power && `${a.power} W`].filter(Boolean).join(' · ')}</small>}
+                        </button>
+                      ))}
                     </div>
                   );
                 })}
 
-                {/* ── Weekly Summary sidebar cell ── */}
-                <div style={{ padding: '10px 14px', background: 'var(--bg-f8fafc)', borderLeft: '2px solid var(--bd-e5e7eb)', fontSize: 12, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+                <div className="calendar-summary">
                   {week.summary.count > 0 ? (<>
-                    {/* Sport breakdown with duration bar label */}
                     {Object.entries(week.summary.bySport).map(([sport, data]) => (
-                      <div key={sport} style={{ marginBottom: 6 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <span style={{ fontSize: 12 }}>{sportEmoji[sport]}</span>
-                            <span style={{ fontSize: 11, color: 'var(--fg-6b7280)', fontWeight: 500 }}>{sportLabels[sport]}</span>
-                          </div>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-374151)', fontFamily: "'IBM Plex Mono'" }}>{data.distance.toFixed(1)} km</span>
-                        </div>
-                        {/* Duration progress bar per sport */}
-                        {(() => {
-                          const maxSportDur = Math.max(...calWeeks.flatMap(w => Object.values(w.summary.bySport).map(s => s.duration))) || 1;
-                          return (
-                            <div style={{ height: 4, background: 'var(--bg-e5e7eb)', borderRadius: 2, overflow: 'hidden' }}>
-                              <div style={{ height: '100%', width: `${(data.duration / maxSportDur) * 100}%`, background: sportColors[sport], borderRadius: 2 }} />
-                            </div>
-                          );
-                        })()}
+                      <div key={sport} className="calendar-summary-sport">
+                        <div><span className="sport-mark"><i aria-hidden="true" style={{ background: sportColor(sport) }} />{sportLabels[sport] || sport}</span><strong>{data.distance.toFixed(1)} km</strong></div>
+                        <div className="calendar-summary-bar"><i style={{ width: `${(data.duration / maxSportDuration) * 100}%`, background: sportColor(sport) }} /></div>
                       </div>
                     ))}
-
-                    {/* KPIs */}
-                    <div style={{ borderTop: '1px solid var(--bd-e2e8f0)', marginTop: 4, paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <dl>
                       {[
-                        { l: 'Dauer', v: fmt.durHM(week.summary.duration), u: 'hms' },
-                        { l: 'Distanz', v: week.summary.distance.toFixed(1), u: 'km' },
-                        ...(week.summary.elevation > 0 ? [{ l: 'Höhenmeter', v: fmt.num(week.summary.elevation), u: 'm' }] : []),
-                        { l: 'Kalorien', v: fmt.num(week.summary.calories), u: 'kcal' },
-                      ].map((row, i) => (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                          <span style={{ color: '#9ca3af', fontSize: 11 }}>{row.l}</span>
-                          <span style={{ fontWeight: row.bold ? 700 : 600, fontSize: row.bold ? 13 : 12, color: row.bold ? 'var(--fg-1e40af)' : 'var(--fg-1e293b)', fontFamily: "'IBM Plex Mono'" }}>
-                            {row.v} <span style={{ fontSize: 9, color: '#9ca3af', fontWeight: 400 }}>{row.u}</span>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </>) : (
-                    <div style={{ paddingTop: 6 }}>
-                      <div style={{ color: '#d1d5db', fontSize: 11, fontStyle: 'italic', marginBottom: 8 }}>Keine Aktivitäten</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        {[{ l: 'Dauer', v: '00:00:00', u: 'hms' }, { l: 'Distanz', v: '0.00', u: 'km' }].map((row, i) => (
-                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ color: '#d1d5db', fontSize: 11 }}>{row.l}</span>
-                            <span style={{ color: '#d1d5db', fontSize: 11, fontFamily: "'IBM Plex Mono'" }}>{row.v} {row.u}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                        ['Dauer', fmt.durHM(week.summary.duration)],
+                        ['Distanz', `${week.summary.distance.toFixed(1)} km`],
+                        ...(week.summary.elevation > 0 ? [['Höhenmeter', `${fmt.num(week.summary.elevation)} m`]] : []),
+                        ['Kalorien', `${fmt.num(week.summary.calories)} kcal`],
+                      ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                    </dl>
+                  </>) : <p className="calendar-summary-empty">Keine Aktivitäten</p>}
                 </div>
               </div>
             ))}
           </div>
-
         ) : page === 'coach' ? (
           <AICoach key={coachTab.version} initialTab={coachTab.tab} apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
             onWorkoutsChanged={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })} />
         ) : page === 'dashboard' ? (
-          /* ─── DASHBOARD ─── */
-          <div style={{ padding: '20px 0' }}>
+          <div className="dashboard-page">
             <Dashboard key={profileVersion} apiBase={API} activities={activities} loading={loading} onOpenActivity={openActivity} />
 
-            {/* Activity list */}
-            <div className="activity-list" style={{ background: 'var(--bg-ffffff)', borderRadius: 10, border: '1px solid var(--bd-e5e7eb)' }}>
-              <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--bd-e5e7eb)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Alle Aktivitäten</h3>
-                <span style={{ fontSize: 12, color: '#9ca3af' }}>{activities.length} Einträge</span>
+            <section className="activity-list" aria-labelledby="all-activities">
+              <div className="activity-list-head">
+                <h3 id="all-activities">Alle Aktivitäten</h3>
+                <span>{activities.length} Einträge</span>
               </div>
-              {/* Table header */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px 80px 80px', padding: '8px 20px', borderBottom: '1px solid var(--bd-f3f4f6)', fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', fontFamily: "'IBM Plex Mono'", letterSpacing: '0.05em' }}>
+              <div className="activity-list-grid activity-list-columns" aria-hidden="true">
                 <span>Aktivität</span><span>Datum</span><span>Dauer</span><span>Distanz</span><span>Ø HF</span><span>Leistung</span><span>Quelle</span>
               </div>
               {activities.map(a => (
-                <div key={a.id} onClick={() => openActivity(a)} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px 80px 80px', padding: '10px 20px', borderBottom: '1px solid var(--bd-f3f4f6)', cursor: 'pointer', alignItems: 'center', fontSize: 13, transition: 'background 0.1s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-f9fafb)'} onMouseLeave={e => e.currentTarget.style.background = ''}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>{sportEmoji[a.sport]}</span>
-                    <span style={{ fontWeight: 600 }}>{a.title}</span>
-                  </div>
-                  <span style={{ color: 'var(--fg-6b7280)', fontSize: 12 }}>{fmt.date(a.date)}</span>
-                  <span style={{ fontFamily: "'IBM Plex Mono'", fontSize: 12 }}>{fmt.dur(a.duration)}</span>
-                  <span style={{ fontFamily: "'IBM Plex Mono'", fontSize: 12 }}>{a.distance == null ? '—' : a.distance.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km</span>
-                  <span style={{ fontFamily: "'IBM Plex Mono'", fontSize: 12 }}>{a.hrAvg ?? '—'}</span>
-                  <span style={{ fontFamily: "'IBM Plex Mono'", fontSize: 12 }}>{a.power != null ? `${a.power} W` : '—'}</span>
-                  <span style={{ fontSize: 11, color: '#9ca3af', fontFamily: "'IBM Plex Mono'" }}>{a.source}</span>
-                </div>
+                <button type="button" key={a.id} className="activity-list-grid activity-list-row" onClick={() => openActivity(a)}>
+                  <span className="activity-list-title"><span className="activity-list-name">{a.title}</span><SportMark sport={a.sport} /></span>
+                  <span>{fmt.date(a.date)}</span>
+                  <span>{fmt.dur(a.duration)}</span>
+                  <span>{a.distance == null ? '—' : a.distance.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km</span>
+                  <span>{a.hrAvg ?? '—'}</span>
+                  <span>{a.power != null ? `${a.power} W` : '—'}</span>
+                  <span className="activity-list-source">{a.source}</span>
+                </button>
               ))}
-            </div>
+            </section>
           </div>
         ) : null}
-      </div>
+      </main>
 
       {/* Upload Modal */}
       {workoutEditor && <WorkoutEditor apiBase={API} initial={workoutEditor.id ? workoutEditor : null} date={workoutEditor.date}
@@ -1371,10 +1018,10 @@ export default function App() {
       {/* Toast */}
       {toast && (
         <div style={{
-          position: 'fixed', bottom: 24, right: 24, background: '#22c55e', color: '#fff', padding: '12px 20px',
-          borderRadius: 8, fontSize: 13, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+          position: 'fixed', bottom: 24, right: 24, background: 'var(--btn-bg)', color: 'var(--btn-fg)', padding: '12px 20px',
+          borderRadius: 2, fontSize: 13, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
           animation: 'slideUp 0.3s ease', zIndex: 2000
-        }}>✓ {toast}</div>
+        }}>{toast}</div>
       )}
 
       <style>{`@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
