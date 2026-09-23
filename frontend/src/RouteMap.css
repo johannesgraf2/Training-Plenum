@@ -2,22 +2,22 @@
 .route-heading { padding: 20px 24px 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .route-heading h2 { font-size: 17px; }
 .route-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.route-section button { border: 1px solid var(--bd-ccd8e6); border-radius: 5px; background: var(--bg-ffffff); color: var(--fg-345e91); padding: 7px 10px; font-size: 11px; cursor: pointer; }
-.route-section button:focus-visible { outline: 2px solid #2563a6; outline-offset: 2px; }
+.route-section button { border: 1px solid var(--bd-ccd8e6); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-345e91); padding: 7px 10px; font-size: 11px; cursor: pointer; }
+.route-section button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .route-map { height: 420px; width: 100%; background: var(--bg-e9eef0); isolation: isolate; z-index: 0; }
 .route-map-expanded { height: 70vh; min-height: 420px; }
 .route-map .leaflet-control-attribution { font-size: 10px; background: #fffffff0; }
 .route-map .leaflet-control-attribution a { color: var(--fg-245582); }
 .route-map .leaflet-control-scale-line { font-family: sans-serif; }
 .route-pin { border: 2px solid white; border-radius: 50%; box-shadow: 0 1px 5px #0006; color: white; text-align: center; font: bold 12px/22px sans-serif; }
-.route-pin-start { background: #21845e; }
-.route-pin-finish { background: #c85151; }
+.route-pin-start { background: var(--success); }
+.route-pin-finish { background: var(--danger); }
 .route-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 24px; border-bottom: 1px solid var(--bd-edf0f4); }
 .route-legend > span { margin-left: auto; font-size: 11px; color: var(--fg-7b889c); }
 .route-legend button { display: flex; align-items: center; gap: 6px; border: 0; padding: 5px 8px 5px 0; }
 .route-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; }
-.route-start-dot { background: #21845e; }
-.route-finish-dot { background: #c85151; }
+.route-start-dot { background: var(--success); }
+.route-finish-dot { background: var(--danger); }
 .route-point-details { padding: 16px 24px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 .route-point-details span { display: block; color: var(--fg-7b889c); font-size: 11px; margin-bottom: 5px; }
 .route-point-details strong { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }

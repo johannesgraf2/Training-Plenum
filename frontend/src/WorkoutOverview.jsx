@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { clock, intensityLabels, stepDescription, summary, workoutOverview } from './workoutModel';
 
-const colors = { warmup: '#71b8db', active: '#2686c2', interval: '#1b64b1', recovery: '#b0d2e9', cooldown: '#71b8db' };
+const colors = { warmup: 'var(--line-strong)', active: 'var(--blue)', interval: 'var(--accent)', recovery: 'var(--line)', cooldown: 'var(--line-strong)' };
 const minutes = seconds => `${+(seconds / 60).toFixed(1)} min`;
 const kilometres = metres => `${(metres / 1000).toLocaleString('de-DE', { maximumFractionDigits: 2 })} km`;
 
@@ -24,7 +24,7 @@ export default function WorkoutOverview({ workout, selectedPath, onSelect, disab
   const current = hovered !== null ? segments[hovered] : segments.find(step => step.path === selectedPath);
   const activate = path => { if (!disabled) onSelect(path); };
   return <section className="workout-overview" aria-label="Gesamtübersicht">
-    <div className="workout-overview-heading"><div><span className="workout-eyebrow">GESAMTÜBERSICHT</span><h3>{hasPower ? 'Dein Leistungsprofil' : 'Dein Trainingsablauf'}</h3></div><span className="workout-chart-instruction">Block anklicken, um ihn zu bearbeiten</span></div>
+    <div className="workout-overview-heading"><div><span className="workout-eyebrow">Gesamtübersicht</span><h3>{hasPower ? 'Dein Leistungsprofil' : 'Dein Trainingsablauf'}</h3></div><span className="workout-chart-instruction">Block anklicken, um ihn zu bearbeiten</span></div>
     <div className="workout-metrics">
       <div><span>{allTimed ? 'Gesamtdauer' : allDistance ? 'Gesamtdistanz' : 'Geplante Abschnitte'}</span><strong>{allTimed ? minutes(time) : allDistance ? kilometres(distance) : summary(workout)}</strong></div>
       <div><span>{allTimed || allDistance ? 'Belastung' : 'Belastung nach Zeit'}</span><strong>{allDistance ? kilometres(workDistance) : minutes(workTime)}</strong></div>
@@ -49,7 +49,7 @@ export default function WorkoutOverview({ workout, selectedPath, onSelect, disab
           <title>{label}</title>
           <rect x={x} y={top} width={blockWidth} height={height} fill="transparent" />
           <rect className="workout-profile-bar" x={x + Math.min(1, blockWidth / 10)} y={y} width={Math.max(.1, blockWidth - Math.min(2, blockWidth / 5))} height={blockHeight} rx="2"
-            style={{ fill: step.power === null && hasPower ? 'var(--bg-e2e8f0)' : colors[step.intensity] || colors.active }} stroke={selected ? '#103b73' : step.power === null && hasPower ? '#94a3b8' : 'none'} strokeWidth={selected ? 2 : 1} strokeDasharray={step.power === null && hasPower ? '3 3' : undefined} />
+            style={{ fill: step.power === null && hasPower ? 'var(--bg-e2e8f0)' : colors[step.intensity] || colors.active }} stroke={selected ? 'var(--ink)' : step.power === null && hasPower ? 'var(--muted-2)' : 'none'} strokeWidth={selected ? 2 : 1} strokeDasharray={step.power === null && hasPower ? '3 3' : undefined} />
           {blockWidth > 49 && <text x={x + blockWidth / 2} y={step.power === null && hasPower ? y - 6 : y + 18} className={step.power !== null && step.power / ceiling > .5 ? 'workout-bar-light' : 'workout-bar-dark'} textAnchor="middle" pointerEvents="none">{step.power === null ? (hasPower ? '—' : step.seconds !== null ? minutes(step.seconds) : step.duration.type === 'open' ? 'Lap' : `${step.duration.value} m`) : `${Math.round(step.power)} W`}</text>}
         </g>;
       })}
