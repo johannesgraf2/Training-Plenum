@@ -53,9 +53,9 @@ function RecordingChart({ data, dataKey, label, unit, color, onSelectRecord }) {
     <svg viewBox="0 0 800 152" role="img" aria-label={`${label} über die verstrichene Zeit`} onMouseMove={move} onMouseLeave={() => setHover(null)}>
       {[24, 72, 120].map(y => <line key={y} x1="40" x2="760" y1={y} y2={y} style={{ stroke: 'var(--bd-e2e8f0)' }} />)}
       <text x="0" y="28">{number(plot.max, 0)}</text><text x="0" y="124">{number(plot.min, 0)}</text>
-      <path d={plot.path} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-      {plot.present.length === 1 && <circle cx={plot.x(plot.present[0])} cy={plot.y(plot.present[0])} r="3" fill={color} />}
-      {hover && <line x1={plot.x(hover)} x2={plot.x(hover)} y1="20" y2="124" stroke={color} strokeDasharray="3 3" />}
+      <path d={plot.path} fill="none" style={{ stroke: color }} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+      {plot.present.length === 1 && <circle cx={plot.x(plot.present[0])} cy={plot.y(plot.present[0])} r="3" style={{ fill: color }} />}
+      {hover && <line x1={plot.x(hover)} x2={plot.x(hover)} y1="20" y2="124" style={{ stroke: color }} strokeDasharray="3 3" />}
       <text x="40" y="148">{duration(plot.minTime)}</text><text x="760" y="148" textAnchor="end">{duration(plot.maxTime)}</text>
     </svg>
   </div>;
@@ -150,11 +150,11 @@ export default function ActivityDetail({ activity: a, onBack, onDelete, apiBase 
     <RouteMap key={a.id} data={data} selectedRecord={selectedRecord} onSelectRecord={selectRecord} />
     <section key={`charts-${a.id}`} className="activity-section"><h2>Aktivitätsverlauf</h2>
       {data.length ? <>
-        <RecordingChart data={data} dataKey="hr" label="Herzfrequenz" unit="bpm" color="#dc4b57" onSelectRecord={selectRecord} />
-        <RecordingChart data={data} dataKey="power" label="Leistung" unit="W" color="#b17b10" onSelectRecord={selectRecord} />
-        <RecordingChart data={data} dataKey="speed" label="Geschwindigkeit" unit="km/h" color="#3776c4" onSelectRecord={selectRecord} />
-        <RecordingChart data={data} dataKey="cadence" label="Kadenz" unit="U/min" color="#168c83" onSelectRecord={selectRecord} />
-        <RecordingChart data={data} dataKey="elevation" label="Höhe" unit="m" color="#8c65b0" onSelectRecord={selectRecord} />
+        <RecordingChart data={data} dataKey="hr" label="Herzfrequenz" unit="bpm" color="var(--accent)" onSelectRecord={selectRecord} />
+        <RecordingChart data={data} dataKey="power" label="Leistung" unit="W" color="var(--ochre)" onSelectRecord={selectRecord} />
+        <RecordingChart data={data} dataKey="speed" label="Geschwindigkeit" unit="km/h" color="var(--blue)" onSelectRecord={selectRecord} />
+        <RecordingChart data={data} dataKey="cadence" label="Kadenz" unit="U/min" color="var(--teal)" onSelectRecord={selectRecord} />
+        <RecordingChart data={data} dataKey="elevation" label="Höhe" unit="m" color="var(--muted)" onSelectRecord={selectRecord} />
       </> : <p>Diese Aktivität enthält keine einzelnen Messpunkte.</p>}
     </section>
     {!!details.laps?.length && <details className="activity-section"><summary>Runden anzeigen ({details.laps.length})</summary><div className="activity-table-scroll"><table><thead><tr><th>Runde</th><th>Timerzeit</th><th>Verstrichen</th><th>Distanz (km)</th><th>Ø HF (bpm)</th><th>Ø Leistung (W)</th></tr></thead><tbody>{details.laps.map((lap, i) => <tr key={i}><td>{i + 1}</td><td>{duration(lap.timerSeconds)}</td><td>{duration(lap.elapsedSeconds)}</td><td>{number(lap.distanceKm, 2)}</td><td>{number(lap.hrAvg, 0)}</td><td>{number(lap.power, 0)}</td></tr>)}</tbody></table></div></details>}

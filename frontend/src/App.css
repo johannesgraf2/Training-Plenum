@@ -1,0 +1,81 @@
+/* App shell, calendar and activity list in the "Trainingsbuch" style. */
+.app { min-height: 100vh; background: var(--paper); }
+.calendar { overflow-x: auto; }
+.app-header { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 76px; padding: 0 56px; background: var(--paper); border-bottom: 1px solid var(--ink); }
+.app-header-start { display: flex; align-items: center; gap: 56px; min-width: 0; }
+.app-wordmark { font-family: var(--font-display); font-style: italic; font-size: 30px; font-weight: 500; letter-spacing: -.01em; color: var(--ink); }
+.app-nav { display: flex; gap: 28px; }
+.app-nav button { min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 15px; cursor: pointer; text-decoration: underline 2px transparent; text-underline-offset: 8px; transition: color .15s, text-decoration-color .15s; }
+.app-nav button:hover { color: var(--ink); }
+.app-nav button[aria-current="page"] { color: var(--ink); font-weight: 600; text-decoration-color: var(--accent); }
+.app-header-end { display: flex; align-items: center; gap: 16px; }
+.app-import { min-height: 44px; padding: 0 20px; border: 1px solid var(--ink); border-radius: 2px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.app-import:hover { background: var(--btn-bg); color: var(--btn-fg); }
+
+.app-main { max-width: 1440px; margin: 0 auto; padding: 0 56px; }
+.app-main-wide { max-width: none; padding: 0; }
+.app-notice { max-width: 1440px; margin: 16px auto 0; padding: 0 56px; font-size: 15px; color: var(--ink-2); }
+.app-notice-error { color: var(--danger); }
+.app-notice button { margin-left: 8px; padding: 6px 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+.dashboard-page { padding: 40px 0 56px; }
+
+/* Activity list */
+.activity-list { margin-top: 44px; overflow-x: auto; }
+.activity-list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 12px; }
+.activity-list-head h3 { margin: 0; font-size: 30px; }
+.activity-list-head span { font-size: 14px; color: var(--muted); }
+.activity-list-grid { display: grid; grid-template-columns: minmax(200px, 1fr) 110px 80px 96px 64px 84px 84px; gap: 16px; align-items: center; min-width: 820px; }
+.activity-list-columns { padding: 10px 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.activity-list-row { width: 100%; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.activity-list-row:hover .activity-list-name { text-decoration: underline; text-underline-offset: 4px; }
+.activity-list-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.activity-list-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-list-title .sport-mark { font-size: 12px; }
+.activity-list-source { font-size: 12px; color: var(--muted); }
+
+/* Calendar */
+.calendar-toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 20px 32px; border-bottom: 1px solid var(--line); }
+.calendar-toolbar h2 { margin: 0; font-size: 34px; font-weight: 400; }
+.calendar-toolbar select { min-height: 36px; padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: 2px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13px; }
+.calendar-nav { display: flex; gap: 4px; margin-left: auto; }
+.calendar-nav button { min-width: 44px; min-height: 40px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 2px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+.calendar-nav button:hover { border-color: var(--ink); }
+.calendar-error { padding: 12px 32px; font-size: 14px; color: var(--danger); }
+.calendar-error button { border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+.calendar-head, .calendar-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)) 230px; min-width: 1000px; }
+.calendar-head { border-bottom: 1px solid var(--ink); }
+.calendar-head > div { padding: 10px 10px; font-size: 13px; color: var(--muted); }
+.calendar-week { border-bottom: 1px solid var(--line); }
+.calendar-day, .calendar-day-empty { min-height: 160px; border-right: 1px solid var(--line); }
+.calendar-day { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px 10px; background: var(--surface); }
+.calendar-day-empty { background: var(--surface-sunk); }
+.calendar-day.today { background: var(--highlight); }
+.calendar-day-number { font-size: 14px; color: var(--muted); padding: 4px 2px; }
+.calendar-day.today .calendar-day-number { color: var(--accent-text); font-weight: 600; }
+.calendar-activity { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 7px 2px 4px; border: 0; border-top: 2px solid var(--calendar-sport-color); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.calendar-activity .calendar-plan-heading { margin: 0; }
+.calendar-activity-title { font-family: var(--font-display); font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
+.calendar-activity:hover .calendar-activity-title { text-decoration: underline; text-underline-offset: 3px; }
+.calendar-activity-stats { font-size: 12px; color: var(--ink-2); }
+.calendar-activity small { font-size: 11px; color: var(--muted); }
+.calendar-summary { padding: 10px 14px; background: var(--surface-sunk); font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
+.calendar-summary-sport > div:first-child { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.calendar-summary-sport .sport-mark { font-size: 12px; }
+.calendar-summary-sport strong { font-weight: 600; }
+.calendar-summary-bar { height: 4px; margin-top: 4px; background: var(--track); }
+.calendar-summary-bar i { display: block; height: 100%; }
+.calendar-summary dl { margin: 0; padding-top: 6px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; }
+.calendar-summary dl > div { display: flex; justify-content: space-between; gap: 8px; }
+.calendar-summary dt { color: var(--muted); }
+.calendar-summary dd { margin: 0; font-weight: 600; }
+.calendar-summary-empty { margin: 0; color: var(--muted-2); font-style: italic; }
+
+@media (max-width: 900px) {
+  .app-header { padding: 12px 16px; flex-wrap: wrap; gap: 8px 16px; min-height: 0; }
+  .app-header-start { gap: 8px 24px; flex-wrap: wrap; }
+  .app-nav { gap: 20px; flex-wrap: wrap; }
+  .app-main { padding: 0 16px; }
+  .app-main-wide { padding: 0; }
+  .app-notice { padding: 0 16px; }
+  .calendar-toolbar { padding: 16px; }
+}

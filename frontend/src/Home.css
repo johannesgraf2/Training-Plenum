@@ -1,0 +1,127 @@
+/* Start page in the "Trainingsbuch" style: rules instead of boxes, serif headlines and figures. */
+.home { padding: 0 0 56px; }
+.home button { font: inherit; cursor: pointer; }
+.home strong { font-weight: 600; }
+.home-muted { color: var(--muted); }
+.home .num { text-align: right; }
+
+.home-button { min-height: 44px; padding: 0 22px; border: 0; border-radius: 2px; background: var(--btn-bg); color: var(--btn-fg); font-size: 14px; font-weight: 500; }
+.home-button:hover { background: var(--btn-hover); }
+.home-link { padding: 10px 0; border: 0; background: none; color: var(--ink); font-size: 14px; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--line-strong); }
+.home-link:hover { color: var(--accent-text); text-decoration-color: currentColor; }
+
+.sport-mark { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
+.sport-mark i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* Hero: date, one sentence about the week, day-by-day bars. */
+.home-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 440px); gap: 64px; align-items: end; padding: 44px 0 36px; border-bottom: 1px solid var(--line); }
+.home-kicker { margin: 0 0 14px; font-size: 14px; color: var(--muted); }
+.home-hero h1 { margin: 0; font-size: clamp(40px, 5.2vw, 68px); font-weight: 400; line-height: 1; letter-spacing: -.025em; }
+.home-lede { margin: 20px 0 0; max-width: 640px; font-size: 18px; line-height: 1.5; color: var(--ink-2); }
+.home-week { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.home-week-bars, .home-week-labels { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+.home-week-bars { height: 110px; border-bottom: 1px solid var(--ink); }
+.home-week-bars > div { position: relative; }
+.home-week-bars i { position: absolute; left: 0; right: 0; bottom: 0; box-sizing: border-box; }
+.home-week-bars i.done, .home-week figcaption i.done { background: var(--ink); }
+.home-week-bars i.planned, .home-week figcaption i.planned { border: 1px dashed var(--planned); border-bottom: 0; }
+.home-week-bars i.planned.today { border: 1.5px solid var(--accent); border-bottom: 0; }
+.home-week-labels span { font-size: 13px; color: var(--muted); text-align: center; }
+.home-week-labels span.today { color: var(--ink); font-weight: 600; }
+.home-week figcaption { display: flex; gap: 20px; font-size: 12px; color: var(--muted); }
+.home-week figcaption span { display: inline-flex; align-items: center; gap: 6px; }
+.home-week figcaption i { display: inline-block; width: 10px; height: 10px; box-sizing: border-box; }
+.home-week figcaption i.planned { border-bottom: 1px dashed var(--planned); }
+
+.home-grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 72px; padding-top: 40px; align-items: start; }
+.home-main, .home-side { display: flex; flex-direction: column; gap: 44px; min-width: 0; }
+.home-block-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 12px; }
+.home-block h2 { margin: 0; font-size: 30px; }
+.home-block-head .home-link { margin: -10px 0; }
+.home-side .home-block h2 { font-size: 26px; }
+
+/* Today: the planned workout gets the room, finished sessions are a line each. */
+.home-today { border-top: 1px solid var(--ink); }
+.today-plan { display: flex; flex-direction: column; gap: 14px; padding: 26px 0; border-bottom: 1px solid var(--line); }
+.today-plan-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
+.today-plan h3 { margin: 0; font-size: 40px; font-weight: 400; line-height: 1.05; letter-spacing: -.015em; overflow-wrap: anywhere; }
+.today-plan dl, .race-goal dl { margin: 0; }
+.today-plan dl { display: flex; gap: 28px; }
+.today-plan dt { font-size: 13px; color: var(--muted); }
+.today-plan dd { margin: 2px 0 0; font-size: 20px; font-weight: 600; }
+.today-profile { display: flex; flex-direction: column; gap: 6px; }
+.today-profile-bars { display: flex; align-items: flex-end; gap: 2px; height: 72px; }
+.today-profile-bars i { flex-basis: 0; min-width: 2px; background: var(--line-strong); }
+.today-profile-bars i.hard { background: var(--accent); }
+.today-profile-axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.today-plan-actions { display: flex; gap: 12px; }
+.today-done { display: grid; gap: 4px; width: 100%; padding: 18px 0; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); text-align: left; }
+.today-done strong { font-family: var(--font-display); font-size: 24px; font-weight: 400; }
+.today-done > span:last-child { font-size: 14px; color: var(--ink-2); }
+.today-done:hover strong, .home-day-row:hover strong, .home-table-row:hover strong { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.home-empty { padding: 28px 0; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.home-empty p { margin: 0; font-size: 16px; color: var(--ink-2); }
+
+.home-day-row { display: grid; grid-template-columns: 100px minmax(0, 1fr) auto; gap: 16px; align-items: baseline; width: 100%; padding: 14px 0; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); text-align: left; }
+.home-day-label { font-size: 14px; color: var(--muted); }
+.home-day-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; }
+.home-day-title strong { font-family: var(--font-display); font-size: 21px; font-weight: 400; overflow-wrap: anywhere; }
+.home-day-detail { font-size: 14px; color: var(--ink-2); }
+.home-day-empty { align-items: center; padding: 6px 0; }
+.home-error { font-size: 14px; color: var(--danger); }
+
+/* Recent activities as a ledger. */
+.home-table { border-top: 1px solid var(--ink); }
+.home-table-head, .home-table-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) 64px 84px 52px 52px 96px; gap: 16px; align-items: center; }
+.home-table-head { padding: 10px 0; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.home-table-head span:nth-child(n+3):nth-child(-n+6) { text-align: right; }
+.home-table-row { width: 100%; padding: 13px 0; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); text-align: left; font-size: 15px; }
+.home-table-row > span:first-child { font-size: 13px; }
+.home-table-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.home-table-title strong { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-table-title .sport-mark { font-size: 12px; }
+
+/* This week's figures. */
+.home-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--ink); }
+.home-figures > div { display: flex; flex-direction: column; gap: 4px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.home-figures > div:nth-child(odd) { border-right: 1px solid var(--line); }
+.home-figures > div:nth-child(even) { padding-left: 24px; }
+.home-figures strong { font-family: var(--font-display); font-size: 44px; font-weight: 400; line-height: 1; }
+.home-figures small { font-size: 24px; color: var(--muted-2); }
+.home-figures span { font-size: 13px; color: var(--muted); }
+.home-split { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+.home-split-bar { display: flex; gap: 2px; height: 8px; }
+.home-split-bar i { flex-basis: 0; }
+.home-split-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--ink-2); }
+.home-split-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.home-split-legend i { width: 8px; height: 8px; display: inline-block; }
+
+/* Race goal (replaces the heart-rate zones). */
+.race-goal-body { border-top: 1px solid var(--ink); padding-top: 18px; display: flex; flex-direction: column; gap: 12px; }
+.race-goal-count { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.race-goal-count strong { font-family: var(--font-display); font-size: 64px; font-weight: 400; line-height: .9; color: var(--accent-text); letter-spacing: -.02em; }
+.race-goal-count span { font-size: 14px; color: var(--muted); }
+.race-goal h3 { margin: 0; font-size: 26px; font-weight: 400; line-height: 1.15; overflow-wrap: anywhere; }
+.race-goal dl > div { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.race-goal dt { color: var(--muted); }
+.race-goal dd { margin: 0; text-align: right; }
+.race-goal-empty { padding: 22px; background: var(--tint); display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.race-goal-empty p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink-2); }
+
+/* Best efforts sit in the column without their own box. */
+.home-side .best-efforts { background: none; border: 0; border-radius: 0; padding: 0; }
+.home-side .best-efforts-heading h3 { font-size: 26px; }
+
+@media (max-width: 1100px) {
+  .home-grid { grid-template-columns: minmax(0, 1fr); gap: 44px; }
+  .home-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 44px; }
+}
+@media (max-width: 760px) {
+  .home-hero { grid-template-columns: minmax(0, 1fr); gap: 28px; padding-top: 28px; }
+  .today-plan h3 { font-size: 32px; }
+  .home-table-head { display: none; }
+  .home-table-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .home-table-row > span:first-child { grid-column: 1 / -1; order: -1; }
+  .home-table-row > span:nth-child(3), .home-table-row > span:nth-child(n+5) { display: none; }
+  .home-day-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}

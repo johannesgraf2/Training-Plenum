@@ -4,7 +4,7 @@ import './AICoach.css';
 
 const DAYS = [['mon', 'Mo'], ['tue', 'Di'], ['wed', 'Mi'], ['thu', 'Do'], ['fri', 'Fr'], ['sat', 'Sa'], ['sun', 'So']];
 const PHASES = { base: 'Grundlage', build: 'Aufbau', peak: 'Höhepunkt', taper: 'Taper', recovery: 'Erholung' };
-const GOALS = { cycling_event: 'Radsport-Event', ftp: 'FTP steigern', marathon: 'Marathon', endurance: 'Allgemeine Ausdauer', running_event: 'Laufziel' };
+export const GOALS = { cycling_event: 'Radsport-Event', ftp: 'FTP steigern', marathon: 'Marathon', endurance: 'Allgemeine Ausdauer', running_event: 'Laufziel' };
 const EMPTY_WORKOUTS = [];
 const number = value => value === '' || value == null ? null : Number(value);
 const fmt = value => value == null ? '—' : Number(value).toLocaleString('de-DE', { maximumFractionDigits: 1 });

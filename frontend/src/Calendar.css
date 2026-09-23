@@ -1,13 +1,14 @@
 .calendar-day { min-width: 0; }
 .calendar-day-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; min-height: 34px; }
-.calendar-add-workout { width: 28px; height: 28px; flex-shrink: 0; display: grid; place-items: center; padding: 0; border: 1px solid var(--bd-b8ceef); border-radius: 6px; background: var(--bg-eff6ff); color: var(--fg-1e40af); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+.calendar-add-workout { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; padding: 0; border: 1px solid var(--line-strong); border-radius: 2px; background: transparent; color: var(--ink); font: inherit; font-size: 20px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
 .calendar-day:hover .calendar-add-workout, .calendar-day:focus-within .calendar-add-workout { opacity: 1; }
-.calendar-add-workout:hover { background: var(--bg-dbeafe); }
-.calendar-add-workout:focus-visible, .calendar-planned-workout:focus-visible { outline: 3px solid #60a5fa; outline-offset: 2px; }
-.calendar-planned-workout { display: block; width: 100%; margin: 0 0 5px; padding: 8px 9px; border: 1px dashed var(--bd-abc5e5); border-left: 4px solid var(--calendar-sport-color); border-radius: 6px; background: var(--bg-f0f6ff); color: var(--fg-1e3a5f); font: inherit; text-align: left; cursor: pointer; transition: background .12s, box-shadow .12s; }
-.calendar-planned-workout:hover { background: var(--bg-e4efff); box-shadow: 0 2px 7px #1e40af18; }
-.calendar-plan-heading { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; }
-.calendar-plan-status { font-size: 9px; font-weight: 600; color: var(--fg-4a6e9b); }
-.calendar-planned-workout strong { display: block; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.calendar-planned-workout small { display: block; margin-top: 5px; color: var(--fg-58708d); font-size: 10px; line-height: 1.5; }
+.calendar-add-workout:hover { background: var(--btn-bg); color: var(--btn-fg); border-color: var(--btn-bg); }
+.calendar-add-workout:focus-visible, .calendar-planned-workout:focus-visible, .calendar-activity:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+/* Planned = dashed rule in the sport color, done = solid rule (see .calendar-activity in App.css). */
+.calendar-planned-workout { display: block; width: 100%; margin: 0; padding: 7px 2px 4px; border: 0; border-top: 2px dashed var(--calendar-sport-color); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.calendar-planned-workout:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.calendar-plan-heading { display: block; margin-bottom: 2px; font-size: 11px; color: var(--muted); }
+.calendar-plan-status { color: var(--muted); }
+.calendar-planned-workout strong { display: block; font-family: var(--font-display); font-size: 16px; font-weight: 400; line-height: 1.2; overflow-wrap: anywhere; }
+.calendar-planned-workout small { display: block; margin-top: 3px; color: var(--ink-2); font-size: 12px; line-height: 1.4; }
 @media (hover: none), (pointer: coarse) { .calendar-add-workout { opacity: 1; } }

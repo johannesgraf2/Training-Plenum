@@ -41,14 +41,6 @@ function Controls({ index, length, label, onMove, onRemove }) {
   </div>;
 }
 
-export function PlannedWorkoutRows({ workouts, onOpen, showDate = false }) {
-  return <div className="planned-workout-list">{workouts.map(workout => <button key={workout.id} className="planned-workout-row" onClick={() => onOpen(workout)}>
-    <span className={`planned-workout-icon ${workout.sport}`}>{workout.sport === 'run' ? '🏃' : '🚴'}</span>
-    <span><strong>{workout.name}</strong><small>{showDate && `${new Date(`${workout.date}T12:00:00`).toLocaleDateString('de-DE')} · `}{summary(workout)}</small></span>
-    <span className="planned-workout-badge">Geplant <span aria-hidden="true">↗</span></span>
-  </button>)}</div>;
-}
-
 export default function WorkoutEditor({ apiBase, initial, date, onClose, onSaved, onDeleted, onImport }) {
   const [draft, setDraft] = useState(() => toDraft(initial || newWorkout(date)));
   const [recordId, setRecordId] = useState(initial?.id);
@@ -136,7 +128,7 @@ export default function WorkoutEditor({ apiBase, initial, date, onClose, onSaved
 
   return <div className="workout-backdrop">
     <section className="workout-dialog" role="dialog" aria-modal="true" aria-labelledby="workout-editor-title" ref={dialogRef}>
-      <header className="workout-header"><div><span className="workout-eyebrow">WORKOUT BUILDER</span><h2 id="workout-editor-title">{recordId ? 'Workout bearbeiten' : 'Workout hinzufügen'}</h2><p>Überblick behalten. Belastung und Erholung gezielt planen.</p></div><button type="button" className="workout-close" onClick={close} disabled={!!busy} aria-label="Workout-Editor schließen">✕</button></header>
+      <header className="workout-header"><div><span className="workout-eyebrow">Workout-Builder</span><h2 id="workout-editor-title">{recordId ? 'Workout bearbeiten' : 'Workout hinzufügen'}</h2><p>Überblick behalten. Belastung und Erholung gezielt planen.</p></div><button type="button" className="workout-close" onClick={close} disabled={!!busy} aria-label="Workout-Editor schließen">✕</button></header>
       <div className="workout-body">
         <fieldset className="workout-setup" disabled={!!busy}><div className="workout-basics"><label className="workout-name">Workout-Name<input ref={nameRef} value={draft.name} placeholder="z. B. Intervalle am Dienstag" maxLength={80} onChange={e => change({ ...draft, name: e.target.value })} /></label>
             <label>Sportart<select aria-label="Workout-Sportart" value={draft.sport} onChange={e => change({ ...draft, sport: e.target.value })}><option value="run">Laufen</option><option value="ride">Radfahren</option></select></label>
@@ -174,7 +166,7 @@ export default function WorkoutEditor({ apiBase, initial, date, onClose, onSaved
           <div className="workout-add-actions"><button type="button" onClick={() => setSteps([...draft.steps, toDraft({ steps: [draft.sport === 'ride' ? powerStep('active', 600, 180) : newStep()] }).steps[0]])}>+ Konstanter Abschnitt</button><button type="button" onClick={() => setSteps([...draft.steps, toDraft({ steps: [intervalBlock(draft.sport)] }).steps[0]])}>+ Intervalle mit Pause</button></div>
           <p className="workout-hint">Zeit in min:ss, Distanz in Metern. Bis zu 50 FIT-Schritte inklusive Wiederholungsmarkern.</p>
         </fieldset>
-        <aside className="workout-preview"><div className="workout-preview-card"><span className="workout-eyebrow">DEIN ABLAUF</span><h3>{draft.name || 'Neues Workout'}</h3>
+        <aside className="workout-preview"><div className="workout-preview-card"><span className="workout-eyebrow">Dein Ablauf</span><h3>{draft.name || 'Neues Workout'}</h3>
           {preview ? <><p className="workout-total">{summary(preview) || 'Noch keine Dauer'}</p><p className="workout-hint">Zeit- und Distanzabschnitte werden addiert. Offene Schritte enden mit der Lap-Taste.</p>
             <ol className="workout-timeline">{preview.steps.map((block, index) => <li key={index} className={block.kind === 'repeat' ? 'repeat' : block.intensity}>
               {block.kind === 'repeat' ? <><strong>↻ {block.count} × wiederholen</strong><ol>{block.steps.map((step, i) => <li key={i}><strong>{step.name || intensityLabels[step.intensity]}</strong><span>{stepDescription(step)}</span></li>)}</ol></> : <><strong>{block.name || intensityLabels[block.intensity]}</strong><span>{stepDescription(block)}</span></>}
