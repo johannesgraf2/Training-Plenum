@@ -1,4 +1,4 @@
-# TrainHub — Training Data Platform
+# Training Plēnum — Training Data Platform
 
 Eine Trainings-Datenplattform inspiriert von TrainingPeaks. Fokussiert auf Daten-Upload und interne Nutzung.
 
