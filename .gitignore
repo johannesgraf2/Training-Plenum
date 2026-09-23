@@ -1,0 +1,35 @@
+.venv/
+__pycache__/
+node_modules/
+.npm-cache/
+build/
+data/
+uploads/
+*.log
+.run/
+
+# Local settings and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Personal recordings, databases and local verification reports
+*.db
+*.db-*
+*.sqlite*
+*.fit
+*.fit.gz
+*.gpx
+*.tcx
+*.csv
+*.zip
+*.tar.gz
+FIT-VERIFICATION.md
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

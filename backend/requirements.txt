@@ -1,0 +1,8 @@
+flask==3.0.0
+flask-cors==4.0.0
+flask-sqlalchemy==3.1.1
+fitparse==1.2.0
+gpxpy==1.6.2
+lxml==5.1.0
+python-dateutil==2.8.2
+werkzeug==3.0.1
