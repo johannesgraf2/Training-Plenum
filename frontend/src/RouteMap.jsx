@@ -61,7 +61,7 @@ export default function RouteMap({ data = EMPTY, selectedRecord = null, onSelect
       if (segment.length < 2) return;
       // A pale casing keeps the actual trace visible over roads and place labels.
       L.polyline(segment, { color: 'white', weight: 7, opacity: 0.9, interactive: false }).addTo(map);
-      L.polyline(segment, { color: '#2563a6', weight: 4, opacity: 0.9 }).addTo(map).on('click', event => {
+      L.polyline(segment, { color: '#c2410c', weight: 4, opacity: 0.9 }).addTo(map).on('click', event => {
         const index = nearestPointIndex(route.points, event.latlng);
         if (index >= 0) onSelectRecord(route.points[index].record);
       });
@@ -74,7 +74,7 @@ export default function RouteMap({ data = EMPTY, selectedRecord = null, onSelect
     };
     addEndpoint(0, 'Start', 'route-pin-start', 'S');
     if (route.points.length > 1) addEndpoint(route.points.length - 1, 'Ziel', 'route-pin-finish', 'Z');
-    cursorRef.current = L.circleMarker(route.points[0].position, { radius: 6, color: '#fff', weight: 2, fillColor: '#ef9b28', fillOpacity: 1, interactive: false }).addTo(map);
+    cursorRef.current = L.circleMarker(route.points[0].position, { radius: 6, color: '#fff', weight: 2, fillColor: '#1b1a17', fillOpacity: 1, interactive: false }).addTo(map);
     fit();
     const resize = () => map.invalidateSize({ pan: false });
     const observer = window.ResizeObserver ? new ResizeObserver(resize) : null;

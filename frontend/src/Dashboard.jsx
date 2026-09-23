@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import BestEfforts from './BestEfforts';
 import './Dashboard.css';
 
-const SPORTS = { ride: ['Radfahren', '#3b82f6'], run: ['Laufen', '#22a879'], swim: ['Schwimmen', '#06b6d4'], walking: ['Gehen', '#e7a838'], hiking: ['Wandern', '#a78bfa'], multisport: ['Multisport', '#8b5cf6'] };
-const ZONE_COLORS = ['#94a3b8', '#3b82f6', '#20b89a', '#e7b345', '#f28352', '#e25578', '#9762d9'];
+const SPORTS = { ride: ['Radfahren', 'var(--sport-ride)'], run: ['Laufen', 'var(--sport-run)'], swim: ['Schwimmen', 'var(--sport-swim)'], walking: ['Gehen', 'var(--ochre)'], hiking: ['Wandern', 'var(--muted)'], multisport: ['Multisport', 'var(--ink-2)'] };
+// One brick ramp, lighter to darker with rising intensity.
+const ZONE_COLORS = ['#e8d9c6', '#e3b99a', '#d99670', '#cc6d43', '#c2410c', '#8f300a', '#5e2006'];
 const number = (value, digits = 0) => Number.isFinite(value) ? value.toLocaleString('de-DE', { maximumFractionDigits: digits }) : '—';
 const hours = value => value == null ? '—' : `${number(value / 3600, 1)} h`;
 const dateLabel = key => new Date(`${key}T12:00:00`).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
@@ -62,10 +63,10 @@ export function BarChart({ rows, series, unit, label, digits = 0, calendar, empt
               const value = row[item.key] || 0;
               const height = value / maximum * 140;
               offset += height;
-              return <rect key={item.key} x={60 + index * step + (step - width) / 2} y={176 - offset} width={width} height={height} fill={item.color} rx={series.length === 1 ? Math.min(4, width / 3) : 0} opacity={hover && hover !== row.key ? .6 : 1} />;
+              return <rect key={item.key} x={60 + index * step + (step - width) / 2} y={176 - offset} width={width} height={height} style={{ fill: item.color }} rx={series.length === 1 ? Math.min(4, width / 3) : 0} opacity={hover && hover !== row.key ? .6 : 1} />;
             })}
-            {missing && !row.future && <line x1={60 + (index + .5) * step - Math.min(3, width / 2)} x2={60 + (index + .5) * step + Math.min(3, width / 2)} y1="169" y2="169" stroke="#94a3b8" />}
-            {dense && row.partial && !missing && <circle cx={60 + (index + .5) * step} cy={172 - offset} r="1.6" fill="#c08432" />}
+            {missing && !row.future && <line x1={60 + (index + .5) * step - Math.min(3, width / 2)} x2={60 + (index + .5) * step + Math.min(3, width / 2)} y1="169" y2="169" style={{ stroke: 'var(--muted-2)' }} />}
+            {dense && row.partial && !missing && <circle cx={60 + (index + .5) * step} cy={172 - offset} r="1.6" style={{ fill: 'var(--ochre)' }} />}
             {!ticks.length && (!dense || index % Math.ceil(rows.length / 10) === 0) && <text x={60 + (index + .5) * step} y="201" textAnchor="middle">{row.label}{row.partial ? '*' : ''}</text>}
           </g>;
         })}
@@ -85,11 +86,11 @@ function SportShare({ rows }) {
   const gradient = sorted.filter(row => row.seconds > 0).map(row => {
     const start = cursor;
     cursor += row.seconds / total * 100;
-    return `${SPORTS[row.key]?.[1] || '#94a3b8'} ${start}% ${cursor}%`;
+    return `${SPORTS[row.key]?.[1] || 'var(--muted-2)'} ${start}% ${cursor}%`;
   }).join(', ');
   return <>
     <div className="sport-share-ring" style={{ background: total ? `conic-gradient(${gradient})` : 'var(--bg-e8edf3)' }} role="img" aria-label={`Trainingszeit nach Sportart: ${sorted.map(row => `${SPORTS[row.key]?.[0] || row.key} ${hours(row.seconds)}`).join(', ')}`}><div><strong>{hours(total)}</strong><span>Trainingszeit</span></div></div>
-    <div className="sport-share-legend">{sorted.map(row => <div key={row.key}><i style={{ background: SPORTS[row.key]?.[1] || '#94a3b8' }} /><span>{SPORTS[row.key]?.[0] || row.key}</span><strong>{hours(row.seconds)}</strong><small>{total && row.seconds != null ? `${number(row.seconds / total * 100, 1)} %` : '—'}</small></div>)}</div>
+    <div className="sport-share-legend">{sorted.map(row => <div key={row.key}><i style={{ background: SPORTS[row.key]?.[1] || 'var(--muted-2)' }} /><span>{SPORTS[row.key]?.[0] || row.key}</span><strong>{hours(row.seconds)}</strong><small>{total && row.seconds != null ? `${number(row.seconds / total * 100, 1)} %` : '—'}</small></div>)}</div>
     {!total && <p className="analysis-note">Noch keine Trainingszeiten im gewählten Zeitraum.</p>}
     {rows.some(row => row.known.seconds < row.count) && <p className="analysis-note">Anteile nur aus Einheiten mit bekannter Dauer.</p>}
   </>;
@@ -177,23 +178,23 @@ export default function Dashboard({ apiBase, activities, loading, onOpenActivity
     {result?.requestKey === requestKey && result.status === 'error' && <div className="analysis-loading" role="alert">{result.error} <button type="button" onClick={() => setRetry(value => value + 1)}>Erneut versuchen</button></div>}
     {data && <>
       <div className="analysis-summary">{[
-        ['Trainingseinheiten', number(data.totals.count), 'count', 'var(--fg-345e91)'],
-        ['Trainingszeit', hours(data.totals.seconds), 'seconds', 'var(--fg-278c78)'],
-        ['Distanz', `${number(data.totals.distance, 1)} km`, 'distance', 'var(--fg-5b6cc1)'],
-        ['Höhenmeter', `${number(data.totals.elevation)} m`, 'elevation', 'var(--fg-c08432)'],
-      ].map(([label, value, key, color]) => <div key={key}><span>{label}</span><strong style={{ color }}>{value}</strong><small>{scope} · {sportName}{key !== 'count' && data.totals.known[key] < data.totals.count ? ' · teilweise erfasst' : ''}</small></div>)}</div>
+        ['Trainingseinheiten', number(data.totals.count), 'count'],
+        ['Trainingszeit', hours(data.totals.seconds), 'seconds'],
+        ['Distanz', `${number(data.totals.distance, 1)} km`, 'distance'],
+        ['Höhenmeter', `${number(data.totals.elevation)} m`, 'elevation'],
+      ].map(([label, value, key]) => <div key={key}><span>{label}</span><strong>{value}</strong><small>{scope} · {sportName}{key !== 'count' && data.totals.known[key] < data.totals.count ? ' · teilweise erfasst' : ''}</small></div>)}</div>
       {!data.totals.count && <p className="analysis-empty-banner">Keine Aktivitäten für diese Auswahl. Wähle ein anderes Jahr oder importiere deine Trainingsdateien.</p>}
       <div className="analysis-overview-grid">
         <Card title="Dein Sportarten-Mix" eyebrow={`Zeitanteil · ${scope}`} extra={<span className="analysis-badge">alle Sportarten</span>}><SportShare rows={data.sportShare} /></Card>
         <Card title="Radfahren im Jahresvergleich" eyebrow="Alle Jahre mit Raddaten" className="analysis-wide" extra={<Toggle label="Kennzahl für Jahresvergleich" value={annualMetric} onChange={setAnnualMetric} options={[[ 'distance', 'Kilometer' ], [ 'elevation', 'Höhenmeter' ]]} />}>
           <div className="analysis-card-value">{number(knownTotal(data.cyclingYears, annualMetric), annualMetric === 'distance' ? 1 : 0)} {annualMetric === 'distance' ? 'km' : 'm'} <span>in {data.cyclingYears.length} Jahren</span></div>
-          <BarChart rows={data.cyclingYears.map(row => ({ key: row.key, label: row.key, value: row[annualMetric], partial: row.known[annualMetric] < row.count }))} series={[{ key: 'value', label: annualMetric === 'distance' ? 'Distanz' : 'Höhenmeter', color: annualMetric === 'distance' ? '#5a8ee3' : '#24a594' }]} unit={annualMetric === 'distance' ? 'km' : 'm'} digits={annualMetric === 'distance' ? 1 : 0} label={`Radfahren: ${annualMetric === 'distance' ? 'Kilometer' : 'Höhenmeter'} je Jahr`} />
+          <BarChart rows={data.cyclingYears.map(row => ({ key: row.key, label: row.key, value: row[annualMetric], partial: row.known[annualMetric] < row.count }))} series={[{ key: 'value', label: annualMetric === 'distance' ? 'Distanz' : 'Höhenmeter', color: annualMetric === 'distance' ? 'var(--blue)' : 'var(--teal)' }]} unit={annualMetric === 'distance' ? 'km' : 'm'} digits={annualMetric === 'distance' ? 1 : 0} label={`Radfahren: ${annualMetric === 'distance' ? 'Kilometer' : 'Höhenmeter'} je Jahr`} />
           <p className="analysis-note">Alle importierten Rad-Einheiten. Das laufende Jahr ist noch unvollständig; * markiert fehlende Messwerte.</p>
         </Card>
         <BestEfforts apiBase={apiBase} activities={activities} viewedYear={year} onOpenActivity={onOpenActivity} />
         <Card title="Trainingsumfang" eyebrow={`${sportName} · ${scope}`} className="analysis-wide" extra={<span className="analysis-badge">{year === 'all' ? 'Gesamter Zeitraum' : 'Januar–Dezember'}</span>}>
           <div className="analysis-card-value">{hours(knownTotal(weeks, 'seconds'))} <span>{periodDescription}</span></div>
-          <BarChart rows={weeklyRows('seconds', 3600)} series={[{ key: 'value', label: 'Trainingszeit', color: '#728ac7' }]} unit="h" digits={1} calendar={year} label="Trainingszeit pro Woche" />
+          <BarChart rows={weeklyRows('seconds', 3600)} series={[{ key: 'value', label: 'Trainingszeit', color: 'var(--ink-2)' }]} unit="h" digits={1} calendar={year} label="Trainingszeit pro Woche" />
           <p className="analysis-note">{year === 'all' ? 'Der gesamte gespeicherte Zeitraum' : `Januar bis Dezember ${year}`} · ein Balken pro Kalenderwoche. Genaue Wochenwerte findest du am Balken und in der Tabelle.</p>
         </Card>
       </div>
@@ -201,12 +202,12 @@ export default function Dashboard({ apiBase, activities, loading, onOpenActivity
       <div className="analysis-week-grid">
         <Card title="Verbrauchte Kalorien" eyebrow="Energie · pro Woche" extra={<span className="analysis-badge">kcal</span>}>
           <div className="analysis-card-value">{number(knownTotal(weeks, 'calories'))} <span>kcal {periodDescription}</span></div>
-          <BarChart rows={weeklyRows('calories')} series={[{ key: 'value', label: 'Energie', color: '#e7a354' }]} unit="kcal" calendar={year} label="Verbrauchte Kalorien pro Woche" />
+          <BarChart rows={weeklyRows('calories')} series={[{ key: 'value', label: 'Energie', color: 'var(--ochre)' }]} unit="kcal" calendar={year} label="Verbrauchte Kalorien pro Woche" />
           <p className="analysis-note">Gespeicherte Aktivitätskalorien, je nach Quelle gemessen oder geschätzt. * = nicht alle Einheiten enthalten Kalorien.</p>
         </Card>
         <Card title="Trainingsbelastung · TSS" eyebrow="Radfahren · aus Leistungsdaten" extra={<Toggle label="TSS Ansicht" value={tssMode} onChange={setTssMode} options={[[ 'week', 'Woche' ], [ 'day', 'Tag' ]]} />}>
           {tssMode === 'day' && <label className="analysis-day-selector">Woche für Tagesansicht<select aria-label="Woche für TSS-Tagesansicht" value={lastWeek?.key || ''} onChange={event => setDayWeekKey(event.target.value)}>{weeks.map(week => <option key={week.key} value={week.key}>{week.label} · {range(week)}</option>)}</select></label>}
-          {data.settings.ftp ? <><div className="analysis-card-value">{number(knownTotal(tssMode === 'day' ? lastWeek?.days || [] : weeks, 'tss'))} <span>{tssMode === 'day' ? range(lastWeek) : `TSS ${periodDescription}`}</span></div><BarChart rows={tssRows} series={[{ key: 'value', label: 'TSS', color: '#8b79cc' }]} unit="TSS" calendar={tssMode === 'week' ? year : undefined} label={tssMode === 'day' ? 'TSS pro Tag' : 'TSS pro Woche'} /><p className="analysis-note">Geschätzt mit FTP {number(data.settings.ftp)} W und normalisierter Leistung. Nur Rad-Einheiten mit mindestens 95 % Leistungsabdeckung. * = nicht alle Einheiten auswertbar; für Laufen wird kein TSS berechnet.</p></> : <div className="analysis-setup-empty"><span>↗</span><p>Wie viel Belastung steckt in deinem Training? Hinterlege deine FTP für die TSS-Auswertung.</p><button type="button" onClick={openSettings}>FTP hinterlegen →</button></div>}
+          {data.settings.ftp ? <><div className="analysis-card-value">{number(knownTotal(tssMode === 'day' ? lastWeek?.days || [] : weeks, 'tss'))} <span>{tssMode === 'day' ? range(lastWeek) : `TSS ${periodDescription}`}</span></div><BarChart rows={tssRows} series={[{ key: 'value', label: 'TSS', color: 'var(--accent)' }]} unit="TSS" calendar={tssMode === 'week' ? year : undefined} label={tssMode === 'day' ? 'TSS pro Tag' : 'TSS pro Woche'} /><p className="analysis-note">Geschätzt mit FTP {number(data.settings.ftp)} W und normalisierter Leistung. Nur Rad-Einheiten mit mindestens 95 % Leistungsabdeckung. * = nicht alle Einheiten auswertbar; für Laufen wird kein TSS berechnet.</p></> : <div className="analysis-setup-empty"><span>↗</span><p>Wie viel Belastung steckt in deinem Training? Hinterlege deine FTP für die TSS-Auswertung.</p><button type="button" onClick={openSettings}>FTP hinterlegen →</button></div>}
         </Card>
         <ZoneCard type="hr" weeks={weeks} year={year} threshold={data.settings.maxHr} onSettings={openSettings} />
         <ZoneCard type="power" weeks={weeks} year={year} threshold={data.settings.ftp} onSettings={openSettings} />
