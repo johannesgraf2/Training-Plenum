@@ -902,7 +902,7 @@ export default function App() {
             <div style={{ width: 26, height: 26, borderRadius: 6, background: 'linear-gradient(135deg, #3b82f6, #1e40af)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ color: '#fff', fontSize: 14, fontWeight: 800 }}>T</span>
             </div>
-            <span style={{ color: '#fff', fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>TRAINHUB</span>
+            <span style={{ color: '#fff', fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>Training Plēnum</span>
           </div>
           <nav style={{ display: 'flex', gap: 4 }}>
             {[['home', 'Startseite'], ['calendar', 'Kalender'], ['dashboard', 'Dashboard'], ['coach', 'AI Coach']].map(([id, label]) => (
