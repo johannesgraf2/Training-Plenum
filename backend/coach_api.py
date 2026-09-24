@@ -23,8 +23,8 @@ from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, GROUPS, SECONDARY_
 from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
                           CHECK_IN_SCHEMA, apply_patch, complete_profile, day_date, effective_availability, iso_week,
                           min_ride_minutes, num, obj, response_schemas, text, update_profile, validate, week_start)
-from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_season,
-                          new_season, public_season, season_frame, with_fixed)
+from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_order,
+                          check_season, new_season, public_season, season_frame, typical_season, with_fixed)
 from coach_templates import SESSION_SCHEMA, TemplateError, render_session, template_catalog
 
 
@@ -578,10 +578,17 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'otherwise, and then say why in hinweise. '
         'Season task: return 2-3 distinct season plans, exactly one recommended. segments are the new consecutive blocks from '
         'startDate (after fixedBlocks, which stay unchanged); their weeks must add up to exactly weeksToFill, each within its type '
-        'limits from blockCatalog, and the last segment is wettkampfspezifisch so it ends in the goal week. Types may repeat. '
-        'Build aerobic base first, then raise intensity in focused blocks (for example aufbau, vo2max, schwelle) and finish '
-        'race-specific; consider goal, history, previousBlocks and currentSeason. purpose is one short German sentence per block, '
-        'rationale one or two German sentences.'
+        'limits from blockCatalog, and the last segment is wettkampfspezifisch so it ends in the goal week. '
+        'Training philosophy, enforced by the server: first build the aerobic base (grundlage), then raise the engine with '
+        'vo2max, then lower VLamax and raise the threshold with schwelle, and finish with wettkampfspezifisch (race demands, '
+        'then taper). Order: optional wiedereinstieg first, grundlage, then vo2max and schwelle (either order), then '
+        'wettkampfspezifisch. Never use aufbau or uebergang in a season plan, never go back to grundlage after intensity '
+        'blocks, and each type forms one run (grundlage may be split into consecutive blocks when the season is very long). '
+        'Few long blocks (typically 8-12 weeks) instead of many short ones. typicalSeason is this build-up with lengths '
+        'already filling weeksToFill: the recommended plan uses its order and normally its lengths, shifting a few weeks '
+        'when history, fixedBlocks or the goal argue for it. Alternatives vary it, for example schwelle before vo2max or a '
+        'longer grundlage. Consider goal, history, previousBlocks and currentSeason. purpose is one short German sentence per '
+        'block, rationale one or two German sentences.'
     )
 
     def previous_block(block, plan, rows, today):
@@ -628,8 +635,10 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             fixed_ids = {item['blockId'] for item in frame['fixed']}
             del context['instruction']  # The free-text wish only refines the structured request.
             goal_week_end = frame['openFrom'] + timedelta(weeks=frame['remainingWeeks']) - timedelta(days=1)
+            last_fixed = frame['fixed'][-1]['blockType'] if frame['fixed'] else None
             context.update(goal=goal, today=today.isoformat(), startDate=frame['openFrom'].isoformat(),
                            weeksToFill=frame['remainingWeeks'], goalWeekEnd=goal_week_end.isoformat(),
+                           typicalSeason=typical_season(frame['remainingWeeks'], last_fixed),
                            fixedBlocks=[{key: b.get(key) for key in ('blockType', 'secondaryFocus', 'startDate', 'endDate')} |
                                         {'weeks': [{k: w[k] for k in ('phase', 'targetHours', 'focus')} for w in b['weeks']]}
                                         for b in plan['blocks'] if b['id'] in fixed_ids],
@@ -734,6 +743,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             for option in decision['options']:
                 segments = with_fixed(option['segments'], frame)
                 try:
+                    check_order(option['segments'])
                     check_season(segments, frame, current_profile)
                 except CoachError as error:
                     # A flawed alternative is dropped; a flawed recommendation fails the proposal.

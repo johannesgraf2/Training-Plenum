@@ -31,9 +31,9 @@ class CatalogTests(unittest.TestCase):
         ids = [item['id'] for item in result['blockTypes']]
         self.assertEqual(ids, ['wiedereinstieg', 'grundlage', 'aufbau', 'schwelle', 'vo2max', 'wettkampfspezifisch', 'uebergang'])
         vo2 = next(item for item in result['blockTypes'] if item['id'] == 'vo2max')
-        self.assertEqual((vo2['minWeeks'], vo2['defaultWeeks'], vo2['maxWeeks']), (3, 4, 6))
+        self.assertEqual((vo2['minWeeks'], vo2['defaultWeeks'], vo2['maxWeeks']), (3, 4, 12))
         self.assertIn('Mindestens 2× VO2max-Einheit pro Belastungswoche', vo2['rules'])
-        self.assertEqual(list(vo2['rhythms']), ['3', '4', '5', '6'])
+        self.assertEqual(list(vo2['rhythms']), [str(n) for n in range(3, 13)])
         self.assertEqual(vo2['rhythms']['3'], [False, False, True])
         self.assertEqual([item['id'] for item in result['secondaryFocus']], ['kraft', 'laufen', 'radfahren'])
 
@@ -45,14 +45,14 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(pattern(8), 'LLLDLLLD')
         self.assertEqual(pattern(10), 'LLLDLLDLLD')
         self.assertEqual(suggested_rhythm(2, 'uebergang'), [False, False])
-        for length in range(4, 9):  # Every suggested rhythm passes the block rules.
+        for length in range(4, 13):  # Every suggested rhythm passes the block rules.
             check_block('aufbau', None, weeks(*['recovery' if d else 'build' for d in suggested_rhythm(length, 'aufbau')]),
                         start=MONDAY, profile=profile())
 
 
 class BlockRuleTests(unittest.TestCase):
     def test_length_last_deload_and_load_streak(self):
-        with self.assertRaisesRegex(CoachError, '3–6 Wochen'):
+        with self.assertRaisesRegex(CoachError, '3–12 Wochen'):
             check_block('vo2max', None, weeks('build', 'recovery'), start=MONDAY, profile=profile())
         with self.assertRaisesRegex(CoachError, 'Entlastungswoche'):
             check_block('vo2max', None, weeks('build', 'build', 'build'), start=MONDAY, profile=profile())

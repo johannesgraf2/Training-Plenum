@@ -416,13 +416,18 @@ function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, 
   const types = catalog?.blockTypes || [];
   const typeOf = identity => types.find(type => type.id === identity);
   const total = items.reduce((sum, item) => sum + (Number(item.weeks) || 0), 0);
+  const open = remainingWeeks - total;
+  const longest = items.reduce((sum, item) => sum + (typeOf(item.blockType)?.maxWeeks || 0), 0);
+  const weeksLabel = n => `${n} ${n === 1 ? 'Woche' : 'Wochen'}`;
+  // Short notes next to the week sum instead of a separate list.
   const problems = [
+    ...(open > 0 ? [`noch ${weeksLabel(open)} bis zur Zielwoche`] : open < 0 ? [`${weeksLabel(-open)} zu viel`] : []),
+    ...(open > 0 && longest < remainingWeeks ? [`auch mit Höchstlängen nur ${weeksLabel(longest)}, bitte einen Block hinzufügen`] : []),
     ...items.flatMap((item, i) => {
       const type = typeOf(item.blockType), weeks = Number(item.weeks);
-      return type && Number.isInteger(weeks) && weeks >= type.minWeeks && weeks <= type.maxWeeks ? [] : [`Block ${fixed.length + i + 1}: „${type?.name}“ dauert ${type?.minWeeks}–${type?.maxWeeks} Wochen.`];
+      return type && Number.isInteger(weeks) && weeks >= type.minWeeks && weeks <= type.maxWeeks ? [] : [`Block ${fixed.length + i + 1}: ${type?.name} dauert ${type?.minWeeks}–${type?.maxWeeks} Wochen`];
     }),
-    ...(total !== remainingWeeks ? [`Die Blöcke ergeben ${total} Wochen, bis zur Zielwoche sind es ${remainingWeeks}.`] : []),
-    ...(items.at(-1)?.blockType !== 'wettkampfspezifisch' ? ['Der letzte Block vor dem Ziel ist wettkampfspezifisch.'] : []),
+    ...(items.at(-1)?.blockType !== 'wettkampfspezifisch' ? ['der letzte Block vor dem Ziel ist wettkampfspezifisch'] : []),
   ];
   const update = (index, patch) => setItems(list => list.map((item, i) => i === index ? { ...item, ...patch } : item));
   const move = (index, delta) => setItems(list => { const next = [...list]; [next[index], next[index + delta]] = [next[index + delta], next[index]]; return next; });
@@ -445,8 +450,7 @@ function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, 
       </span>
       {item.purpose && <small>{item.purpose}</small>}
     </li>; })}</ol>
-    <div className="coach-actions"><button type="button" disabled={busy} onClick={add}>Block hinzufügen</button><strong className={`coach-season-sum ${total === remainingWeeks ? 'ok' : ''}`}>{total} von {remainingWeeks} Wochen verplant</strong></div>
-    {problems.length > 0 && <ul className="coach-rules coach-season-problems">{problems.map(problem => <li key={problem}>{problem}</li>)}</ul>}
+    <div className="coach-actions"><button type="button" disabled={busy} onClick={add}>Block hinzufügen</button><p className={`coach-season-sum ${problems.length ? '' : 'ok'}`}><strong>{total} von {remainingWeeks} Wochen verplant</strong>{problems.map(problem => ` · ${problem}`).join('')}</p></div>
     <div className="coach-actions"><button type="button" className="coach-primary" disabled={busy || problems.length > 0} onClick={() => onSave(items.map(({ key, ...item }) => ({ ...item, weeks: Number(item.weeks) })))}>{saveLabel}</button><button type="button" disabled={busy} onClick={onCancel}>Abbrechen</button></div>
   </div>;
 }

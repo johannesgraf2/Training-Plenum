@@ -60,15 +60,15 @@ BLOCK_TYPES = {
                                  '(for example 1:30 -> 2:00 -> 2:30 -> 3:00 h). At most one tempo, sweetspot or SIT session; '
                                  'keep neuromuscular power with sprints inside easy rides (bike_z2_sprints) or short SIT '
                                  '(4x30 s -> 6x30 s -> 8x30 s).'),
-    'aufbau': _block('Aufbau', 'Umfang halten und die Intensität schrittweise steigern.', 6, 4, 8,
+    'aufbau': _block('Aufbau', 'Umfang halten und die Intensität schrittweise steigern.', 6, 4, 12,
                      max_per_week={'vo2': 1}, min_per_load_week={'quality': 2},
                      guidance='Two quality sessions per load week plus a long easy ride. Progress work duration across the '
                               'block, for example sweetspot 3x12 -> 3x15 -> 2x20 min or VO2 4x4 -> 5x4 min; vary formats.'),
-    'schwelle': _block('Schwelle', 'Leistung an der Schwelle verbessern.', 6, 4, 8,
+    'schwelle': _block('Schwelle', 'Leistung an der Schwelle verbessern.', 6, 4, 12,
                        max_per_week={'vo2': 1}, min_per_load_week={'thresholdWork': 2},
                        guidance='Two threshold or sweetspot sessions per load week plus a long easy ride. Extend time in zone '
                                 'week by week (for example 3x10 -> 3x12 -> 3x15 -> 2x20 -> 4x16 min) rather than raising watts.'),
-    'vo2max': _block('VO2max', 'Maximale aerobe Leistung mit kurzen, harten Intervallen.', 4, 3, 6,
+    'vo2max': _block('VO2max', 'Maximale aerobe Leistung mit kurzen, harten Intervallen.', 4, 3, 12,
                      max_per_week={'thresholdWork': 1}, min_per_load_week={'vo2': 2},
                      guidance='Concentrated VO2max stimulus on top of plenty of easy riding (1-3 h easy rides between the hard '
                               'days). Two VO2 sessions per load week, sometimes on nearby days. Progress accumulated time at high '
@@ -77,7 +77,7 @@ BLOCK_TYPES = {
                               '(bike_vo2_micro); vary formats (4x4, 5x5, 30/15, 40/20) week to week. High cadence (90-110 rpm) '
                               'suits VO2 work. Keep a short SIT or sprint touch every week or two. Deload weeks keep one short VO2 '
                               'session.'),
-    'wettkampfspezifisch': _block('Wettkampfspezifisch', 'Wettkampfbelastungen üben und frisch am Start stehen.', 4, 2, 6,
+    'wettkampfspezifisch': _block('Wettkampfspezifisch', 'Wettkampfbelastungen üben und frisch am Start stehen.', 4, 2, 12,
                                   taper_drop=.3, ends_by_goal=True,
                                   guidance='Rehearse race demands with long rides at race intensity and race-like efforts '
                                            '(for example 4x16 min at tempo or threshold inside a long ride), then taper; keep short '
