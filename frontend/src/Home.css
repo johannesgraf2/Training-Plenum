@@ -41,6 +41,7 @@
 .home-hero h1 span { display: block; }
 .home-hero h1 em { display: block; color: var(--accent-text); font-style: italic; }
 .home-lede { margin: 22px 0 0; max-width: 560px; font-size: 18px; line-height: 1.5; color: var(--ink-2); }
+.home-time { white-space: nowrap; } /* keep "0:59 h" on one line */
 
 .home-week { margin: 0; padding: 22px 24px 18px; display: flex; flex-direction: column; gap: 12px; background: color-mix(in srgb, var(--card) 94%, transparent); }
 .home-week-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; color: var(--ink-2); }
