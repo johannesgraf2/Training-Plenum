@@ -7,7 +7,7 @@ import AICoach from './AICoach';
 import Home from './Home';
 import UserMenu from './UserMenu';
 import WorkoutEditor from './WorkoutEditor';
-import { localDate, summary as workoutSummary } from './workoutModel';
+import { localDate, summary as workoutSummary, workoutTotals } from './workoutModel';
 import './Calendar.css';
 import { collectDroppedFiles } from './importQueue';
 import { SportMark, sportColor, sportLabels } from './sports';
@@ -45,6 +45,7 @@ const fmt = {
   timeAxis: (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`,
   pace: (dist, dur) => dist > 0 ? `${(dur / dist).toFixed(1)}` : '—',
   num: (n) => n?.toLocaleString('de-DE') ?? '—',
+  hours: (m) => { m = Math.round(m); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`; },
 };
 
 
@@ -862,7 +863,16 @@ export default function App() {
         summary.bySport[a.sport].distance += a.distance || 0;
         summary.bySport[a.sport].count += 1;
       });
-      weeks.push({ cells: weekCells, summary });
+      // Planned volume: time-based steps count as hours, distance-only steps are listed separately.
+      const planned = { count: 0, duration: 0, distance: 0, bySport: {} };
+      weekCells.filter(Boolean).flatMap(c => c.plans).forEach(workout => {
+        const totals = workoutTotals(workout);
+        planned.count += 1;
+        planned.duration += totals.time / 60;
+        planned.distance += totals.distance / 1000;
+        planned.bySport[workout.sport] = (planned.bySport[workout.sport] || 0) + totals.time / 60;
+      });
+      weeks.push({ cells: weekCells, summary, planned });
     }
     return weeks;
   }, [calMonth, activities, plannedWorkouts]);
@@ -996,6 +1006,25 @@ export default function App() {
                 })}
 
                 <div className="calendar-summary">
+                  {week.planned.count > 0 && (
+                    <div className="calendar-summary-planned" aria-label="Geplante Wochenstunden">
+                      <div className="calendar-summary-planned-total"><span>Geplant</span><strong>{fmt.hours(week.planned.duration)}</strong></div>
+                      <div className="calendar-summary-planned-meta">
+                        {week.planned.count} {week.planned.count === 1 ? 'Einheit' : 'Einheiten'}
+                        {week.planned.distance > 0 && ` · + ${week.planned.distance.toLocaleString('de-DE', { maximumFractionDigits: 1 })} km`}
+                      </div>
+                      {Object.keys(week.planned.bySport).length > 1 && Object.entries(week.planned.bySport).map(([sport, minutes]) => (
+                        <div key={sport} className="calendar-summary-planned-sport">
+                          <span className="sport-mark"><i aria-hidden="true" style={{ background: sportColor(sport) }} />{sportLabels[sport] || sport}</span><span>{fmt.hours(minutes)}</span>
+                        </div>
+                      ))}
+                      {week.summary.count > 0 && week.planned.duration > 0 && (
+                        <div className="calendar-summary-progress" title={`${fmt.hours(week.summary.duration)} von ${fmt.hours(week.planned.duration)} absolviert`}>
+                          <i style={{ width: `${Math.min(100, (week.summary.duration / week.planned.duration) * 100)}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {week.summary.count > 0 ? (<>
                     {Object.entries(week.summary.bySport).map(([sport, data]) => (
                       <div key={sport} className="calendar-summary-sport">
