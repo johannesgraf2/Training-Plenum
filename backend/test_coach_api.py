@@ -114,6 +114,19 @@ class CoachAPITests(unittest.TestCase):
         self.client.delete('/api/ai-provider')
         self.assertFalse(self.client.get('/api/ai-provider').json['configured'])
 
+    def test_reasoning_effort_is_stored_and_passed_to_the_provider(self):
+        self.assertIsNone(self.client.get('/api/ai-provider').json['reasoningEffort'])
+        saved = self.client.put('/api/ai-provider', json={'provider': 'openai', 'model': 'gpt-6-sol', 'reasoningEffort': 'medium'})
+        self.assertEqual((saved.json['model'], saved.json['reasoningEffort']), ('gpt-6-sol', 'medium'))
+        self.assertEqual(self.client.put('/api/ai-provider', json={'provider': 'openai', 'model': 'gpt-6-sol',
+                                                                 'reasoningEffort': 'extreme'}).status_code, 400)
+        body = {'kind': 'block', 'mode': 'choose', 'blockType': 'wiedereinstieg', 'secondaryFocus': None,
+                'startDate': self.start.isoformat(), 'weeks': 2}
+        _, provider = self.propose(body, {'options': [self.option()], 'hinweise': []})
+        self.assertEqual(provider.generate.call_args.kwargs['reasoning_effort'], 'medium')
+        self.client.put('/api/ai-provider', json={'provider': 'openai', 'model': 'gpt-4.1-mini'})
+        self.assertIsNone(self.client.get('/api/ai-provider').json['reasoningEffort'])
+
     def test_untrusted_origins_and_non_json_writes_denied(self):
         for path in ('/api/ai-provider', '/api/athlete-profile', '/api/coach/plan'):
             self.assertEqual(self.client.get(path, headers={'Origin': 'https://evil.example'}).status_code, 403)

@@ -55,7 +55,7 @@ beforeEach(() => {
     let data;
     if (path === '/api/athlete-snapshot') data = { athlete: {}, observed: { currentTraining: { last7Days: { trainingHours: 6.5 }, last28Days: { trainingHours: 27 }, last42Days: { trainingHours: 40 } }, observedTrainingCapacity: { max6WeekAverageHours: 9.5 } }, selfReported: profile, dataQuality: { ftpConfigured: true, maxHrConfigured: true } };
     else if (path === '/api/athlete-profile') data = method === 'PUT' ? { ...profile, ...body } : profile;
-    else if (path === '/api/ai-provider') data = { provider: 'openai', model: body?.model || 'gpt-4.1-mini', configured: true, keyLast4: '1234', encryptionConfigured: true };
+    else if (path === '/api/ai-provider') data = { provider: 'openai', model: body?.model || 'gpt-4.1-mini', reasoningEffort: body?.reasoningEffort ?? null, configured: true, keyLast4: '1234', encryptionConfigured: true };
     else if (path === '/api/coach/plan') data = initialPlan;
     else if (path === '/api/coach/block-types') data = catalog;
     else if (path === '/api/coach/blocks/block-1/timeline') data = timeline;
@@ -160,10 +160,15 @@ test('provider keys are transient and never included in a later model-only save'
   expect(requests.find(r => r.path === '/api/ai-provider' && r.method === 'PUT').body.apiKey).toBe('sk-secret-example');
   expect(container.querySelector('input[type="password"]').value).toBe('');
   expect(container.textContent).not.toContain('sk-secret-example');
-  await change(inputFor('Modell'), 'my-compatible-model');
+  await change(inputFor('Modell'), 'custom');
+  await change(inputFor('Modell-ID'), 'my-compatible-model');
   await submit(button('Provider speichern').closest('form'));
   const writes = requests.filter(r => r.path === '/api/ai-provider' && r.method === 'PUT');
-  expect(writes[1].body).toEqual({ provider: 'openai', model: 'my-compatible-model' });
+  expect(writes[1].body).toEqual({ provider: 'openai', model: 'my-compatible-model', reasoningEffort: null });
+  await change(inputFor('Modell'), 'gpt-6-sol');
+  await change(inputFor('Reasoning'), 'medium');
+  await submit(button('Provider speichern').closest('form'));
+  expect(requests.filter(r => r.path === '/api/ai-provider' && r.method === 'PUT')[2].body).toEqual({ provider: 'openai', model: 'gpt-6-sol', reasoningEffort: 'medium' });
   expect(storageSpy).not.toHaveBeenCalled(); storageSpy.mockRestore();
 });
 
