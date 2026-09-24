@@ -44,7 +44,7 @@ test('shows the race goal from the athlete profile with a countdown and opens th
   expect(container.querySelector('.race-goal-count').textContent).toBe('32Tage bis zum Start · gut 4 Wochen');
   expect(container.textContent).toContain('Sonntag, 1. März 2026');
   expect(container.textContent).toContain('Radsport-Event');
-  expect(container.textContent).toContain('unter 10 Stunden');
+  expect(container.textContent).not.toContain('unter 10 Stunden');
   act(() => button('Bearbeiten').click());
   expect(onEdit).toHaveBeenCalledTimes(1);
 });

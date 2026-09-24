@@ -213,10 +213,7 @@ export default function Home({ apiBase, activities, plannedWorkouts, workoutLoad
         <h1><span>{weekday}, </span><em>{dateParts.join(', ')}</em></h1>
         <p className="home-lede">{lede} Diese Woche hast du <strong>{hm(done)}</strong> absolviert{target > done ? <> von geplanten <strong>{hm(target)}</strong></> : null}.</p>
       </div>
-      <figure className="home-week home-card" aria-label="Trainingszeit dieser Woche nach Tagen">
-        <div className="home-week-head"><span>Wochenumfang</span><strong>{hm(done).replace(' h', '')}{target > done && <small> / {hm(target)}</small>}</strong></div>
-        <WeekChart week={week} todayKey={todayKey} />
-      </figure>
+      <RaceGoal apiBase={apiBase} onEdit={onEditGoal} photo={imageUrl(apiBase, appearance.raceGoalImage)} />
     </section>
 
     <div className="home-grid">
@@ -268,6 +265,10 @@ export default function Home({ apiBase, activities, plannedWorkouts, workoutLoad
       </div>
 
       <aside className="home-side">
+        <figure className="home-week home-card" aria-label="Trainingszeit dieser Woche nach Tagen">
+          <div className="home-week-head"><span>Wochenumfang</span><strong>{hm(done).replace(' h', '')}{target > done && <small> / {hm(target)}</small>}</strong></div>
+          <WeekChart week={week} todayKey={todayKey} />
+        </figure>
         <section className="home-card home-block" aria-labelledby="home-week-title">
           <div className="home-block-head"><h2 id="home-week-title">Diese Woche</h2></div>
           <div className="home-figures">
@@ -295,7 +296,6 @@ export default function Home({ apiBase, activities, plannedWorkouts, workoutLoad
             <div className="home-split-legend">{bySport.map(([sport, minutes]) => <span key={sport}><i style={{ background: sportColor(sport) }} />{sportLabels[sport] || sport} {hm(minutes)}</span>)}</div>
           </div>}
         </section>
-        <RaceGoal apiBase={apiBase} onEdit={onEditGoal} photo={imageUrl(apiBase, appearance.raceGoalImage)} />
         <div className="home-card"><BestEfforts apiBase={apiBase} activities={activities} viewedYear={bestEffortsYear} onOpenActivity={onOpenActivity} /></div>
       </aside>
     </div>
