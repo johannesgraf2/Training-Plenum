@@ -509,3 +509,68 @@ test('the provider tab explains where the encryption key lives and what to do wh
   expect(container.textContent).not.toContain('Backend-Konfiguration');
   expect(button('Provider speichern').disabled).toBe(true);
 });
+
+const blockOf = (id, blockType, typeName, startDate, count) => ({ id, blockType, typeName, status: 'active', startDate, endDate: new Date(Date.parse(`${startDate}T12:00:00Z`) + (count * 7 - 1) * 86400000).toISOString().slice(0, 10),
+  weeks: Array.from({ length: count }, (_, i) => ({ week: i + 1, phase: i === count - 1 ? 'recovery' : 'base', targetHours: 6, focus: 'Grundlage' })) });
+
+test('a season block without a plan is created from the season strip, in order', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
+  const base = blockOf('b1', 'grundlage', 'Grundlage', '2026-09-28', 8);
+  initialPlan = { revision: 1, blocks: [base], weeks: {}, season: { ...season, openFrom: '2026-11-23', remainingWeeks: 10, segments: [{ ...seasonSegments[0], blockId: 'b1' }, ...seasonSegments.slice(1)] } };
+  await render();
+  const segments = container.querySelectorAll('button.coach-season-segment');
+  expect(segments).toHaveLength(3);
+  expect(container.querySelector('.coach-jump-card')).toBeNull();
+  await click(segments[2]);
+  expect(container.querySelector('.coach-jump-card').textContent).toContain('Als Nächstes kommt VO2max ab 23. Nov.');
+  await click(button('Zu VO2max springen'));
+  expect(container.querySelector('.coach-jump-card h2').textContent).toBe('VO2max · 6 Wochen');
+  expect(container.querySelectorAll('button.coach-season-segment')[1].getAttribute('aria-pressed')).toBe('true');
+  await click(container.querySelector('.coach-jump-card').querySelector('button.coach-primary'));
+  expect(requests.find(r => r.path === '/api/coach/proposals').body).toMatchObject({ kind: 'block', mode: 'choose', blockType: 'vo2max', weeks: 6, startDate: '2026-11-23' });
+  // The proposal is shown only in the card that asked for it.
+  expect(container.querySelectorAll('.coach-proposal-embedded')).toHaveLength(1);
+  expect(container.querySelector('.coach-jump-card .coach-proposal-embedded')).not.toBeNull();
+});
+
+test('the athlete jumps between blocks and deletes one with its workouts', async () => {
+  const first = blockOf('b1', 'grundlage', 'Grundlage', '2026-09-28', 2);
+  const second = blockOf('b2', 'vo2max', 'VO2max', '2026-10-12', 2);
+  const planned = { week: '2026-W42', targetHours: 1, focus: 'VO2max', sessions: [{ ...session, rendered: { ...session.rendered, date: '2026-10-13', workout: { name: 'Grundlage' } } }] };
+  initialPlan = { revision: 1, blocks: [first, second], weeks: { '2026-W42': planned } };
+  responses['DELETE /api/coach/blocks/b2'] = async () => ({ ok: true, json: async () => ({ revision: 2, blocks: [first], weeks: {}, deletedWorkouts: 1 }) });
+  await render();
+  const switcher = () => [...container.querySelectorAll('.coach-block-switch button')];
+  expect(switcher().map(b => b.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+  expect(container.textContent).toContain('Aktueller Trainingsblock');
+  await click(switcher()[1]);
+  expect(container.textContent).toContain('Kommender Trainingsblock');
+  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W42');
+  expect(container.querySelector('[aria-label="Planungswoche"]').min).toBe('2026-W42');
+  expect(button('Woche anpassen').disabled).toBe(false);
+  await click(button('Block löschen'));
+  expect(container.querySelector('.coach-confirm-delete').textContent).toContain('Die geplante Woche und 1 Workout im Kalender werden entfernt');
+  await click(button('Endgültig löschen'));
+  expect(requests.some(r => r.method === 'DELETE' && r.path === '/api/coach/blocks/b2')).toBe(true);
+  expect(container.textContent).toContain('Trainingsblock gelöscht. 1 Workout wurde aus dem Kalender entfernt.');
+  expect(changed).toHaveBeenCalled();
+  expect(container.querySelector('.coach-block-switch')).toBeNull();
+  expect(container.textContent).toContain('Aktueller Trainingsblock');
+  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W40');
+});
+
+test('deleting the season asks whether its blocks and workouts go too', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
+  initialPlan = { ...initialPlan, season };
+  responses['DELETE /api/coach/season'] = async () => ({ ok: true, json: async () => ({ revision: 2, blocks: [], weeks: {}, season: null, deletedWorkouts: 3 }) });
+  await render();
+  await click(button('Saisonplan löschen'));
+  expect(requests.some(r => r.method === 'DELETE')).toBe(false);
+  await click(button('Abbrechen'));
+  await click(button('Saisonplan löschen'));
+  await click(button('Mit Blöcken und Workouts löschen'));
+  expect(global.fetch.mock.calls.find(([, options]) => options?.method === 'DELETE')[0]).toContain('/api/coach/season?timezone=');
+  expect(global.fetch.mock.calls.find(([, options]) => options?.method === 'DELETE')[0]).toContain('&blocks=true');
+  expect(container.textContent).toContain('Saisonplan und seine Trainingsblöcke gelöscht. 3 Workouts wurden aus dem Kalender entfernt.');
+  expect(changed).toHaveBeenCalled();
+});
