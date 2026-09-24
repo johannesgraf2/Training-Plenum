@@ -182,7 +182,7 @@ class CoachAPITests(unittest.TestCase):
                                           'hinweise': []})
         self.assertEqual([o['id'] for o in proposal['after']['options']], ['a'])
         self.assertEqual(proposal['rejectedOptions'][0]['id'], 'b')
-        self.assertIn('3–6 Wochen', proposal['rejectedOptions'][0]['reason'])
+        self.assertIn('3–12 Wochen', proposal['rejectedOptions'][0]['reason'])
 
     def test_chosen_block_is_checked_before_and_after_the_provider(self):
         body = {'kind': 'block', 'mode': 'choose', 'blockType': 'vo2max', 'secondaryFocus': None,

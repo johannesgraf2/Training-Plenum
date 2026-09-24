@@ -62,8 +62,8 @@ class RuleTests(unittest.TestCase):
                          self.frame, profile())
 
     def test_each_new_block_fits_its_type(self):
-        with self.assertRaisesRegex(CoachError, 'Block 3: „VO2max“ dauert 3–6 Wochen'):
-            check_season(with_fixed([segment('aufbau', 4), segment('vo2max', 8)], self.frame), self.frame, profile())
+        with self.assertRaisesRegex(CoachError, 'Block 3: „VO2max“ dauert 3–12 Wochen'):
+            check_season(with_fixed([segment('aufbau', 4), segment('vo2max', 2)], self.frame), self.frame, profile())
         with self.assertRaisesRegex(CoachError, 'Block 2: .*Krafttraining'):
             check_season(with_fixed([segment('aufbau', 8, 'kraft'), segment('wettkampfspezifisch', 4)], self.frame), self.frame, profile())
         check_season(with_fixed([segment('aufbau', 8, 'kraft'), segment('wettkampfspezifisch', 4)], self.frame), self.frame, profile(gym=True))
