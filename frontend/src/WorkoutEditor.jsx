@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { garminWorkoutName, intensityLabels, intervalBlock, newStep, newWorkout, powerStep, stepDescription, summary, targetLabels, toDraft, toWorkout, workoutTemplates, workoutTotals } from './workoutModel';
+import { fitFileName, garminWorkoutName, intensityLabels, intervalBlock, newStep, newWorkout, powerStep, stepDescription, summary, targetLabels, toDraft, toWorkout, workoutTemplates, workoutTotals } from './workoutModel';
 import WorkoutOverview from './WorkoutOverview';
 import './WorkoutEditor.css';
 
@@ -107,7 +107,7 @@ export default function WorkoutEditor({ apiBase, initial, date, onClose, onSaved
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `${payload.date}_${payload.name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_|_$/g, '') || 'workout'}.fit`;
+        link.download = fitFileName(payload);
         document.body.appendChild(link); link.click(); link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         setStatus('FIT-Datei geprüft und Download gestartet. Unten findest du die USB-Anleitung.');

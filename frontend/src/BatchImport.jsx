@@ -1,10 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ACCEPTED_FILES, collectDroppedFiles, prepareFiles, runImportQueue, uploadRecording } from './importQueue';
+import WorkoutExport from './WorkoutExport';
 import './BatchImport.css';
 
 const statusLabels = { pending: 'Bereit', uploading: 'Importiert…', imported: 'Importiert', duplicate: 'Duplikat', skipped: 'Übersprungen', error: 'Fehler' };
+const headings = {
+  import: ['Aktivitäten importieren', 'Eine Datei, alle Dateien oder einen ganzen Ordner.'],
+  export: ['Workouts exportieren', 'Geplante Workouts als FIT-Dateien für deine Garmin.'],
+};
 
-export default function BatchImport({ apiBase, onImported, onClose, onLegacy, onOpen, initialSelection }) {
+// onClose(imported) tells the app whether anything was imported, so it can show the new activities.
+export default function BatchImport({ apiBase, onImported, onClose, onLegacy, onOpen, initialSelection, workouts = [], workoutLoadError = '' }) {
+  const [tab, setTab] = useState('import');
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
@@ -58,6 +65,7 @@ export default function BatchImport({ apiBase, onImported, onClose, onLegacy, on
     event.stopPropagation();
     setDrag(false);
     if (locked.current) return;
+    setTab('import');
     locked.current = true;
     setReading(true);
     setError('');
@@ -97,8 +105,9 @@ export default function BatchImport({ apiBase, onImported, onClose, onLegacy, on
   const counts = rows.reduce((totals, row) => ({ ...totals, [row.status]: (totals[row.status] || 0) + 1 }), {});
   const finished = rows.length - (counts.pending || 0) - (counts.uploading || 0);
   const processed = !!(counts.imported || counts.duplicate || counts.error);
+  const close = () => onClose(processed);
   const handleKeys = event => {
-    if (event.key === 'Escape' && !working) onClose();
+    if (event.key === 'Escape' && !working) close();
     if (event.key !== 'Tab') return;
     const elements = Array.from(event.currentTarget.querySelectorAll('button:not(:disabled), input:not([type="hidden"]):not(:disabled), a[href]')).filter(element => !element.hidden);
     const first = elements[0], last = elements[elements.length - 1];
@@ -108,7 +117,11 @@ export default function BatchImport({ apiBase, onImported, onClose, onLegacy, on
 
   return <div className="batch-backdrop" onDragOver={event => event.preventDefault()} onDrop={drop}>
     <section className="batch-dialog" role="dialog" aria-modal="true" aria-labelledby="batch-title" onKeyDown={handleKeys}>
-      <header className="batch-header"><div><h2 id="batch-title">Aktivitäten importieren</h2><p>Eine Datei, alle Dateien oder einen ganzen Ordner.</p></div><button ref={closeButton} type="button" className="batch-close" aria-label="Import schließen" disabled={working} onClick={onClose}>×</button></header>
+      <header className="batch-header"><div><h2 id="batch-title">{headings[tab][0]}</h2><p>{headings[tab][1]}</p></div><button ref={closeButton} type="button" className="batch-close" aria-label="Dialog schließen" disabled={working} onClick={close}>×</button></header>
+      <div className="batch-tabs" role="tablist" aria-label="Importieren oder exportieren">
+        {[['import', 'Importieren'], ['export', 'Exportieren']].map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} disabled={working} onClick={() => setTab(id)}>{label}</button>)}
+      </div>
+      {tab === 'export' ? <WorkoutExport apiBase={apiBase} workouts={workouts} loadError={workoutLoadError} onClose={close} /> : <>
       <div className="batch-content">
         <div className={`batch-drop ${drag ? 'batch-drag' : ''}`} onDragOver={event => { event.preventDefault(); if (!working) setDrag(true); }} onDragLeave={() => setDrag(false)}>
           <span className="batch-folder" aria-hidden="true">↥</span>
@@ -141,9 +154,10 @@ export default function BatchImport({ apiBase, onImported, onClose, onLegacy, on
           {!rows.length && <button type="button" className="batch-link" disabled={reading} onClick={onLegacy}>Manuelle Eingabe / CSV</button>}
           {!!counts.error && <button type="button" onClick={() => start(true)}>Fehler erneut versuchen</button>}
           {!!counts.pending && <button type="button" className="batch-primary" onClick={() => start()}>{counts.pending} Dateien importieren</button>}
-          {!!rows.length && <button type="button" className={counts.pending ? '' : 'batch-primary'} onClick={onClose}>{processed ? 'Aktivitäten anzeigen' : 'Schließen'}</button>}
+          {!!rows.length && <button type="button" className={counts.pending ? '' : 'batch-primary'} onClick={close}>{processed ? 'Aktivitäten anzeigen' : 'Schließen'}</button>}
         </>}
       </footer>
+      </>}
     </section>
   </div>;
 }

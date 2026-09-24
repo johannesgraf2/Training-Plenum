@@ -260,7 +260,7 @@ export default function Home({ apiBase, activities, plannedWorkouts, workoutLoad
               <span className="num">{a.power ?? '—'}</span>
               <Icon name="chevron" size={16} className="home-table-chevron" />
             </button>)}
-          </div> : <p className="home-muted">Noch keine Aktivitäten. Über „Datei importieren“ eine FIT-Datei hochladen.</p>}
+          </div> : <p className="home-muted">Noch keine Aktivitäten. Über „Datei importieren / exportieren“ eine FIT-Datei hochladen.</p>}
         </section>
       </div>
 

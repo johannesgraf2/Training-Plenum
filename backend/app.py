@@ -504,6 +504,25 @@ def download_workout_range():
         return jsonify({'error': 'Keine geplanten Workouts in diesem Zeitraum.'}), 404
     if len(selected) > 500:
         raise WorkoutError('Bitte einen Zeitraum mit höchstens 500 Workouts auswählen.')
+    return workout_zip(selected, f'trainhub_{start}_{end}.zip')
+
+
+@app.route('/api/workouts/export-selection', methods=['POST'])
+def download_workout_selection():
+    ids = (request.get_json(silent=True) or {}).get('ids')
+    if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+        raise WorkoutError('Bitte mindestens ein Workout auswählen.')
+    if len(ids) > 500:
+        raise WorkoutError('Bitte höchstens 500 Workouts auswählen.')
+    rows = PlannedWorkout.query.filter(PlannedWorkout.user_id == DEMO_USER_ID, PlannedWorkout.id.in_(set(ids))).all()
+    if len(rows) != len(set(ids)):
+        return jsonify({'error': 'Mindestens ein ausgewähltes Workout existiert nicht mehr. Bitte die Liste neu laden.'}), 404
+    selected = sorted((row.to_dict() for row in rows), key=lambda w: (w['date'], w['name'], w['id']))
+    first, last = selected[0]['date'], selected[-1]['date']
+    return workout_zip(selected, f'trainhub_{first}.zip' if first == last else f'trainhub_{first}_{last}.zip')
+
+
+def workout_zip(selected, download_name):
     archive = BytesIO()
     try:
         with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:
@@ -515,8 +534,7 @@ def download_workout_range():
         app.logger.exception('Batch FIT export failed')
         return jsonify({'error': 'Ein Workout konnte nicht exportiert werden. Es wurde kein unvollständiges ZIP erstellt.'}), 500
     archive.seek(0)
-    return send_file(archive, mimetype='application/zip', as_attachment=True,
-                     download_name=f'trainhub_{start}_{end}.zip', max_age=0)
+    return send_file(archive, mimetype='application/zip', as_attachment=True, download_name=download_name, max_age=0)
 
 
 def planning_context():

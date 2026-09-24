@@ -4,6 +4,7 @@ export const localDate = (date = new Date()) => `${date.getFullYear()}-${String(
 // Format the selected calendar day directly, without timezone conversion.
 export const garminWorkoutName = ({ date, name }) => /^\d{4}-\d{2}-\d{2}$/.test(date || '') && name.trim()
   ? `${date.split('-').reverse().join('.')} · ${name.trim()}` : '';
+export const fitFileName = ({ date, name }) => `${date}_${name.normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_|_$/g, '') || 'workout'}.fit`;
 export const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
 export const newStep = (intensity = 'active', seconds = 300) => ({ kind: 'step', name: '', intensity, duration: { type: 'time', value: seconds }, target: { type: 'none' } });
 export const powerStep = (intensity, seconds, watts) => ({ ...newStep(intensity, seconds), target: { type: 'power', low: watts, high: watts } });

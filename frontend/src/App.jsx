@@ -891,7 +891,7 @@ export default function App() {
           </nav>
         </div>
         <div className="app-header-end">
-          <button type="button" className="app-import" onClick={() => setShowUpload(true)}>Datei importieren</button>
+          <button type="button" className="app-import" onClick={() => setShowUpload(true)}>Datei importieren / exportieren</button>
           <UserMenu apiBase={API} user={user}
             onSaved={(saved, changed) => { setUser(saved); if (changed) { setProfileVersion(v => v + 1); setToast('Profil gespeichert.'); setTimeout(() => setToast(null), 3000); } }}
             onOpenCoachProfile={openCoachProfile} />
@@ -900,7 +900,7 @@ export default function App() {
 
       {loading && <p role="status" className="app-notice">Aktivitäten werden geladen…</p>}
       {loadError && <div role="alert" className="app-notice app-notice-error">{loadError} <button type="button" onClick={() => window.location.reload()}>Erneut versuchen</button></div>}
-      {!loading && !loadError && !activities.length && <p className="app-notice">Noch keine Aktivitäten. Über „Datei importieren“ eine FIT-Datei hochladen.</p>}
+      {!loading && !loadError && !activities.length && <p className="app-notice">Noch keine Aktivitäten. Über „Datei importieren / exportieren“ eine FIT-Datei hochladen.</p>}
       <main className={`app-main${page === 'calendar' && !selected ? ' app-main-wide' : ''}`}>
         {selected ? (
           <div style={{ padding: '20px 0' }}>
@@ -1054,8 +1054,9 @@ export default function App() {
         onDeleted={id => setPlannedWorkouts(current => current.filter(w => w.id !== id))}
         onImport={() => { setWorkoutEditor(null); setLegacyUpload(false); setShowUpload(true); }} />}
       {showUpload && !legacyUpload && <BatchImport apiBase={API} initialSelection={incomingDrop}
+        workouts={plannedWorkouts} workoutLoadError={workoutLoadError}
         onImported={activity => setActivities(current => [activity, ...current.filter(a => a.id !== activity.id)].sort((a, b) => new Date(b.date) - new Date(a.date)))}
-        onClose={() => { setShowUpload(false); setIncomingDrop(null); setSelected(null); setPage('dashboard'); window.location.hash = ''; }}
+        onClose={imported => { setShowUpload(false); setIncomingDrop(null); if (imported) { setSelected(null); setPage('dashboard'); window.location.hash = ''; } }}
         onLegacy={() => { setLegacyUpload(true); setIncomingDrop(null); }}
         onOpen={id => { setShowUpload(false); setIncomingDrop(null); openActivity({ id }); }} />}
       {showUpload && legacyUpload && <UploadModal onClose={() => { setShowUpload(false); setLegacyUpload(false); }} onUpload={handleUpload} onBulkImport={handleBulkImport} />}
