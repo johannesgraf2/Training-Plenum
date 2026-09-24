@@ -22,6 +22,9 @@ KEY_FILE_ENV = 'TRAINHUB_AI_ENCRYPTION_KEY_FILE'
 DEFAULT_KEY_FILE = Path(__file__).resolve().parent.parent / '.run' / 'ai-encryption-key.txt'
 MAX_RESPONSE_BYTES = 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 60
+# Reasoning models think before answering: allow them more time and output budget.
+REASONING_EFFORTS = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh')
+REASONING_TIMEOUT_SECONDS = 300
 
 
 class ProviderError(ValueError):
@@ -32,6 +35,12 @@ def validate_model(model):
     if not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,119}', model):
         raise ProviderError('Bitte eine gültige Modell-ID eingeben.')
     return model
+
+
+def validate_reasoning_effort(effort):
+    if effort is not None and effort not in REASONING_EFFORTS:
+        raise ProviderError('Bitte eine gültige Reasoning-Stufe wählen.')
+    return effort
 
 
 def _validate_key(key):
@@ -126,7 +135,7 @@ def validate_response(value, schema):
 
 class AIProvider(ABC):
     @abstractmethod
-    def generate(self, api_key, model, instructions, context, schema):
+    def generate(self, api_key, model, instructions, context, schema, reasoning_effort=None):
         """Return a schema-validated JSON recommendation."""
 
     @abstractmethod
@@ -143,7 +152,7 @@ class _NoRedirect(HTTPRedirectHandler):
 class OpenAIProvider(AIProvider):
     base_url = 'https://api.openai.com/v1'
 
-    def _request(self, api_key, path, payload=None):
+    def _request(self, api_key, path, payload=None, timeout=REQUEST_TIMEOUT_SECONDS):
         _validate_key(api_key)
         try:
             data = None if payload is None else json.dumps(payload, separators=(',', ':'), ensure_ascii=False,
@@ -152,7 +161,7 @@ class OpenAIProvider(AIProvider):
                               headers={'Authorization': 'Bearer ' + api_key, 'Content-Type': 'application/json'},
                               method='GET' if data is None else 'POST')
             # No automatic retries: a retry could charge for another generation.
-            with build_opener(_NoRedirect()).open(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            with build_opener(_NoRedirect()).open(request, timeout=timeout) as response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
                 if len(raw) > MAX_RESPONSE_BYTES:
                     raise ProviderError('Die AI-Antwort überschreitet die erlaubte Größe.')
@@ -183,19 +192,26 @@ class OpenAIProvider(AIProvider):
         return {'provider': 'openai', 'model': model, 'connected': True,
                 'message': 'Verbindung und Modellzugriff bestätigt. Strukturierte Ausgabe wird bei der Planung geprüft.'}
 
-    def generate(self, api_key, model, instructions, context, schema):
+    def generate(self, api_key, model, instructions, context, schema, reasoning_effort=None):
         model = validate_model(model)
+        reasoning_effort = validate_reasoning_effort(reasoning_effort)
         try:
             Draft202012Validator.check_schema(schema)
             compact_context = json.dumps(context, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
         except (SchemaError, ValueError, TypeError, RecursionError):
             raise ProviderError('Der AI-Planungskontext oder das Antwortschema ist ungültig.') from None
-        result = self._request(api_key, '/responses', {
+        payload = {
             'model': model, 'store': False, 'instructions': instructions,
             'input': compact_context, 'max_output_tokens': 10000,
             'text': {'format': {'type': 'json_schema', 'name': 'trainhub_recommendation',
                                 'strict': True, 'schema': schema}},
-        })
+        }
+        timeout = REQUEST_TIMEOUT_SECONDS
+        if reasoning_effort:
+            # Reasoning tokens count toward max_output_tokens.
+            payload.update(reasoning={'effort': reasoning_effort}, max_output_tokens=40000)
+            timeout = REASONING_TIMEOUT_SECONDS
+        result = self._request(api_key, '/responses', payload, timeout=timeout)
         if result.get('status') != 'completed' or result.get('error'):
             raise ProviderError('Die AI-Antwort ist unvollständig. Der Plan wurde nicht geändert.')
         texts = []

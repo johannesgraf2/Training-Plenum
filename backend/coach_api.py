@@ -14,8 +14,8 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.orm import load_only
 from werkzeug.exceptions import NotFound
 
-from ai_provider import (DEFAULT_MODEL, ProviderError, decrypt_key, encrypt_key, ensure_server_key, get_provider, key_file,
-                         validate_model)
+from ai_provider import (DEFAULT_MODEL, REASONING_EFFORTS, ProviderError, decrypt_key, encrypt_key, ensure_server_key,
+                         get_provider, key_file, validate_model, validate_reasoning_effort)
 from athlete_context import build_snapshot, summarize_period
 from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, SECONDARY_FOCUS, SITUATIONS, block_for_week, block_status,
                           catalog as block_catalog, check_block, check_choice, check_options, check_week_rules,
@@ -58,6 +58,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         model = db.Column(db.String(100), nullable=False)
         encrypted_key = db.Column(db.Text, nullable=False)
         key_last4 = db.Column(db.String(4), nullable=False)
+        reasoning_effort = db.Column(db.String(20), nullable=True)
 
     class CoachProposal(db.Model):
         __tablename__ = 'coach_proposal'
@@ -228,6 +229,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             configured = False
         source = app.extensions.get('coach_key_source')
         return {'provider': setting.provider if setting else 'openai', 'model': setting.model if setting else DEFAULT_MODEL,
+                'reasoningEffort': setting.reasoning_effort if setting else None,
                 'configured': bool(setting), 'keyLast4': setting.key_last4 if setting else None, 'encryptionConfigured': configured,
                 # Where the server key comes from, so the athlete knows what to back up. Never the key itself.
                 'encryptionKeySource': source if configured or source in ('invalid', 'unavailable') else None,
@@ -243,7 +245,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                 db.session.delete(setting)
                 db.session.commit()
             return jsonify(provider_status())
-        schema = obj({'provider': text(50), 'model': text(100), 'apiKey': text(1000)})
+        schema = obj({'provider': text(50), 'model': text(100), 'apiKey': text(1000),
+                      'reasoningEffort': {'enum': [*REASONING_EFFORTS, None]}})
         schema['required'] = ['provider', 'model']
         data = validate(request.get_json(silent=True), schema)
         get_provider(data['provider'])
@@ -259,6 +262,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             setting.encrypted_key = encrypt_key(data['apiKey'])
             setting.key_last4 = data['apiKey'][-4:]
         setting.provider, setting.model = data['provider'], data['model']
+        setting.reasoning_effort = validate_reasoning_effort(data.get('reasoningEffort'))
         db.session.commit()
         return jsonify(provider_status())
 
@@ -266,11 +270,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         setting = db.session.get(AIProviderSettings, user_id)
         if setting is None:
             raise CoachError('Bitte zuerst einen AI-Provider und API-Key konfigurieren.')
-        return get_provider(setting.provider), decrypt_key(setting.encrypted_key), setting.model
+        return get_provider(setting.provider), decrypt_key(setting.encrypted_key), setting.model, setting.reasoning_effort
 
     @app.route('/api/ai-provider/test', methods=['POST'])
     def provider_test():
-        provider, key, model = configured_provider()
+        provider, key, model, _ = configured_provider()
         return jsonify(provider.test_connection(key, model))
 
     @app.route('/api/coach/templates')
@@ -601,10 +605,10 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                         raise CoachError('Ausgelassene Einheiten müssen zur Rückblick-Woche gehören.')
                     context['feedback']['missedSessions'] = {'source': 'athlete', 'ids': data['missedSessions']}
                     reported = {'week': data['feedbackWeek'], 'ids': data['missedSessions']}
-        provider, key, model = configured_provider()
+        provider, key, model, reasoning_effort = configured_provider()
         db.session.commit()  # Release SQLite reads while awaiting the provider.
         response_schema = {'block': BLOCK_RESPONSE_SCHEMA, **response_schemas(SESSION_SCHEMA)}[kind]
-        decision = provider.generate(key, model, instructions, context, response_schema)
+        decision = provider.generate(key, model, instructions, context, response_schema, reasoning_effort=reasoning_effort)
         validate(decision, response_schema)  # Also enforce schema for alternate provider adapters.
         decision = copy.deepcopy(decision)
         hinweise = [h.strip() for h in decision.pop('hinweise') if h.strip()]

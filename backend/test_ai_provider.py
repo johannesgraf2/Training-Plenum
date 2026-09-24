@@ -77,6 +77,20 @@ class ProviderTests(unittest.TestCase):
         self.assertNotIn('secret-api-key', request.data.decode())
         self.assertEqual(opener.open.call_count, 1)
         self.assertLessEqual(opener.open.call_args.kwargs['timeout'], 60)
+        self.assertNotIn('reasoning', payload)
+
+    def test_reasoning_effort_is_sent_with_more_output_budget_and_time(self):
+        opener = self.fake_http(envelope())
+        with patch('ai_provider.build_opener', return_value=opener):
+            self.provider.generate('secret-api-key', 'gpt-6-sol', 'Use templates.', {}, SCHEMA, reasoning_effort='medium')
+        payload = json.loads(opener.open.call_args.args[0].data)
+        self.assertEqual(payload['reasoning'], {'effort': 'medium'})
+        self.assertGreater(payload['max_output_tokens'], 10000)
+        self.assertGreater(opener.open.call_args.kwargs['timeout'], 60)
+        with patch.object(self.provider, '_request') as request:
+            with self.assertRaises(ProviderError):
+                self.provider.generate('secret-api-key', 'gpt-6-sol', 'x', {}, SCHEMA, reasoning_effort='extreme')
+            request.assert_not_called()
 
     def test_connection_does_not_generate_and_checks_model(self):
         opener = self.fake_http({'id': DEFAULT_MODEL, 'object': 'model'})

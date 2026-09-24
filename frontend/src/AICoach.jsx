@@ -14,6 +14,8 @@ const SITUATIONS = { nach_pause: 'Nach einer Pause', mitten_im_training: 'Mitten
 const SITUATION_HINTS = { nach_pause: 'Du steigst nach Krankheit, Urlaub oder Pause wieder ein.', mitten_im_training: 'Du trainierst regelmäßig und willst gezielt weiter.', saison_vorbei: 'Der Höhepunkt liegt hinter dir, Erholung steht an.' };
 const WIZARD_STEPS = ['Ausgangslage', 'Weg', 'Auswahl', 'Vorschau'];
 const EMPTY_WORKOUTS = [];
+const MODEL_PRESETS = ['gpt-6-sol', 'gpt-5-mini', 'gpt-5', 'gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'];
+const REASONING_LEVELS = [['', 'Standard des Modells'], ['low', 'Niedrig'], ['medium', 'Mittel'], ['high', 'Hoch']];
 const number = value => value === '' || value == null ? null : Number(value);
 const fmt = value => value == null ? '—' : Number(value).toLocaleString('de-DE', { maximumFractionDigits: 1 });
 const sourceValue = value => value && typeof value === 'object' && 'value' in value ? value.value : value;
@@ -403,6 +405,8 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
   const [profile, setProfile] = useState(null);
   const [provider, setProvider] = useState(null);
   const [model, setModel] = useState('gpt-4.1-mini');
+  const [customModel, setCustomModel] = useState(false);
+  const [reasoningEffort, setReasoningEffort] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [plan, setPlan] = useState(null);
   const [week, setWeek] = useState(() => isoWeek());
@@ -455,7 +459,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
     Promise.all([request(`/api/athlete-snapshot?${tzQuery()}`), request('/api/athlete-profile'), request('/api/ai-provider'), request('/api/coach/plan'), request('/api/coach/block-types')])
       .then(([s, p, ai, saved, types]) => {
         if (cancelled) return;
-        setSnapshot(s); setProfile(blankProfile(p)); setProvider(ai); setModel(ai.model || 'gpt-4.1-mini'); setPlan(saved); setCatalog(types);
+        setSnapshot(s); setProfile(blankProfile(p)); setProvider(ai); setModel(ai.model || 'gpt-4.1-mini'); setReasoningEffort(ai.reasoningEffort || ''); setPlan(saved); setCatalog(types);
         const range = blockRange(currentBlock(saved.blocks));
         if (range && localDate() < range.start) setWeek(isoWeek(range.start)); // An upcoming block starts with its first week.
       })
@@ -607,8 +611,8 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
     {!loading && provider && tab === 'provider' && <section className="coach-card coach-provider">
       <span className="coach-eyebrow">Bring your own key</span><h2>Dein AI Provider</h2><p className="coach-muted">Training Plēnum sendet verdichteten Trainingskontext und Workout-Templates an deinen Provider. Modellanfragen werden über deinen API-Zugang abgerechnet.</p>
       <KeyNotice provider={provider} />
-      <form onSubmit={event => { event.preventDefault(); const key = apiKey.trim(); setApiKey(''); run('Provider wird gespeichert …', async () => { const saved = await request('/api/ai-provider', 'PUT', { provider: 'openai', model: model.trim(), ...(key ? { apiKey: key } : {}) }); setProvider(saved); setModel(saved.model || model); setDirty(d => ({ ...d, provider: false })); invalidate(); setNotice('Provider-Einstellungen gespeichert.'); }); }}>
-        <fieldset disabled={!!busy}><div className="coach-form-grid"><Field label="Provider"><select value="openai" disabled><option value="openai">OpenAI</option></select></Field><Field label="Modell"><input required list="coach-models" value={model} onChange={e => { invalidate('provider'); setModel(e.target.value); }} /><datalist id="coach-models"><option value="gpt-4.1-mini" /><option value="gpt-4.1" /><option value="gpt-4o-mini" /></datalist></Field></div>
+      <form onSubmit={event => { event.preventDefault(); const key = apiKey.trim(); setApiKey(''); run('Provider wird gespeichert …', async () => { const saved = await request('/api/ai-provider', 'PUT', { provider: 'openai', model: model.trim(), reasoningEffort: reasoningEffort || null, ...(key ? { apiKey: key } : {}) }); setProvider(saved); setModel(saved.model || model); setReasoningEffort(saved.reasoningEffort || ''); setDirty(d => ({ ...d, provider: false })); invalidate(); setNotice('Provider-Einstellungen gespeichert.'); }); }}>
+        <fieldset disabled={!!busy}><div className="coach-form-grid"><Field label="Provider"><select value="openai" disabled><option value="openai">OpenAI</option></select></Field><Field label="Modell"><select value={customModel || !MODEL_PRESETS.includes(model) ? 'custom' : model} onChange={e => { invalidate('provider'); const custom = e.target.value === 'custom'; setCustomModel(custom); if (!custom) setModel(e.target.value); }}>{MODEL_PRESETS.map(m => <option key={m} value={m}>{m}</option>)}<option value="custom">Anderes Modell …</option></select></Field>{(customModel || !MODEL_PRESETS.includes(model)) && <Field label="Modell-ID" hint="Beliebige OpenAI-Modell-ID mit Unterstützung für strukturierte Responses."><input required spellCheck="false" value={model} onChange={e => { invalidate('provider'); setModel(e.target.value); }} /></Field>}<Field label="Reasoning" hint="Nur für Reasoning-Modelle. Höhere Stufen denken länger und kosten mehr."><select value={reasoningEffort} onChange={e => { invalidate('provider'); setReasoningEffort(e.target.value); }}>{REASONING_LEVELS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field></div>
           <Field label={provider.configured ? `API Key ersetzen (gespeichert: ••••${provider.keyLast4 || ''})` : 'API Key'} hint="Das Feld wird nach dem Absenden geleert. Der Key bleibt nur verschlüsselt im Backend."><input type="password" autoComplete="new-password" spellCheck="false" value={apiKey} placeholder={provider.configured ? 'Leer lassen, um den vorhandenen Key zu behalten' : 'API Key eingeben'} onChange={e => { invalidate('provider'); setApiKey(e.target.value); }} /></Field>
           <div className="coach-actions"><button className="coach-primary" type="submit" disabled={!provider.encryptionConfigured}>Provider speichern</button><button type="button" disabled={!provider.configured || dirty.provider} onClick={() => run('Verbindung wird geprüft …', async () => { await request('/api/ai-provider/test', 'POST', {}); setNotice('Verbindung zum Provider erfolgreich.'); })}>Verbindung testen</button>{provider.configured && <button type="button" className="coach-danger" onClick={() => run('Key wird entfernt …', async () => { const saved = await request('/api/ai-provider', 'DELETE'); setProvider({ ...provider, ...saved, configured: false, keyLast4: null }); setApiKey(''); setDirty(d => ({ ...d, provider: false })); invalidate(); setNotice('API Key entfernt.'); })}>Gespeicherten Key entfernen</button>}</div>
         </fieldset>
