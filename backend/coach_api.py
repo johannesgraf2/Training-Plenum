@@ -579,9 +579,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'Season task: return 2-3 distinct season plans, exactly one recommended. segments are the new consecutive blocks from '
         'startDate (after fixedBlocks, which stay unchanged); their weeks must add up to exactly weeksToFill, each within its type '
         'limits from blockCatalog, and the last segment is wettkampfspezifisch so it ends in the goal week. Types may repeat. '
-        'Build aerobic base first, then raise intensity in focused blocks (for example aufbau, vo2max, schwelle) and finish '
-        'race-specific; consider goal, history, previousBlocks and currentSeason. purpose is one short German sentence per block, '
-        'rationale one or two German sentences.'
+        'Fill long seasons by lengthening blocks (up to their maxWeeks, typically 8-12 weeks) rather than by many short ones. '
+        'The recommended plan follows the typical build-up grundlage -> vo2max -> schwelle -> wettkampfspezifisch, with the '
+        'lengths scaled so every week up to the goal is used. Alternatives vary it, for example schwelle before vo2max or a '
+        'longer grundlage. Consider goal, history, previousBlocks and currentSeason. purpose is one short German sentence per '
+        'block, rationale one or two German sentences.'
     )
 
     def previous_block(block, plan, rows, today):

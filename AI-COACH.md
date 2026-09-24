@@ -74,10 +74,10 @@ Ein Trainingsblock hat einen Haupttyp, optional einen Nebenschwerpunkt, einen St
 | --- | --- | --- |
 | `wiedereinstieg` Wiedereinstieg | 2–4 (3) | Keine VO2max- oder Schwelleneinheit, höchstens 1× Tempo/Sweetspot pro Woche. |
 | `grundlage` Grundlage | 6–12 (8) | Keine VO2max-Einheit, höchstens 1 Qualitätseinheit pro Woche, mindestens 80 % der Rad-/Laufzeit locker. |
-| `aufbau` Aufbau | 4–8 (6) | Mindestens 2 Qualitätseinheiten pro Belastungswoche, höchstens 1× VO2max. |
-| `schwelle` Schwelle | 4–8 (6) | Mindestens 2 Schwellen-/Sweetspot-Einheiten pro Belastungswoche, höchstens 1× VO2max. |
-| `vo2max` VO2max | 3–6 (4) | Mindestens 2 VO2max-Einheiten pro Belastungswoche, höchstens 1 Schwellen-/Sweetspot-Einheit. |
-| `wettkampfspezifisch` Wettkampfspezifisch | 2–6 (4) | Endet spätestens in der Woche des Zieldatums, letzte Woche mindestens 30 % weniger Umfang als die stärkste Woche davor. |
+| `aufbau` Aufbau | 4–12 (6) | Mindestens 2 Qualitätseinheiten pro Belastungswoche, höchstens 1× VO2max. |
+| `schwelle` Schwelle | 4–12 (6) | Mindestens 2 Schwellen-/Sweetspot-Einheiten pro Belastungswoche, höchstens 1× VO2max. |
+| `vo2max` VO2max | 3–12 (4) | Mindestens 2 VO2max-Einheiten pro Belastungswoche, höchstens 1 Schwellen-/Sweetspot-Einheit. |
+| `wettkampfspezifisch` Wettkampfspezifisch | 2–12 (4) | Endet spätestens in der Woche des Zieldatums, letzte Woche mindestens 30 % weniger Umfang als die stärkste Woche davor. |
 | `uebergang` Übergang | 1–4 (2) | Keine Qualitätseinheiten, jede Woche höchstens 60 % des Wunschumfangs, kein Entlastungsrhythmus. |
 
 Außer beim Übergang endet jeder Block mit einer Entlastungswoche, und auf höchstens drei Belastungswochen folgt eine Entlastung. Der vorgeschlagene Rhythmus ist 3:1; kürzere Blöcke verwenden 2:1 bzw. passende kürzere Zyklen (5 Wochen: Belastung, Belastung, Entlastung, Belastung, Entlastung). Als Nebenschwerpunkt stehen `kraft`, `laufen` und `radfahren` zur Auswahl; er verlangt mindestens eine passende Einheit pro Belastungswoche, `kraft` zusätzlich die Krafttraining-Verfügbarkeit.
@@ -103,12 +103,12 @@ Die KI plant nach festen Grundsätzen: Der Großteil des Umfangs ist locker, wen
 
 ## Saisonplan bis zum Ziel
 
-Mit einem Zieldatum im Profil kann der Coach die Zeit bis zum Ziel in eine Folge von Trainingsblöcken aufteilen, zum Beispiel Grundlage → Aufbau → VO2max → Schwelle → Wettkampfspezifisch. Der Saisonplan ist ein Fahrplan: Konkret ausgearbeitet wird weiterhin immer nur der nächste Block über den normalen Blockablauf. Endet ein Block, schlägt der Assistent den nächsten Block des Saisonplans mit Typ, Länge und Start vor; du kannst ihn noch ändern.
+Mit einem Zieldatum im Profil kann der Coach die Zeit bis zum Ziel in eine Folge von Trainingsblöcken aufteilen. Die Empfehlung folgt dem typischen Aufbau Grundlage → VO2max → Schwelle → Wettkampfspezifisch und füllt lange Saisons mit längeren Blöcken (bis 12 Wochen) statt mit vielen kurzen; Alternativen setzen zum Beispiel Schwelle vor VO2max oder verlängern die Grundlage. Der Saisonplan ist ein Fahrplan: Konkret ausgearbeitet wird weiterhin immer nur der nächste Block über den normalen Blockablauf. Endet ein Block, schlägt der Assistent den nächsten Block des Saisonplans mit Typ, Länge und Start vor; du kannst ihn noch ändern.
 
 - **Vorschlag:** Die KI liefert 2–3 Saisonpläne, genau einer ist die Empfehlung. Sie erhält Ziel, Snapshot, bisherige Blöcke mit Rückblick, den Blockkatalog und einen bestehenden Saisonplan. Ein Freitext geht als `athleteWish` mit.
 - **Feste Blöcke:** Laufende und geplante Blöcke stehen fest am Anfang. Geplant wird ab dem ersten freien Montag danach.
 - **Regeln (Server):** Die Blöcke füllen jede Woche bis einschließlich der Zielwoche lückenlos, jeder Block liegt in den Längengrenzen seines Typs, Kraft als Nebenschwerpunkt braucht Krafttraining-Verfügbarkeit, der letzte Block ist wettkampfspezifisch. Höchstens 20 neue Blöcke und 104 Wochen. Eine fehlerhafte Alternative wird verworfen, eine fehlerhafte Empfehlung lässt den Vorschlag scheitern.
-- **Anpassen:** Vor dem Übernehmen und jederzeit danach lassen sich Blöcke verschieben, im Typ, in der Länge und im Nebenschwerpunkt ändern, entfernen oder hinzufügen. Dieselben Regeln gelten; der Editor zeigt Verstöße schon beim Bearbeiten. Ein angepasster Plan trägt die Herkunft `athleteEdited`.
+- **Anpassen:** Vor dem Übernehmen und jederzeit danach lassen sich Blöcke verschieben, im Typ, in der Länge und im Nebenschwerpunkt ändern, entfernen oder hinzufügen. Dieselben Regeln gelten; der Editor zeigt Verstöße schon beim Bearbeiten als kurze Zeile neben der Wochensumme. Ein angepasster Plan trägt die Herkunft `athleteEdited`.
 - **Passung:** Weicht ein bestätigter Block vom Saisonplan ab oder ändert sich das Zieldatum, zeigt der Saisonplan das an (`aligned`, `goalChanged`); du passt ihn dann an oder lässt ihn neu vorschlagen.
 - **Blockvorschläge** erhalten den Saisonplan als `seasonPlan` und folgen ihm, wenn nichts im jüngsten Training dagegen spricht.
 
