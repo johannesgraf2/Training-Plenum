@@ -327,6 +327,21 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         db.session.commit()
         return jsonify(public_plan())
 
+    @app.route('/api/coach/weeks/<week>/missed', methods=['PUT'])
+    def save_missed(week):
+        """Weekly review without changing the next, already planned week."""
+        data = validate(request.get_json(silent=True), obj({'missedSessions': {'type': 'array', 'maxItems': 21, 'items': text(80)}}))
+        plan = current_plan()
+        value = plan['weeks'].get(week)
+        if value is None:
+            raise CoachError('Diese Woche ist nicht geplant.')
+        if set(data['missedSessions']) - {s['id'] for s in value['sessions']}:
+            raise CoachError('Ausgelassene Einheiten müssen zur Rückblick-Woche gehören.')
+        value['missedSessions'] = data['missedSessions']
+        save_plan(plan)
+        db.session.commit()
+        return jsonify(public_plan())
+
     @app.route('/api/coach/block-types')
     def block_types():
         return jsonify(block_catalog())

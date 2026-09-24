@@ -230,12 +230,15 @@
 .coach-season-editor ol { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
 .coach-season-editor li { display: grid; grid-template-columns: 28px minmax(140px, 1.4fr) 76px minmax(140px, 1.2fr) auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--bd-e2e8f0); border-radius: 4px; }
 .coach-season-editor li > small { grid-column: 2 / -1; color: var(--fg-64748b); font-size: 12px; }
+.coach-season-editor li.coach-season-fixed { background: var(--surface-sunk); border-style: dashed; }
+.coach-season-fixed > span:not(.coach-step):not(.coach-season-lock) { display: flex; align-items: center; min-height: 37px; padding: 0 11px; font-size: 12px; color: var(--fg-64748b); border: 1px solid var(--bd-e2e8f0); border-radius: 2px; }
+.coach-season-lock { justify-self: end; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--fg-64748b); }
 .coach-season-move { display: flex; gap: 4px; }
 .coach-season-move button { width: 32px; padding: 6px 0; }
 .coach-season-sum { margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--warning); }
 .coach-season-sum.ok { color: var(--success); }
 .ai-coach .coach-season-next { width: 100%; margin-bottom: 14px; border-color: var(--accent); }
-@media (max-width: 650px) { .coach-season-editor li { grid-template-columns: 28px 1fr 76px; } .coach-season-editor li > select:nth-of-type(2), .coach-season-move { grid-column: 2 / -1; } .coach-season-segment { padding: 0 4px; } .coach-season-segment small { display: none; } }
+@media (max-width: 650px) { .coach-season-editor li { grid-template-columns: 28px 1fr 76px; } .coach-season-editor li > select:nth-of-type(2), .coach-season-move, .coach-season-fixed > span:nth-of-type(4), .coach-season-lock { grid-column: 2 / -1; } .coach-season-segment { padding: 0 4px; } .coach-season-segment small { display: none; } }
 
 @media (max-width: 650px) { .ai-coach { padding: 20px 12px; } .coach-heading { align-items: start; flex-direction: column; gap: 12px; } .coach-stats { grid-template-columns: repeat(2, 1fr); row-gap: 20px; } .coach-stats > div:nth-child(2) { border-right: 0; } .coach-card { padding: 18px 14px; } .coach-tabs button { padding: 11px; font-size: 11px; } .coach-form-grid, .coach-sessions, .coach-compare { grid-template-columns: 1fr; } .coach-compare > div:last-child { border-left: 0; padding-left: 0; border-top: 1px solid var(--bd-e2e8f0); } .coach-day-inputs, .coach-week-availability { grid-template-columns: repeat(3, minmax(0, 1fr)); } .coach-section-heading { align-items: start; flex-wrap: wrap; } .coach-message { flex-wrap: wrap; } .coach-feedback { grid-template-columns: 1fr; } .coach-checklist li { flex-wrap: wrap; } .coach-choice-grid, .coach-choice-grid.two { grid-template-columns: 1fr; } .coach-checklist li > button { margin-left: 42px; } }
 @media (prefers-reduced-motion: reduce) { .coach-spinner { animation: none; } .ai-coach button { transition: none; } }
