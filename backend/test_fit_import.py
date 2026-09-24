@@ -53,6 +53,7 @@ class FitTests(unittest.TestCase):
         cls.root = Path(cls.temp.name)
         os.environ['DATABASE_URL'] = 'sqlite:///' + str(cls.root / 'test.db').replace('\\', '/')
         os.environ['UPLOAD_FOLDER'] = str(cls.root / 'uploads')
+        os.environ['TRAINHUB_AI_ENCRYPTION_KEY_FILE'] = str(cls.root / 'ai-encryption-key.txt')  # Never the real key file.
         import app as backend
         cls.backend = backend
         backend.initialize_database()

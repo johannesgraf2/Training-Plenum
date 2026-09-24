@@ -14,7 +14,8 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.orm import load_only
 from werkzeug.exceptions import NotFound
 
-from ai_provider import DEFAULT_MODEL, ProviderError, decrypt_key, encrypt_key, get_provider, validate_model
+from ai_provider import (DEFAULT_MODEL, ProviderError, decrypt_key, encrypt_key, ensure_server_key, get_provider, key_file,
+                         validate_model)
 from athlete_context import build_snapshot, summarize_period
 from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, SECONDARY_FOCUS, SITUATIONS, block_for_week, block_status,
                           catalog as block_catalog, check_block, check_choice, check_options, check_week_rules,
@@ -69,6 +70,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     app.extensions['coach_models'] = (AthleteCoachState, AIProviderSettings, CoachProposal)
+    app.extensions['coach_key_source'] = ensure_server_key()
 
     @app.errorhandler(CoachError)
     @app.errorhandler(TemplateError)
@@ -224,8 +226,12 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             configured = True
         except (ValueError, TypeError):
             configured = False
+        source = app.extensions.get('coach_key_source')
         return {'provider': setting.provider if setting else 'openai', 'model': setting.model if setting else DEFAULT_MODEL,
-                'configured': bool(setting), 'keyLast4': setting.key_last4 if setting else None, 'encryptionConfigured': configured}
+                'configured': bool(setting), 'keyLast4': setting.key_last4 if setting else None, 'encryptionConfigured': configured,
+                # Where the server key comes from, so the athlete knows what to back up. Never the key itself.
+                'encryptionKeySource': source if configured or source in ('invalid', 'unavailable') else None,
+                'encryptionKeyFile': str(key_file()) if source in ('file', 'created', 'invalid', 'unavailable') else None}
 
     @app.route('/api/ai-provider', methods=['GET', 'PUT', 'DELETE'])
     def provider_settings():

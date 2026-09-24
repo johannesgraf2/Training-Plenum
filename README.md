@@ -81,7 +81,7 @@ Cycling TSS is an estimate: `hours × (normalized power / FTP)² × 100`. The po
 
 **AI Coach** combines a compact athlete snapshot with goals, default availability, weekly/daily overrides and subjective check-ins. Connect your own OpenAI API key, review a macro plan, then generate individual weeks or patches. TrainHub renders workout templates, enforces availability and locked sessions, and only applies recommendations after explicit confirmation. Imported sensor streams are never sent to the provider.
 
-Install the updated backend requirements and configure the server-side `TRAINHUB_AI_ENCRYPTION_KEY` before saving a provider key. See [AI Coach setup, data definitions, security and API](AI-COACH.md) for key backup/rotation, provenance, calendar boundaries, current limitations and the complete workflow. This remains a local single-athlete application; remote/shared deployments require authentication and deployment hardening.
+Install the updated backend requirements. On first start the backend creates the server-side key file `.run/ai-encryption-key.txt` that encrypts a saved provider key, unless `TRAINHUB_AI_ENCRYPTION_KEY` is set; back that file up separately from the database. See [AI Coach setup, data definitions, security and API](AI-COACH.md) for key backup/rotation, provenance, calendar boundaries, current limitations and the complete workflow. This remains a local single-athlete application; remote/shared deployments require authentication and deployment hardening.
 
 ### Plan a workout and export it to Garmin
 

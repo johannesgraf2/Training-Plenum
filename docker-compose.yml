@@ -28,6 +28,8 @@ services:
       - FLASK_ENV=development
       - DATABASE_URL=sqlite:////app/data/trainhub.db
       - UPLOAD_FOLDER=/app/uploads
+      # Created on first start next to the database; back it up separately from trainhub.db.
+      - TRAINHUB_AI_ENCRYPTION_KEY_FILE=/app/data/ai-encryption-key.txt
 
   nginx:
     image: nginx:alpine
