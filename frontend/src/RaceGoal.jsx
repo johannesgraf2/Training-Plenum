@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GOALS } from './AICoach';
+import { goalLabel } from './AICoach';
 import { IMAGE_TYPES, removeImage, uploadImage } from './appearance';
 import { Icon } from './icons';
 import { GoalScene } from './Landscape';
@@ -82,7 +82,7 @@ export default function RaceGoal({ apiBase, onEdit, photo }) {
   const hasGoal = !!(goal && (goal.name?.trim() || goal.date));
   const days = hasGoal && goal.date ? daysUntil(goal.date) : null;
   const count = days === null ? null : countdown(days);
-  const title = goal?.name?.trim() || GOALS[goal?.type] || 'Dein Wettkampf';
+  const title = goal?.name?.trim() || goalLabel(goal?.type) || 'Dein Wettkampf';
   return <section className="home-card home-block race-goal" aria-labelledby="race-goal-title">
     <div className="home-block-head">
       <h2 id="race-goal-title">Wettkampfziel</h2>
@@ -95,7 +95,7 @@ export default function RaceGoal({ apiBase, onEdit, photo }) {
         {photo ? <img src={photo} alt="" /> : <GoalScene />}
         <div className="race-goal-caption">
           <h3>{title}</h3>
-          {GOALS[goal.type] && goal.name?.trim() && <span>{GOALS[goal.type]}</span>}
+          {goalLabel(goal.type) && goal.name?.trim() && <span>{goalLabel(goal.type)}</span>}
         </div>
         <div className="race-goal-photo-actions">
           <button type="button" aria-label={photo ? 'Zielfoto ändern' : 'Zielfoto hinzufügen'} title={photo ? 'Zielfoto ändern' : 'Zielfoto hinzufügen'} disabled={busy} onClick={() => fileInput.current?.click()}><Icon name="camera" size={16} /></button>

@@ -52,6 +52,16 @@
 .coach-day-inputs { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
 .coach-checkbox { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--fg-475569); font-weight: 400; margin: 8px 0 18px; line-height: 1.4; }
 .coach-checkbox input { accent-color: var(--accent); }
+.coach-season { margin: 0 0 18px; color: var(--fg-64748b); }
+.coach-season strong { color: var(--fg-1e293b); }
+.coach-checklist { list-style: none; padding: 0; margin: 6px 0 0; }
+.coach-checklist li { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--bd-e2e8f0); font-size: 13px; }
+.coach-checklist li > div { flex: 1; min-width: 0; }
+.coach-checklist small { display: block; color: var(--fg-64748b); font-size: 12px; margin-top: 3px; }
+.coach-step { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--bd-cbd5e1); color: var(--fg-64748b); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.coach-checklist li.current .coach-step { border-color: var(--accent); color: var(--fg-1e40af); }
+.coach-checklist li.done .coach-step { background: var(--bg-ecfdf5); border-color: var(--bd-a7f3d0); color: var(--fg-047857); }
+.coach-checklist li.done strong { color: var(--fg-64748b); }
 .coach-provider { max-width: 800px; }
 .coach-provider > p { max-width: 610px; }
 .coach-macro { display: flex; align-items: stretch; gap: 7px; overflow-x: auto; padding: 6px 0 10px; }
@@ -108,5 +118,5 @@
 .coach-quality { display: flex; gap: 18px; flex-wrap: wrap; color: var(--fg-64748b); font-size: 11px; }
 .coach-quality strong { color: var(--fg-334155); }
 @media (max-width: 1000px) { .coach-week-availability { grid-template-columns: repeat(4, minmax(0, 1fr)); } .coach-secondary-grid { grid-template-columns: 1fr; gap: 0; } }
-@media (max-width: 650px) { .ai-coach { padding: 20px 12px; } .coach-heading { align-items: start; flex-direction: column; gap: 12px; } .coach-stats { grid-template-columns: repeat(2, 1fr); row-gap: 20px; } .coach-stats > div:nth-child(2) { border-right: 0; } .coach-card { padding: 18px 14px; } .coach-tabs button { padding: 11px; font-size: 11px; } .coach-form-grid, .coach-sessions, .coach-compare { grid-template-columns: 1fr; } .coach-compare > div:last-child { border-left: 0; padding-left: 0; border-top: 1px solid var(--bd-e2e8f0); } .coach-day-inputs, .coach-week-availability { grid-template-columns: repeat(3, minmax(0, 1fr)); } .coach-section-heading { align-items: start; flex-wrap: wrap; } .coach-message { flex-wrap: wrap; } .coach-feedback { grid-template-columns: 1fr; } }
+@media (max-width: 650px) { .ai-coach { padding: 20px 12px; } .coach-heading { align-items: start; flex-direction: column; gap: 12px; } .coach-stats { grid-template-columns: repeat(2, 1fr); row-gap: 20px; } .coach-stats > div:nth-child(2) { border-right: 0; } .coach-card { padding: 18px 14px; } .coach-tabs button { padding: 11px; font-size: 11px; } .coach-form-grid, .coach-sessions, .coach-compare { grid-template-columns: 1fr; } .coach-compare > div:last-child { border-left: 0; padding-left: 0; border-top: 1px solid var(--bd-e2e8f0); } .coach-day-inputs, .coach-week-availability { grid-template-columns: repeat(3, minmax(0, 1fr)); } .coach-section-heading { align-items: start; flex-wrap: wrap; } .coach-message { flex-wrap: wrap; } .coach-feedback { grid-template-columns: 1fr; } .coach-checklist li { flex-wrap: wrap; } .coach-checklist li > button { margin-left: 42px; } }
 @media (prefers-reduced-motion: reduce) { .coach-spinner { animation: none; } .ai-coach button { transition: none; } }

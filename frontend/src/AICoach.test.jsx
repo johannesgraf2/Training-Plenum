@@ -60,7 +60,10 @@ test('ISO week dates remain correct at year boundaries', () => {
 test('a proposal is human-readable and only saves after explicit confirmation', async () => {
   await render();
   expect(container.textContent).toContain('6,5 h');
-  await click(button('Makroplan vorschlagen'));
+  expect(container.textContent).toContain('Neuen Trainingsblock starten');
+  await click(button('Trainingsblock vorschlagen'));
+  expect(requests.find(r => r.path === '/api/coach/proposals').body).toEqual({ kind: 'macro', startDate: '2026-09-28', weeks: 6 });
+  expect(container.querySelector('[aria-label="Planvorschlag prüfen"]').textContent).toContain('Trainingsblock prüfen');
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]').textContent).toContain('Grundlage');
   expect(requests.some(r => r.path.endsWith('/confirm'))).toBe(false);
   expect(changed).not.toHaveBeenCalled();
@@ -73,14 +76,14 @@ test('a proposal is human-readable and only saves after explicit confirmation', 
 
 test('changing availability removes a preview and blocks AI planning until the override is saved', async () => {
   initialPlan = { revision: 2, macroPlan: macro, weeks: { '2026-W39': weekPlan } };
-  await render(); await click(button('Bestehende Woche anpassen'));
+  await render(); await click(button('Woche anpassen'));
   expect(container.textContent).toContain('Geändert: Grundlage');
   await change(container.querySelector('[aria-label="Do Verfügbarkeit diese Woche"]'), 'no');
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
-  expect(button('Bestehende Woche anpassen').disabled).toBe(true);
+  expect(button('Woche anpassen').disabled).toBe(true);
   await submit(button('Wochenverfügbarkeit speichern').closest('form'));
   expect(requests.find(r => r.path === '/api/coach/weekly-overrides/2026-W39').body).toEqual({ overrides: { thu: { available: false } }, note: '' });
-  expect(button('Bestehende Woche anpassen').disabled).toBe(false);
+  expect(button('Woche anpassen').disabled).toBe(false);
 });
 
 test('provider keys are transient and never included in a later model-only save', async () => {
@@ -109,7 +112,8 @@ test('a rejected provider save clears the secret and exposes a useful error', as
 
 test('new workout context invalidates an outstanding proposal and locking refreshes the calendar', async () => {
   const workout = { id: 'own-workout', date: '2026-09-26', name: 'Gruppenausfahrt', locked: false };
-  await render({ workouts: [workout] }); await click(button('Makroplan vorschlagen'));
+  initialPlan = { revision: 2, macroPlan: macro, weeks: { '2026-W39': weekPlan } };
+  await render({ workouts: [workout] }); await click(button('Woche anpassen'));
   await render({ workouts: [{ ...workout, locked: true }] });
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
   await click(button('Fixiert · lösen'));
@@ -122,7 +126,7 @@ test('late proposal responses are discarded when the workout context changes', a
   responses['POST /api/coach/proposals'] = () => new Promise(resolve => { resolveProposal = resolve; });
   const workouts = [];
   await render({ workouts });
-  await click(button('Makroplan vorschlagen'));
+  await click(button('Trainingsblock vorschlagen'));
   await render({ workouts: [{ id: 'added', date: '2026-09-24', name: 'Neue Einheit' }] });
   await act(async () => resolveProposal({ ok: true, json: async () => ({ id: 'late', kind: 'macro', before: null, after: macro }) }));
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
@@ -130,9 +134,61 @@ test('late proposal responses are discarded when the workout context changes', a
 
 test('a stale confirmation clears the preview and keeps the stored plan unchanged', async () => {
   responses['POST /api/coach/proposals/proposal-1/confirm'] = async () => ({ ok: false, json: async () => ({ error: 'Kontext geändert. Bitte neuen Vorschlag erstellen.' }) });
-  await render(); await click(button('Makroplan vorschlagen'));
+  await render(); await click(button('Trainingsblock vorschlagen'));
   await click(button('Änderungen bestätigen und übernehmen'));
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
   expect(container.querySelector('[role="alert"]').textContent).toContain('Kontext geändert');
   expect(changed).not.toHaveBeenCalled();
+});
+
+test('an incomplete setup shows a checklist that jumps to the missing step instead of disabled forms', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => ({ ...profile, availability: { ...profile.availability, absoluteMaxWeeklyHours: null, defaultAvailability: { ...profile.availability.defaultAvailability, fri: null } } }) });
+  responses['GET /api/ai-provider'] = async () => ({ ok: true, json: async () => ({ provider: 'openai', model: 'gpt-4.1-mini', configured: false, keyLast4: null, encryptionConfigured: true }) });
+  await render();
+  const checklist = container.querySelector('[aria-label="Einrichtung"]');
+  expect(checklist.textContent).toContain('Es fehlt: Wochenmaximum · Verfügbarkeit Fr');
+  expect(checklist.textContent).toContain('Ersten Block planen');
+  expect(button('Trainingsblock vorschlagen')).toBeUndefined();
+  expect(button('Woche planen')).toBeUndefined();
+  await click(button('Zum Athletenprofil'));
+  expect(button('Athletenprofil speichern')).toBeDefined();
+});
+
+test('an active block shows the current block week and German planning actions', async () => {
+  initialPlan = { revision: 1, macroPlan: { startDate: '2026-09-14', weeks: [macro.weeks[0], { ...macro.weeks[0], week: 2 }, { ...macro.weeks[0], week: 3, phase: 'recovery' }] }, weeks: {} };
+  await render();
+  expect(container.textContent).toContain('Woche 2 von 3');
+  expect(container.textContent).toContain('Erholung');
+  expect(button('Woche planen').disabled).toBe(false);
+  expect(button('Woche anpassen').disabled).toBe(true);
+  expect(container.querySelector('[aria-label="Planungswoche"]').max).toBe('2026-W40');
+  await click(button('Woche planen'));
+  expect(requests.find(r => r.path === '/api/coach/proposals').body.kind).toBe('week');
+  expect(container.querySelector('[aria-label="Planvorschlag prüfen"]').textContent).toContain('Wochenplan prüfen');
+});
+
+test('an upcoming block opens on its first week', async () => {
+  initialPlan = { revision: 1, macroPlan: { ...macro, startDate: '2026-10-05' }, weeks: {} };
+  await render();
+  expect(container.textContent).toContain('Startet am');
+  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W41');
+});
+
+test('an ended block offers the next block instead of week planning', async () => {
+  initialPlan = { revision: 3, macroPlan: { ...macro, startDate: '2026-09-07' }, weeks: {} };
+  await render();
+  expect(container.textContent).toContain('Block abgeschlossen');
+  expect(button('Nächsten Trainingsblock vorschlagen')).toBeDefined();
+  expect(button('Woche planen')).toBeUndefined();
+  expect(button('Fixieren')).toBeUndefined();
+});
+
+test('goal types and the season countdown are shown in German', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => ({ ...profile, goal: { type: 'general_endurance', name: '', date: '2026-12-02', target: null } }) });
+  await render();
+  expect(container.querySelector('.coach-season').textContent).toBe('Noch 10 Wochen bis Allgemeine Ausdauer · 2. Dez.');
+  await click(button('Athletenprofil'));
+  const select = inputFor('Zieltyp');
+  expect(select.value).toBe('endurance');
+  expect(select.textContent).not.toContain('general_endurance');
 });

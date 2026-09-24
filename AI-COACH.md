@@ -22,7 +22,18 @@ TrainHub liefert einen verdichteten Athletenkontext und rendert geplante Einheit
 4. Nach Frontend-Änderungen in `frontend` mit `npm run build` neu bauen. Backend wie gewohnt über `app.py` starten; dessen Initialisierung ergänzt die Coach-Tabellen und das `locked`-Feld vorhandener geplanter Workouts.
 5. In **AI Coach → Athletenprofil** Ziel, normale Tagesverfügbarkeit und absolutes Wochenmaximum speichern. `preferredWeeklyHours` ist der gewünschte normale Umfang; `absoluteMaxWeeklyHours` ist eine verbindliche zeitliche Obergrenze. Ein offener Wert ist unbekannt, `0` bedeutet keine Zeit. Vor der Planung müssen alle sieben Tageswerte und das absolute Wochenmaximum ausgefüllt sein.
 6. Unter **AI Provider** den eigenen API-Key und eine Modell-ID speichern und die Verbindung testen. Aktuell ist OpenAI implementiert; das Modellfeld ist editierbar und verwendet im Code `gpt-4.1-mini` als Vorgabe. Die Vorschlagsliste ist keine live abgefragte Liste verfügbarer Modelle. Der Account muss Zugriff auf das gewählte Modell haben, und das Modell muss die verwendeten strukturierten Responses unterstützen.
-7. Einen Makroplan für 1–52 Wochen ab einem heutigen oder zukünftigen Montag vorschlagen lassen, prüfen und übernehmen. Danach einzelne ISO-Kalenderwochen innerhalb dieses Blocks konkret planen. Sobald konkrete Wochen existieren, werden Änderungen über Wochen-Patches vorgenommen.
+7. Einen Trainingsblock (meist 4–12 Wochen, in der Oberfläche höchstens 12) ab einem heutigen oder zukünftigen Montag vorschlagen lassen, prüfen und übernehmen. Danach einzelne ISO-Kalenderwochen innerhalb dieses Blocks mit **Woche planen** konkret planen. Sobald eine Woche existiert, wird sie über **Woche anpassen** geändert.
+
+Der Tab **Trainingsplan** zeigt immer genau einen nächsten Schritt:
+
+| Zustand | Anzeige |
+| --- | --- |
+| Einrichtung unvollständig, kein Block | Checkliste ① Athletenprofil · ② AI Provider · ③ Ersten Block planen. Fehlende Profilangaben werden genannt, die Schaltflächen springen in den passenden Tab. |
+| Kein Block | Karte **Neuen Trainingsblock starten** mit Startmontag (Vorgabe: nächster Montag) und Wochenzahl (Vorgabe: 6). |
+| Block aktiv oder bevorstehend | Blockübersicht mit „Woche X von N“ bzw. „Startet am …“, darunter die Trainingswoche. Die Wochenauswahl ist auf den Block begrenzt; ein bevorstehender Block öffnet mit seiner ersten Woche. Solange keine Woche geplant ist, lässt sich der Block unter **Block neu planen** ersetzen. |
+| Block beendet | Übersicht des abgeschlossenen Blocks und Einstieg in den nächsten Block. |
+
+Ist im Profil ein zukünftiges Zieldatum gespeichert, steht darüber „Noch X Wochen bis …“. Das Saisonziel wird nicht durchgeplant. Zieltypen erscheinen auf Deutsch; der ältere Standardwert `general_endurance` wird als „Allgemeine Ausdauer“ angezeigt und beim nächsten Speichern als `endurance` abgelegt.
 
 Ein Verbindungstest prüft API-Key und Zugriff auf die Modell-ID über den Modell-Endpunkt. Er erzeugt keinen Plan und bestätigt noch nicht, dass eine konkrete Planungsanfrage mit dem Schema erfolgreich sein wird. Generierungen werden über den eigenen Provider-Zugang abgerechnet.
 
