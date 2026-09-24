@@ -15,13 +15,20 @@ const blockProposal = { id: 'proposal-1', kind: 'block', before: null, hinweise:
   { id: 'ruhig', recommended: true, rationale: 'Sanft wieder einsteigen.', typeName: 'Wiedereinstieg', secondaryName: null, block: macro },
   { id: 'mehr', recommended: false, rationale: 'Mehr Intensität.', typeName: 'Aufbau', secondaryName: 'Kraft', block: { ...macro, weeks: [...macro.weeks, { week: 2, phase: 'recovery', targetHours: 5, focus: 'Erholung' }] } },
 ] } };
+const catalog = { blockTypes: [
+  { id: 'grundlage', name: 'Grundlage', summary: 'Aerobe Basis.', defaultWeeks: 8, minWeeks: 6, maxWeeks: 12, rules: ['Keine VO2max-Einheit'], rhythms: { 6: [false, false, true, false, false, true], 8: [false, false, false, true, false, false, false, true] } },
+  { id: 'vo2max', name: 'VO2max', summary: 'Kurze, harte Intervalle.', defaultWeeks: 4, minWeeks: 3, maxWeeks: 6, rules: ['Mindestens 2× VO2max-Einheit pro Belastungswoche'], rhythms: { 3: [false, false, true], 4: [false, false, false, true], 5: [false, false, true, false, true], 6: [false, false, true, false, false, true] } },
+  { id: 'wettkampfspezifisch', name: 'Wettkampfspezifisch', summary: 'Frisch am Start.', defaultWeeks: 4, minWeeks: 2, maxWeeks: 6, rules: [], rhythms: {} },
+], secondaryFocus: [{ id: 'kraft', name: 'Kraft' }, { id: 'laufen', name: 'Laufen' }] };
 let container, root, originalFetch, requests, responses, changed, initialPlan;
 const button = text => [...container.querySelectorAll('button')].find(b => b.textContent === text);
 const inputFor = label => [...container.querySelectorAll('label')].find(l => l.firstElementChild?.textContent === label)?.querySelector('input, textarea, select');
 const click = async element => { await act(async () => element.click()); };
 const change = async (element, value) => { await act(async () => Simulate.change(element, { target: { value } })); };
 const submit = async form => { await act(async () => Simulate.submit(form)); };
-const startBlock = async () => { await change(inputFor('Wo stehst du gerade?'), 'nach_pause'); await click(button('Vorschläge erstellen')); };
+const choice = title => [...container.querySelectorAll('button.coach-choice')].find(b => b.querySelector('strong').textContent === title);
+const radio = value => container.querySelector(`input[type="radio"][value="${value}"]`);
+const startBlock = async () => { await click(radio('nach_pause')); await click(button('Weiter')); await click(choice('Schlag mir was vor')); await click(button('Vorschläge erstellen')); };
 const render = async (props = {}) => { await act(async () => root.render(<AICoach apiBase="http://coach.test" onWorkoutsChanged={changed} {...props} />)); };
 
 beforeEach(() => {
@@ -41,6 +48,7 @@ beforeEach(() => {
     else if (path === '/api/athlete-profile') data = method === 'PUT' ? { ...profile, ...body } : profile;
     else if (path === '/api/ai-provider') data = { provider: 'openai', model: body?.model || 'gpt-4.1-mini', configured: true, keyLast4: '1234', encryptionConfigured: true };
     else if (path === '/api/coach/plan') data = initialPlan;
+    else if (path === '/api/coach/block-types') data = catalog;
     else if (path === '/api/coach/proposals') data = body.kind === 'block' ? blockProposal : { id: 'proposal-1', kind: body.kind, hinweise: ['Kurze Woche.'], before: weekPlan, after: { ...weekPlan, targetHours: 7, sessions: [{ ...session, params: { durationMin: 45 }, rendered: { ...session.rendered, durationMin: 45 } }] } };
     else if (path.endsWith('/confirm')) data = { revision: 1, blocks: [macro], weeks: {} };
     else if (path.startsWith('/api/coach/weekly-overrides/')) data = body;
@@ -66,7 +74,7 @@ test('a proposal is human-readable and only saves after explicit confirmation', 
   await render();
   expect(container.textContent).toContain('6,5 h');
   expect(container.textContent).toContain('Neuen Trainingsblock starten');
-  expect(button('Vorschläge erstellen').disabled).toBe(true);
+  expect(button('Weiter').disabled).toBe(true);
   await startBlock();
   expect(requests.find(r => r.path === '/api/coach/proposals').body).toEqual({ kind: 'block', mode: 'recommend', situation: 'nach_pause', startDate: '2026-09-28' });
   const preview = container.querySelector('[aria-label="Planvorschlag prüfen"]');
@@ -81,7 +89,42 @@ test('a proposal is human-readable and only saves after explicit confirmation', 
   expect(requests.find(r => r.path.endsWith('/confirm')).body).toEqual({ confirm: true, optionId: 'mehr' });
   expect(changed).toHaveBeenCalledTimes(1);
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
-  expect(container.textContent).toContain('Trainingsblock übernommen.');
+  expect(container.querySelector('[aria-label="Erste Woche planen"]').textContent).toContain('Erste Woche jetzt planen?');
+  await click(button('Erste Woche planen'));
+  expect(requests.filter(r => r.path === '/api/coach/proposals').pop().body).toEqual({ kind: 'week', week: '2026-W39', instruction: '' });
+  expect(container.querySelector('[aria-label="Erste Woche planen"]')).toBeNull();
+});
+
+test('the own-choice path sends the chosen type, length and focus as structured data', async () => {
+  await render();
+  await click(radio('mitten_im_training')); await click(button('Weiter')); await click(choice('Ich weiß, was ich will'));
+  expect(radio('wettkampfspezifisch').disabled).toBe(true);
+  expect(container.textContent).toContain('braucht ein Zieldatum im Athletenprofil');
+  expect(button('Block ausarbeiten lassen').disabled).toBe(true);
+  await click(radio('vo2max'));
+  expect(inputFor('Wochen').value).toBe('4');
+  expect(container.querySelector('[aria-label="Rhythmus aus Belastung und Entlastung"]').textContent).toMatch(/^1234/);
+  expect(container.querySelectorAll('.coach-rhythm > span.deload')).toHaveLength(1);
+  expect([...inputFor('Nebenschwerpunkt').options].find(o => o.value === 'kraft').disabled).toBe(true);
+  expect(container.textContent).toContain('Mindestens 2× VO2max-Einheit pro Belastungswoche');
+  await change(inputFor('Wochen'), '8');
+  expect(button('Block ausarbeiten lassen').disabled).toBe(true);
+  expect(container.textContent).toContain('Ein Block „VO2max“ dauert 3–6 Wochen.');
+  await change(inputFor('Wochen'), '5');
+  await change(inputFor('Nebenschwerpunkt'), 'laufen');
+  await change(inputFor('Wunsch (optional)'), ' Kurze Intervalle ');
+  await click(button('Block ausarbeiten lassen'));
+  expect(requests.find(r => r.path === '/api/coach/proposals').body).toEqual({ kind: 'block', mode: 'choose', situation: 'mitten_im_training', startDate: '2026-09-28', blockType: 'vo2max', secondaryFocus: 'laufen', weeks: 5, instruction: 'Kurze Intervalle' });
+  expect(container.querySelector('.coach-wizard-steps [aria-current="step"]').textContent).toContain('Vorschau');
+});
+
+test('discarding the preview returns to the unchanged choice', async () => {
+  await render(); await startBlock();
+  await click(button('Vorschläge verwerfen'));
+  expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
+  expect(button('Vorschläge erstellen')).toBeDefined();
+  await click(button('Zurück')); await click(button('Zurück'));
+  expect(radio('nach_pause').checked).toBe(true);
 });
 
 test('changing availability removes a preview and blocks AI planning until the override is saved', async () => {
@@ -159,7 +202,7 @@ test('an incomplete setup shows a checklist that jumps to the missing step inste
   const checklist = container.querySelector('[aria-label="Einrichtung"]');
   expect(checklist.textContent).toContain('Es fehlt: Wochenmaximum · Verfügbarkeit Fr');
   expect(checklist.textContent).toContain('Ersten Block planen');
-  expect(button('Vorschläge erstellen')).toBeUndefined();
+  expect(container.querySelector('.coach-wizard')).toBeNull();
   expect(button('Woche planen')).toBeUndefined();
   await click(button('Zum Athletenprofil'));
   expect(button('Athletenprofil speichern')).toBeDefined();
@@ -194,14 +237,15 @@ test('a replaced block is history; the next block and its type are shown', async
   expect(container.textContent).toContain('Startet am');
   expect(container.querySelector('.coach-block-type').textContent).toBe('VO2max + Kraft');
   expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W40');
-  expect(button('Neue Vorschläge erstellen')).toBeDefined();
+  expect(container.querySelector('details .coach-wizard').textContent).toContain('Wo stehst du gerade?');
 });
 
 test('an ended block offers the next block instead of week planning', async () => {
   initialPlan = { revision: 3, blocks: [{ ...macro, startDate: '2026-09-07' }], weeks: {} };
   await render();
   expect(container.textContent).toContain('Block abgeschlossen');
-  expect(button('Vorschläge für den nächsten Block')).toBeDefined();
+  expect(container.textContent).toContain('Nächsten Trainingsblock starten');
+  expect(container.querySelector('.coach-wizard').textContent).toContain('Wo stehst du gerade?');
   expect(button('Woche planen')).toBeUndefined();
   expect(button('Fixieren')).toBeUndefined();
 });

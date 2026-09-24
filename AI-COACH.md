@@ -29,9 +29,18 @@ Der Tab **Trainingsplan** zeigt immer genau einen nächsten Schritt:
 | Zustand | Anzeige |
 | --- | --- |
 | Einrichtung unvollständig, kein Block | Checkliste ① Athletenprofil · ② AI Provider · ③ Ersten Block planen. Fehlende Profilangaben werden genannt, die Schaltflächen springen in den passenden Tab. |
-| Kein Block | Karte **Neuen Trainingsblock starten** mit Startmontag (Vorgabe: nächster Montag) und der Frage „Wo stehst du gerade?“ (nach einer Pause, mitten im Training, Saison vorbei). |
+| Kein Block | Karte **Neuen Trainingsblock starten** mit dem Block-Wizard (siehe unten). |
 | Block aktiv oder bevorstehend | Blockübersicht mit „Woche X von N“ bzw. „Startet am …“, darunter die Trainingswoche. Die Wochenauswahl ist auf den Block begrenzt; ein bevorstehender Block öffnet mit seiner ersten Woche. Solange keine Woche geplant ist, lässt sich der Block unter **Block neu planen** ersetzen. |
-| Block beendet | Übersicht des abgeschlossenen Blocks und Einstieg in den nächsten Block. |
+| Block beendet | Übersicht des abgeschlossenen Blocks und der Wizard für den nächsten Block; die letzten Blöcke gehen als Kontext an die KI. |
+
+Der Block-Wizard führt in vier Schritten zum Block:
+
+1. **Ausgangslage:** „Wo stehst du gerade?“ (nach einer Pause, mitten im Training, Saison vorbei) und Startmontag (Vorgabe: nächster Montag).
+2. **Weg:** „Schlag mir was vor“ oder „Ich weiß, was ich will“.
+3. **Auswahl:** Beim Vorschlag optional ein Wunsch als Freitext. Bei eigener Wahl Blocktyp-Karten mit Kurzbeschreibung und erlaubter Länge, dazu Wochenzahl (Vorgabe: Standardlänge des Typs), Nebenschwerpunkt, Rhythmus aus Belastungs- und Entlastungswochen und die Regeln des Typs. Wettkampfspezifisch setzt ein Zieldatum voraus, Kraft die Angabe „Fitnessstudio verfügbar“.
+4. **Vorschau:** Optionen bzw. der ausgearbeitete Block mit Balken pro Woche, Begründung und Hinweisen. Nach dem Übernehmen fragt der Coach „Erste Woche jetzt planen?“; **Später** blendet die Frage aus.
+
+Verwerfen führt zurück zur Auswahl, die Angaben bleiben erhalten.
 
 Ist im Profil ein zukünftiges Zieldatum gespeichert, steht darüber „Noch X Wochen bis …“. Das Saisonziel wird nicht durchgeplant. Zieltypen erscheinen auf Deutsch; der ältere Standardwert `general_endurance` wird als „Allgemeine Ausdauer“ angezeigt und beim nächsten Speichern als `endurance` abgelegt.
 
@@ -164,7 +173,7 @@ Alle schreibenden JSON-Anfragen verwenden `Content-Type: application/json`. Die 
 | POST | `/api/ai-provider/test` | `{}`; Zugang und Modell prüfen. |
 | GET | `/api/coach/templates` | Template-IDs, Defaults, Parametergrenzen und Dauerregeln. |
 | GET | `/api/coach/plan` | Bestätigte Trainingsblöcke (`blocks[]` mit berechnetem `status`, `typeName`, `secondaryName`), gespeicherte Wochen und Revision. |
-| GET | `/api/coach/block-types` | Wählbare Blocktypen mit Längen, Regeln auf Deutsch und vorgeschlagenem Rhythmus sowie mögliche Nebenschwerpunkte. |
+| GET | `/api/coach/block-types` | Wählbare Blocktypen mit Längen, Regeln auf Deutsch, vorgeschlagenem Rhythmus (`suggestedRhythm` für die Standardlänge, `rhythms` je erlaubter Wochenzahl; `true` = Entlastung) sowie mögliche Nebenschwerpunkte. |
 | POST | `/api/coach/proposals` | `kind: "block"` (mit `mode: "recommend"` oder `"choose"`), `"week"` oder `"patch"`; erzeugt einen Vorschlag. |
 | POST | `/api/coach/proposals/<id>/confirm` | `{"confirm":true}`, bei Blockvorschlägen zusätzlich `"optionId"`; geprüften Vorschlag übernehmen. |
 | POST | `/api/coach/proposals/<id>/discard` | `{}`; Vorschlag verwerfen. |

@@ -121,7 +121,8 @@ def rule_texts(identity):
 def catalog():
     return {'blockTypes': [{'id': key, 'name': spec['name'], 'summary': spec['summary'], 'defaultWeeks': spec['defaultWeeks'],
                             'minWeeks': spec['minWeeks'], 'maxWeeks': spec['maxWeeks'], 'rules': rule_texts(key),
-                            'suggestedRhythm': suggested_rhythm(spec['defaultWeeks'], key)}
+                            'suggestedRhythm': suggested_rhythm(spec['defaultWeeks'], key),
+                            'rhythms': {str(n): suggested_rhythm(n, key) for n in range(spec['minWeeks'], spec['maxWeeks'] + 1)}}
                            for key, spec in BLOCK_TYPES.items() if spec['selectable']],
             'secondaryFocus': [{'id': key, 'name': value['name']} for key, value in SECONDARY_FOCUS.items()]}
 
