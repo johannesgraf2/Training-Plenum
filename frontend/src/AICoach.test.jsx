@@ -26,6 +26,9 @@ const timeline = { blockId: 'block-1', weeks: [
   { number: 3, week: '2026-W40', startDate: '2026-09-28', phase: 'recovery', focus: 'Entlastung', targetHours: 5, planned: false, plannedHours: null, completedHours: null, state: 'future' },
 ] };
 const activeBlock = { id: 'block-1', startDate: '2026-09-14', weeks: [macro.weeks[0], { ...macro.weeks[0], week: 2 }, { ...macro.weeks[0], week: 3, phase: 'recovery', targetHours: 5 }] };
+const blockReview = { blockId: 'old-block', typeName: 'Aufbau', complete: true, weeks: timeline.weeks.map(w => ({ ...w, state: 'past', planned: true, plannedHours: w.targetHours, completedHours: w.targetHours * 0.9 })),
+  totals: { targetHours: 22, comparedWeeks: 3, plannedHours: 22, completedHours: 19.8, completion: 0.9, elapsedCompletedHours: 19.8, plannedSessions: 12, missedSessions: 2, weeksWithMissedReport: 2 },
+  checkIns: { source: 'athlete', count: 2, averages: { fatigue: 3.5, motivation: 4, stress: 2, sleepQuality: 3, soreness: 2.5 } }, reflection: null };
 let container, root, originalFetch, requests, responses, changed, initialPlan;
 const button = text => [...container.querySelectorAll('button')].find(b => b.textContent === text);
 const inputFor = label => [...container.querySelectorAll('label')].find(l => l.firstElementChild?.textContent === label)?.querySelector('input, textarea, select');
@@ -56,6 +59,7 @@ beforeEach(() => {
     else if (path === '/api/coach/plan') data = initialPlan;
     else if (path === '/api/coach/block-types') data = catalog;
     else if (path === '/api/coach/blocks/block-1/timeline') data = timeline;
+    else if (path === '/api/coach/blocks/old-block/review') data = { ...blockReview, ...(method === 'PUT' ? { reflection: { source: 'athlete', ...body, date: '2026-09-23' } } : {}) };
     else if (path === '/api/coach/feedback') data = { week: new URL(url).searchParams.get('week'), partial: true, planned: { hours: 8 }, completed: { hours: 2 } };
     else if (path === '/api/coach/proposals') data = body.kind === 'block' ? blockProposal : { id: 'proposal-1', kind: body.kind, hinweise: ['Kurze Woche.'], before: weekPlan, after: { ...weekPlan, targetHours: 7, sessions: [{ ...session, params: { durationMin: 45 }, rendered: { ...session.rendered, durationMin: 45 } }] } };
     else if (path.endsWith('/confirm')) data = { revision: 1, blocks: [macro], weeks: {} };
@@ -326,4 +330,22 @@ test('an open current week after a planned one starts the rhythm right away', as
   await render();
   expect(container.querySelector('[aria-label="Woche abschließen"]').textContent).toContain('2026-W39 → 2026-W40');
   jest.setSystemTime(new Date('2026-09-23T12:00:00Z'));
+});
+
+test('an ended block shows its review and saves the athlete verdict before the next block', async () => {
+  initialPlan = { revision: 3, blocks: [{ ...activeBlock, id: 'old-block', startDate: '2026-08-24', endDate: '2026-09-13' }], weeks: {} };
+  await render();
+  const card = container.querySelector('[aria-label="Blockrückblick"]');
+  const stats = card.querySelector('[aria-label="Block in Zahlen"]').textContent;
+  expect(stats).toContain('90 %');
+  expect(stats).toContain('2 von 12');
+  expect(card.querySelector('.coach-timeline button')).toBeNull();
+  expect(card.querySelectorAll('.coach-timeline [role="img"]')).toHaveLength(3);
+  expect(card.textContent).toContain('Motivation 4/5');
+  await click(card.querySelector('input[name="block-rating"][value="4"]'));
+  await change(inputFor('Notiz zum Block'), 'Gut, aber müde.');
+  await submit(card.querySelector('form'));
+  expect(requests.find(r => r.path === '/api/coach/blocks/old-block/review' && r.method === 'PUT').body).toEqual({ rating: 4, note: 'Gut, aber müde.' });
+  expect(container.textContent).toContain('Einschätzung gespeichert.');
+  expect(container.textContent).toContain('Nächsten Trainingsblock starten');
 });

@@ -277,6 +277,46 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual((partial['planned']['hours'], partial['completed']['hours']), (1, 1.5))
         self.assertEqual(self.client.get(f'/api/coach/feedback?week={iso_week(monday + timedelta(weeks=1))}').status_code, 400)
 
+    def test_block_review_keeps_reported_missed_sessions_and_feeds_the_next_block(self):
+        monday = date.today() - timedelta(days=date.today().weekday())
+        first, second = iso_week(monday), iso_week(monday + timedelta(weeks=1))
+        with patch('coach_api.datetime') as clock:
+            clock.now.return_value = datetime.combine(monday - timedelta(days=7), datetime.min.time())
+            clock.utcnow.side_effect = datetime.utcnow
+            self.block(start=monday)
+            proposal, _ = self.propose({'kind': 'week', 'week': first},
+                                       {'week': first, 'targetHours': 1, 'focus': 'Locker', 'hinweise': [], 'sessions': [self.session()]})
+            identity = self.confirm(proposal)['weeks'][first]['sessions'][0]['id']
+        self.client.post('/api/activities/manual', json={'date': monday.isoformat(), 'sport': 'ride', 'duration': 30, 'distance': 10})
+        checkin = {'date': monday.isoformat(), 'fatigue': 4, 'motivation': 2, 'stress': 3, 'sleepQuality': 3, 'soreness': 1, 'notes': ''}
+        self.client.post('/api/coach/check-ins', json=checkin)
+        proposal, provider = self.propose({'kind': 'week', 'week': second, 'feedbackWeek': first, 'missedSessions': [identity]},
+                                          {'week': second, 'targetHours': 1, 'focus': 'Locker', 'hinweise': [], 'sessions': [self.session('tuesday', 'tue')]})
+        self.assertEqual(provider.generate.call_args.args[3]['feedback']['missedSessions'], {'source': 'athlete', 'ids': [identity]})
+        self.assertIsNone(self.client.get('/api/coach/plan').json['weeks'][first].get('missedSessions'))
+        self.confirm(proposal)
+        self.assertEqual(self.client.get('/api/coach/plan').json['weeks'][first]['missedSessions'], [identity])
+        block = self.client.get('/api/coach/plan').json['blocks'][0]
+        review = self.client.get(f"/api/coach/blocks/{block['id']}/review?timezone=Europe/Berlin").json
+        week = review['weeks'][0]
+        self.assertEqual((week['state'], week['plannedHours'], week['completedHours'], week['missedSessions']), ('current', 1, .5, [identity]))
+        self.assertEqual((review['weeks'][1]['state'], review['weeks'][1]['completedHours']), ('future', None))
+        self.assertEqual((review['totals']['comparedWeeks'], review['totals']['completion'], review['totals']['elapsedCompletedHours']), (0, None, .5))
+        self.assertEqual((review['totals']['missedSessions'], review['totals']['plannedSessions']), (1, 2))
+        self.assertEqual(review['checkIns']['averages']['motivation'], 2)
+        self.assertFalse(review['complete'])
+        self.assertEqual(self.client.put(f"/api/coach/blocks/{block['id']}/review", json={'rating': 6, 'note': ''}).status_code, 400)
+        self.assertEqual(self.client.put('/api/coach/blocks/unknown/review', json={'rating': 3, 'note': ''}).status_code, 404)
+        saved = self.client.put(f"/api/coach/blocks/{block['id']}/review", json={'rating': 4, 'note': ' Gut, aber müde. '}).json
+        self.assertEqual({key: saved['reflection'][key] for key in ('source', 'rating', 'note')}, {'source': 'athlete', 'rating': 4, 'note': 'Gut, aber müde.'})
+        body = {'kind': 'block', 'mode': 'recommend', 'situation': 'mitten_im_training',
+                'startDate': (monday + timedelta(weeks=2)).isoformat()}
+        _, provider = self.propose(body, {'options': [self.option('a'), self.option('b', recommended=False)], 'hinweise': []})
+        previous = provider.generate.call_args.args[3]['previousBlocks'][0]
+        self.assertEqual(previous['reflection']['rating'], 4)
+        self.assertEqual(previous['totals']['missedSessions'], 1)
+        self.assertEqual(previous['weeks'][0]['completedHours'], .5)
+
     def test_block_types_catalog_is_public_to_the_coach(self):
         result = self.client.get('/api/coach/block-types').json
         self.assertEqual(len(result['blockTypes']), 7)

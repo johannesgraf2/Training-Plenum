@@ -170,6 +170,18 @@
 .coach-missed { margin: 14px 0 4px; }
 .coach-missed legend { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
 .coach-missed .coach-checkbox { margin: 6px 0; font-size: 12px; }
+.coach-timeline-week { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px 8px; font-size: 10px; color: var(--fg-475569); border: 1px solid transparent; }
+.coach-timeline li.current .coach-timeline-week { border-color: var(--accent); }
+.coach-review-stats { margin: 12px 0 18px; }
+.coach-review-stats strong { font-size: 26px; }
+.coach-review-checkins { margin-top: 14px; }
+.coach-reflection { border-top: 1px solid var(--bd-e2e8f0); margin-top: 18px; }
+.coach-rating-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
+.coach-rating-chips label { position: relative; display: grid; place-items: center; width: 38px; height: 34px; border: 1px solid var(--bd-dbe1e9); border-radius: 2px; font-size: 13px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
+.coach-rating-chips input { position: absolute; opacity: 0; pointer-events: none; }
+.coach-rating-chips label:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
+.coach-rating-chips label.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.coach-rating-chips small { color: var(--fg-64748b); font-size: 11px; margin-left: 4px; }
 .coach-change-list { font-size: 12px; line-height: 1.9; color: var(--fg-4338ca); background: var(--bg-eef2ff); padding: 14px 14px 14px 30px; border-radius: 2px; }
 .coach-secondary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .coach-lock-list > div { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--bd-e2e8f0); padding: 12px 0; }

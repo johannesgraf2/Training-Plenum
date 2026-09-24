@@ -135,19 +135,20 @@ function BlockOverview({ value, chart }) {
 // Bullet chart per block week: outline = planned (dashed = block target only), solid = completed hours.
 function BlockTimeline({ timeline, selected, onSelect }) {
   const weeks = timeline.weeks;
+  const WeekTag = onSelect ? 'button' : 'div';
   const planned = w => w.plannedHours ?? w.targetHours;
   const max = Math.max(1, ...weeks.flatMap(w => [Number(planned(w)) || 0, Number(w.completedHours) || 0]));
   const height = value => `${value ? Math.max(3, value / max * 100) : 0}%`;
   const describe = w => `Woche ${w.number}, ${PHASES[w.phase] || w.phase}: ${w.planned ? 'geplant' : 'Blockziel'} ${hours(planned(w))}, absolviert ${w.completedHours == null ? 'noch offen' : hours(w.completedHours)}`;
   return <>
     <ol className="coach-timeline" aria-label="Block-Zeitstrahl: geplant und absolviert">{weeks.map(w => <li key={w.week} className={w.state}>
-      <button type="button" aria-pressed={selected === w.week} aria-label={describe(w)} title={`${describe(w)}${w.focus ? `. ${w.focus}` : ''}`} onClick={() => onSelect(w.week)}>
+      <WeekTag {...(onSelect ? { type: 'button', 'aria-pressed': selected === w.week, onClick: () => onSelect(w.week) } : { role: 'img', className: 'coach-timeline-week' })} aria-label={describe(w)} title={`${describe(w)}${w.focus ? `. ${w.focus}` : ''}`}>
         <span className="coach-timeline-value">{w.state === 'current' && <em>Jetzt</em>}{w.completedHours == null ? '—' : fmt(w.completedHours)} / {fmt(planned(w))}</span>
         <span className="coach-timeline-track"><i className={`target ${w.planned ? '' : 'open'}`} style={{ height: height(planned(w)) }} /><i className="done" style={{ height: height(w.completedHours) }} /></span>
         <strong>{w.number}</strong><small>{PHASES[w.phase] || w.phase}</small>
-      </button>
+      </WeekTag>
     </li>)}</ol>
-    <div className="coach-timeline-legend"><span><i className="target" />Geplant</span><span><i className="target open" />Blockziel, Woche noch nicht geplant</span><span><i className="done" />Absolviert (Stunden, aus Trainingsdaten)</span></div>
+    <div className="coach-timeline-legend"><span><i className="target" />Geplant</span>{weeks.some(w => !w.planned) && <span><i className="target open" />Blockziel, Woche noch nicht geplant</span>}<span><i className="done" />Absolviert (Stunden, aus Trainingsdaten)</span></div>
     <details className="coach-details"><summary>Als Tabelle anzeigen</summary><table className="coach-table"><thead><tr><th>Woche</th><th>Phase</th><th>Geplant</th><th>Absolviert</th><th>Fokus</th></tr></thead>
       <tbody>{weeks.map(w => <tr key={w.week}><td>{w.number} · {w.week}{w.state === 'current' ? ' (jetzt)' : ''}</td><td>{PHASES[w.phase] || w.phase}</td><td>{hours(planned(w))}{w.planned ? '' : ' (Blockziel)'}</td><td>{w.completedHours == null ? '—' : hours(w.completedHours)}</td><td>{w.focus || '—'}</td></tr>)}</tbody></table></details>
   </>;
@@ -212,6 +213,35 @@ function WeekRhythm({ review, next, reviewPlan, nextBlockWeek, feedback, busy, c
       <div className="coach-actions"><button type="button" className="coach-primary" disabled={!canPlan} onClick={() => onPlan(missed)}>Nächste Woche planen</button><button type="button" onClick={() => setStep(1)}>Zurück</button></div>
     </>}
   </section>;
+}
+
+const CHECK_IN_LABELS = [['fatigue', 'Müdigkeit'], ['motivation', 'Motivation'], ['stress', 'Stress'], ['sleepQuality', 'Schlafqualität'], ['soreness', 'Muskelkater']];
+
+// Planned against completed over the whole block, plus the athlete's own verdict for the next block.
+function BlockReview({ review, busy, onSave }) {
+  const [rating, setRating] = useState(review.reflection?.rating ?? null);
+  const [note, setNote] = useState(review.reflection?.note ?? '');
+  const totals = review.totals;
+  const compared = totals.comparedWeeks > 0;
+  const tiles = [
+    ['Geplant', compared ? hours(totals.plannedHours) : '—', `${totals.comparedWeeks} von ${review.weeks.length} Wochen mit konkretem Plan`],
+    ['Absolviert', hours(compared ? totals.completedHours : totals.elapsedCompletedHours), compared ? 'in diesen Wochen' : 'im ganzen Block'],
+    ['Umsetzung', totals.completion == null ? '—' : `${fmt(totals.completion * 100)} %`, 'absolviert von geplant'],
+    ['Ausgelassen', totals.missedSessions == null ? '—' : `${totals.missedSessions} von ${totals.plannedSessions}`, totals.missedSessions == null ? 'keine Angabe' : `deine Angabe aus ${totals.weeksWithMissedReport} ${totals.weeksWithMissedReport === 1 ? 'Woche' : 'Wochen'}`],
+  ];
+  return <>
+    <div className="coach-stats coach-review-stats" aria-label="Block in Zahlen">{tiles.map(([label, value, sub]) => <div key={label}><span>{label}</span><strong>{value}</strong><small>{sub}</small></div>)}
+      <p>Absolvierte Stunden aus Trainingsdaten berechnet · Ausgelassene Einheiten nach deiner Angabe im Wochenrückblick.</p></div>
+    <BlockTimeline timeline={review} />
+    {review.checkIns.averages && <p className="coach-muted coach-review-checkins">Deine Check-ins im Block ({review.checkIns.count}): {CHECK_IN_LABELS.map(([key, label]) => `${label} ${fmt(review.checkIns.averages[key])}/5`).join(' · ')}</p>}
+    <form className="coach-reflection" onSubmit={event => { event.preventDefault(); onSave({ rating, note }); }}><fieldset disabled={busy}>
+      <h3>Wie lief der Block für dich?</h3>
+      <div className="coach-rating-chips" role="radiogroup" aria-label="Bewertung von 1 (schlecht) bis 5 (sehr gut)">{[1, 2, 3, 4, 5].map(value => <label key={value} className={rating === value ? 'selected' : ''}>
+        <input type="radio" name="block-rating" value={value} checked={rating === value} onChange={() => setRating(value)} />{value}</label>)}<small>1 = schlecht · 5 = sehr gut</small></div>
+      <Field label="Notiz zum Block" hint="Was hat funktioniert, was nicht? Geht als deine Angabe in den nächsten Block ein."><textarea maxLength={1500} value={note} onChange={e => setNote(e.target.value)} /></Field>
+      <div className="coach-actions"><button type="submit">Einschätzung speichern</button>{review.reflection && <small className="coach-muted">Gespeichert am {dateLabel(review.reflection.date)}</small>}</div>
+    </fieldset></form>
+  </>;
 }
 
 function Hinweise({ items }) {
@@ -354,6 +384,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
   const [firstWeek, setFirstWeek] = useState(null);
   const [timeline, setTimeline] = useState(null);
   const [rhythmFeedback, setRhythmFeedback] = useState(null);
+  const [review, setReview] = useState(null);
   const [instruction, setInstruction] = useState('');
   const [feedbackWeek, setFeedbackWeek] = useState('');
   const [feedback, setFeedback] = useState(null);
@@ -474,6 +505,20 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
     // Plan revisions and calendar changes refresh planned and completed hours.
   }, [stage, block?.id, plan?.revision, workouts]);
   useEffect(() => {
+    if (stage !== 'ended' || !block?.id) { setReview(null); return undefined; }
+    let cancelled = false;
+    request(`/api/coach/blocks/${encodeURIComponent(block.id)}/review?${tzQuery()}`)
+      .then(result => { if (!cancelled) setReview(result); }).catch(() => { if (!cancelled) setReview(null); });
+    return () => { cancelled = true; };
+  }, [stage, block?.id, plan?.revision, workouts]);
+  async function saveReview(reflection) {
+    await run('Einschätzung wird gespeichert …', async () => {
+      invalidate();
+      setReview(await request(`/api/coach/blocks/${encodeURIComponent(block.id)}/review?${tzQuery()}`, 'PUT', reflection));
+      setPlan(await request('/api/coach/plan')); setNotice('Einschätzung gespeichert. Sie fließt in den nächsten Block ein.');
+    });
+  }
+  useEffect(() => {
     if (proposal && proposal.kind !== 'block') document.querySelector('.coach-proposal')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }, [proposal]);
   const workoutsById = useMemo(() => Object.fromEntries(workouts.map(workout => [workout.id, workout])), [workouts]);
@@ -549,9 +594,11 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
         <p className="coach-muted">Ein Trainingsblock dauert meist 4–12 Wochen und endet mit einer Entlastungswoche. Gespeichert wird erst, wenn du ihn übernimmst.</p>
         {wizard}
       </section>}
-      {stage === 'ended' && <section className="coach-card"><span className="coach-eyebrow">Block abgeschlossen</span><h2>Nächsten Trainingsblock starten</h2>
-        <BlockOverview value={block} />
-        <p className="coach-muted">Der abgeschlossene Block geht als Kontext in die Planung ein.</p>
+      {stage === 'ended' && <section className="coach-card" aria-label="Blockrückblick"><span className="coach-eyebrow">Block abgeschlossen · Rückblick</span><h2>So lief dein Block</h2>
+        <BlockOverview value={block} chart={review && review.blockId === block.id && <BlockReview key={review.blockId} review={review} busy={!!busy} onSave={saveReview} />} />
+      </section>}
+      {stage === 'ended' && <section className="coach-card"><span className="coach-eyebrow">Nächster Schritt</span><h2>Nächsten Trainingsblock starten</h2>
+        <p className="coach-muted">Verlauf, ausgelassene Einheiten und deine Einschätzung gehen als Kontext in die Vorschläge ein.</p>
         {wizard}
       </section>}
       {stage === 'active' && firstWeek && !plan.weeks?.[firstWeek] && <section className="coach-card coach-next" aria-label="Erste Woche planen"><span className="coach-eyebrow">Trainingsblock übernommen</span><h2>Erste Woche jetzt planen?</h2>
