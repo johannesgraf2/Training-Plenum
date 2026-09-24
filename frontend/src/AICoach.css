@@ -99,6 +99,18 @@
 .coach-compare > div { min-width: 0; }
 .coach-compare > div:last-child { padding-left: 20px; border-left: 1px solid var(--bd-e2e8f0); }
 .coach-compare .coach-sessions { grid-template-columns: 1fr; }
+.coach-hinweise { font-size: 12px; line-height: 1.6; color: var(--fg-334155); background: var(--bg-f8fafc); border: 1px solid var(--bd-e2e8f0); border-left: 3px solid var(--ochre); padding: 12px 14px; margin: 14px 0; border-radius: 2px; }
+.coach-hinweise ul { margin: 6px 0; padding-left: 18px; }
+.coach-hinweise small { color: var(--fg-64748b); }
+.coach-options { display: grid; gap: 12px; margin: 16px 0; }
+.coach-option { display: flex; gap: 12px; align-items: flex-start; padding: 16px; border: 1px solid var(--bd-e2e8f0); border-radius: 4px; cursor: pointer; }
+.coach-option.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.coach-option > input { margin-top: 4px; accent-color: var(--accent); }
+.coach-option > div { flex: 1; min-width: 0; }
+.coach-option-heading { display: flex; gap: 10px; align-items: baseline; }
+.coach-option-heading p { margin: 0 0 4px; }
+.coach-option .coach-details { margin-top: 8px; }
+.coach-replaces { border-top: 1px solid var(--bd-e2e8f0); margin-top: 8px; }
 .coach-change-list { font-size: 12px; line-height: 1.9; color: var(--fg-4338ca); background: var(--bg-eef2ff); padding: 14px 14px 14px 30px; border-radius: 2px; }
 .coach-secondary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .coach-lock-list > div { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--bd-e2e8f0); padding: 12px 0; }
