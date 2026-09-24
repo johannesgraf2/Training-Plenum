@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { saveTheme, storedTheme } from './theme';
+import { IMAGE_TYPES, removeImage, setBackground, uploadImage, useAppearance } from './appearance';
 import './UserMenu.css';
 
 const FIELDS = [
@@ -12,6 +13,36 @@ const FIELDS = [
 export const initials = name => (name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join('') || '?';
 const THEMES = [['light', 'Hell'], ['dark', 'Dunkel'], ['system', 'System']];
 const draftFrom = user => ({ name: user?.name || '', ...Object.fromEntries(FIELDS.map(([key]) => [key, user?.[key] ?? ''])) });
+
+const BACKGROUNDS = [['default', 'Landschaft'], ['custom', 'Foto'], ['none', 'Aus']];
+
+// The start-page background: bundled landscape, the athlete's own photo, or none.
+function BackgroundSetting({ apiBase }) {
+  const appearance = useAppearance(apiBase);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const input = useRef(null);
+  async function run(action) {
+    setBusy(true); setError('');
+    try { await action(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  const choose = mode => (mode === 'custom' && !appearance.backgroundImage ? input.current?.click() : run(() => setBackground(apiBase, mode)));
+  return <div className="user-menu-background">
+    <div className="user-menu-theme" role="radiogroup" aria-label="Hintergrund der Startseite">
+      <span>Hintergrund</span>
+      <div>{BACKGROUNDS.map(([value, label]) => <button type="button" key={value} role="radio" aria-checked={appearance.background === value}
+        disabled={busy} onClick={() => choose(value)}>{label}</button>)}</div>
+    </div>
+    <div className="user-menu-background-actions">
+      <button type="button" disabled={busy} onClick={() => input.current?.click()}>{appearance.backgroundImage ? 'Anderes Foto wählen' : 'Foto hochladen'}</button>
+      {appearance.backgroundImage && <button type="button" disabled={busy} onClick={() => run(() => removeImage(apiBase, 'background'))}>Foto entfernen</button>}
+    </div>
+    <input ref={input} type="file" accept={IMAGE_TYPES.join(',')} hidden aria-label="Hintergrundbild auswählen"
+      onChange={event => { const file = event.target.files[0]; event.target.value = ''; if (file) run(() => uploadImage(apiBase, 'background', file)); }} />
+    {error && <p role="alert" className="user-menu-error">{error}</p>}
+    <p className="user-menu-note">Das Foto bleibt lokal auf diesem Rechner. JPEG, PNG oder WebP bis 10 MB.</p>
+  </div>;
+}
 
 export default function UserMenu({ apiBase = '', user, onSaved, onOpenCoachProfile }) {
   const [open, setOpen] = useState(false);
@@ -67,6 +98,7 @@ export default function UserMenu({ apiBase = '', user, onSaved, onOpenCoachProfi
         <div>{THEMES.map(([value, label]) => <button type="button" key={value} role="radio" aria-checked={theme === value}
           onClick={() => { saveTheme(value); setTheme(value); }}>{label}</button>)}</div>
       </div>
+      <BackgroundSetting apiBase={apiBase} />
       <form onSubmit={save}>
         <fieldset disabled={saving}>
           <label className="user-menu-field wide"><span>Name</span><input required maxLength={100} value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} /></label>

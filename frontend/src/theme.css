@@ -44,6 +44,13 @@
   --sport-swim: var(--teal);
   --sport-other: var(--muted-2);
   --planned: #8c857a;
+  --card: #fbf9f4;
+  --card-line: #e3dccf;
+  --card-shadow: 0 1px 2px rgba(27, 26, 23, .04), 0 10px 30px rgba(27, 26, 23, .06);
+  --land-far: #d8d0c3;
+  --land-mid: #c9c0b1;
+  --land-near: #bab19f;
+  --land-trees: #8f887a;
 
   --bd-0e386c: var(--ink);
   --bd-93b4ed: var(--line-strong);
@@ -241,4 +248,11 @@
   --warning: #e5ba6e;
   --warning-bg: #372b17;
   --planned: #8a8273;
+  --card: #1f1c18;
+  --card-line: #322d27;
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .25);
+  --land-far: #25211c;
+  --land-mid: #2c2822;
+  --land-near: #34302a;
+  --land-trees: #3f3a33;
 }

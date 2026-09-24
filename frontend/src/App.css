@@ -1,15 +1,16 @@
 /* App shell, calendar and activity list in the "Trainingsbuch" style. */
-.app { min-height: 100vh; background: var(--paper); }
+.app { min-height: 100vh; background: var(--paper); overflow-x: clip; }
 .calendar { overflow-x: auto; }
-.app-header { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 76px; padding: 0 56px; background: var(--paper); border-bottom: 1px solid var(--ink); }
+.app-header { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 76px; padding: 0 56px; background: var(--surface); border-bottom: 1px solid var(--line); }
 .app-header-start { display: flex; align-items: center; gap: 56px; min-width: 0; }
 .app-wordmark { font-family: var(--font-display); font-style: italic; font-size: 30px; font-weight: 500; letter-spacing: -.01em; color: var(--ink); }
+.app-wordmark em { color: var(--accent-text); }
 .app-nav { display: flex; gap: 28px; }
 .app-nav button { min-height: 44px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 15px; cursor: pointer; text-decoration: underline 2px transparent; text-underline-offset: 8px; transition: color .15s, text-decoration-color .15s; }
 .app-nav button:hover { color: var(--ink); }
 .app-nav button[aria-current="page"] { color: var(--ink); font-weight: 600; text-decoration-color: var(--accent); }
 .app-header-end { display: flex; align-items: center; gap: 16px; }
-.app-import { min-height: 44px; padding: 0 20px; border: 1px solid var(--ink); border-radius: 2px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.app-import { min-height: 44px; padding: 0 20px; border: 1px solid var(--line-strong); border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
 .app-import:hover { background: var(--btn-bg); color: var(--btn-fg); }
 
 .app-main { max-width: 1440px; margin: 0 auto; padding: 0 56px; }

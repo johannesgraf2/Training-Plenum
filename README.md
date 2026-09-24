@@ -50,9 +50,13 @@ The basemap uses internet access. The track is drawn locally in the browser from
 
 `REACT_APP_MAP_TILE_URL` can select another compatible raster tile service before rebuilding. If switching providers, update the attribution to their requirements in `RouteMap.jsx`. See the [OpenStreetMap tile policy](https://operations.osmfoundation.org/policies/tiles/) and [Leaflet documentation](https://leafletjs.com/reference.html). This implementation does not bulk-download tiles or offer offline map downloads. Place names come from the basemap; it does not generate a separate itinerary or reverse-geocode the ride.
 
+### Start page background and race-goal photo
+
+The start page shows a bundled landscape behind the date. In the user menu (your name, top right) under **Hintergrund**, choose **Landschaft**, **Foto** (upload your own JPEG, PNG or WebP up to 10 MB) or **Aus**. The race-goal card has its own photo: use the camera button on its image to add or replace it, the bin button to remove it. Photos are stored in the upload folder (`uploads/appearance`) on this machine and are never sent anywhere else; the page washes them towards the page colour so the text stays readable.
+
 ### Personal bests
 
-On **Startseite**, the **Bestwerte** card sits below the heart-rate zones. Switch between **Radfahren** and **Laufen**, select an activity year or **All-Time**, and click a result's date to open its activity. The default is the current calendar year (or the calendar year you navigated to). New imports automatically refresh the results.
+On **Startseite**, the **Bestwerte** card sits below the race goal. Switch between **Radfahren** and **Laufen**, select an activity year or **All-Time**, and click a result's date to open its activity. The default is the current calendar year (or the calendar year you navigated to). New imports automatically refresh the results.
 
 - Cycling: highest time-weighted average power over 30 seconds and 1, 3, 5, 10, 20 and 60 minutes. The calculation searches complete rolling windows inside a single recorded session, includes recorded zero power, and holds each reading up to the next timestamp. It does not use the activity's average power.
 - Running: fastest elapsed time over exactly 400 m, 1 km, 5 km, 10 km and 21 km, using the recording's cumulative distance in metres. Distance crossings between samples are interpolated. Pauses inside an effort count toward its time. The 21 km target is exactly 21,000 m.
