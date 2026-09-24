@@ -488,6 +488,54 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual([s['blockType'] for s in season['segments']], ['wiedereinstieg', 'schwelle', 'wettkampfspezifisch'])
         self.assertTrue(season['segments'][0]['blockId'])
 
+    def test_block_is_deleted_with_its_weeks_and_workouts(self):
+        from coach_templates import render_session
+        self.week_plan()
+        own = render_session('bike_z2', {'durationMin': 60}, (self.start + timedelta(days=2)).isoformat(), 250)['workout']
+        own_id = self.client.post('/api/workouts', json=own).json['id']
+        self.assertEqual(len(self.client.get('/api/workouts').json), 2)
+        block = self.client.get('/api/coach/plan').json['blocks'][0]
+        self.assertEqual(self.client.delete('/api/coach/blocks/unbekannt').status_code, 404)
+        result = self.client.delete('/api/coach/blocks/' + block['id']).json
+        self.assertEqual((result['blocks'], result['weeks'], result['deletedWorkouts']), ([], {}, 1))
+        # Own calendar workouts are no part of the block.
+        self.assertEqual([w['id'] for w in self.client.get('/api/workouts').json], [own_id])
+        self.block()  # The weeks are free again.
+
+    def test_season_blocks_are_laid_out_one_after_another_and_deleted_together(self):
+        goal = (self.start + timedelta(weeks=9, days=5)).isoformat()
+        self.client.put('/api/athlete-profile', json={'goal': {'type': 'cycling_event', 'name': 'Rennen', 'date': goal, 'target': None}})
+        self.week_plan()  # two weeks, the first one planned
+        seg = lambda identity, weeks: {'blockType': identity, 'secondaryFocus': None, 'weeks': weeks, 'purpose': ''}
+        options = [{'id': 'a', 'recommended': True, 'rationale': '', 'segments': [seg('schwelle', 4), seg('wettkampfspezifisch', 4)]},
+                   {'id': 'b', 'recommended': False, 'rationale': '', 'segments': [seg('vo2max', 4), seg('wettkampfspezifisch', 4)]}]
+        proposal, _ = self.propose({'kind': 'season'}, {'options': options, 'hinweise': []})
+        self.assertIsNone(self.confirm(proposal, option='a')['season']['segments'][1]['blockId'])
+        # The next season block is created ahead of time; the running block stays.
+        later = self.start + timedelta(weeks=2)
+        self.block('schwelle', ('build', 'build', 'build', 'recovery'), start=later)
+        saved = self.client.get('/api/coach/plan').json
+        self.assertEqual([b['status'] for b in saved['blocks']], ['active', 'active'])
+        segments = saved['season']['segments']
+        self.assertEqual([s['blockId'] for s in segments[:2]], [b['id'] for b in saved['blocks']])
+        self.assertIsNone(segments[2]['blockId'])
+        self.assertTrue(saved['season']['aligned'])
+        # A block that overlaps planned weeks of a later block is refused instead of cutting it short.
+        in_schwelle = iso_week(later + timedelta(weeks=3))  # its recovery week
+        self.confirm(self.propose({'kind': 'week', 'week': in_schwelle},
+                                  {'week': in_schwelle, 'targetHours': 1, 'focus': 'Schwelle', 'hinweise': [],
+                                   'sessions': [self.session()]})[0])
+        body = {'kind': 'block', 'mode': 'choose', 'blockType': 'uebergang', 'secondaryFocus': None,
+                'startDate': (self.start + timedelta(weeks=1)).isoformat(), 'weeks': 1}
+        decision = {'options': [self.option(block_type='uebergang', phases=('recovery',), hours=2)], 'hinweise': []}
+        self.propose({**body, 'weeks': 2}, {'options': [self.option(block_type='uebergang', phases=('recovery', 'recovery'), hours=2)],
+                                            'hinweise': []}, expected=400)
+        self.propose(body, decision)
+        self.assertEqual(len(self.client.get('/api/workouts').json), 2)
+        result = self.client.delete('/api/coach/season?blocks=true').json
+        self.assertEqual((result['season'], result['blocks'], result['weeks'], result['deletedWorkouts']), (None, [], {}, 2))
+        self.assertEqual(self.client.get('/api/workouts').json, [])
+
     def test_overrides_are_separate_checkins_are_athlete_data(self):
         self.client.put('/api/coach/weekly-overrides/' + self.week, json={'overrides': {'thu': {'available': False}}, 'note': 'Arbeit'})
         checkin = {'date': self.start.isoformat(), 'fatigue': 3, 'motivation': 5, 'stress': 2, 'sleepQuality': 4, 'soreness': 2, 'notes': 'Müde'}

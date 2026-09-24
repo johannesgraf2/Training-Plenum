@@ -181,6 +181,13 @@ def public_season(season, blocks, goal_date, today):
     if not season:
         return None
     segments = dated(season)
+    # A segment points at its block, also once that block was created later from the season plan or deleted.
+    live = {b['id']: b for b in blocks if b['status'] != 'abandoned'}
+    for segment in segments:
+        if segment.get('blockId') not in live:
+            match = next((b for b in live.values() if b['startDate'] == segment['startDate']
+                          and b['blockType'] == segment['blockType']), None)
+            segment['blockId'] = match['id'] if match else None
     first_open = open_from(blocks, today)
     editable = [s for s in segments if day_date(s['startDate']) >= first_open]
     remaining = (goal_monday(goal_date) - first_open).days // 7 + 1 if goal_date else None
