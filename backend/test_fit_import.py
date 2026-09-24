@@ -274,6 +274,27 @@ class FitTests(unittest.TestCase):
         with patch.object(self.backend, 'export_workout', side_effect=RuntimeError('CRC failed')):
             self.assertEqual(self.client.post('/api/workouts/export', json=example()).status_code, 500)
 
+    def test_selected_workouts_download_as_one_zip_of_fit_files(self):
+        import zipfile
+        from test_workout_export import example
+        from garmin_fit_sdk import Decoder, Stream
+        later = self.client.post('/api/workouts', json={**example(), 'name': 'Later', 'date': '2026-09-27'}).json
+        skipped = self.client.post('/api/workouts', json={**example(), 'name': 'Skipped', 'date': '2026-09-26'}).json
+        first = self.client.post('/api/workouts', json={**example(), 'name': 'First', 'date': '2026-09-25'}).json
+        download = self.client.post('/api/workouts/export-selection', json={'ids': [later['id'], first['id']]})
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(download.mimetype, 'application/zip')
+        self.assertIn('trainhub_2026-09-25_2026-09-27.zip', download.headers['Content-Disposition'])
+        with zipfile.ZipFile(io.BytesIO(download.data)) as bundle:
+            self.assertEqual(bundle.namelist(), ['2026-09-25_001_First.fit', '2026-09-27_002_Later.fit'])
+            decoded, errors = Decoder(Stream.from_byte_array(bytearray(bundle.read('2026-09-27_002_Later.fit')))).read()
+        self.assertEqual(errors, [])
+        self.assertEqual(decoded['workout_mesgs'][0]['wkt_name'], '27.09.2026 · Later')
+        self.assertIn(skipped, self.client.get('/api/workouts').json)
+        for payload in [None, {}, {'ids': []}, {'ids': 'x'}, {'ids': [1]}]:
+            self.assertEqual(self.client.post('/api/workouts/export-selection', json=payload).status_code, 400)
+        self.assertEqual(self.client.post('/api/workouts/export-selection', json={'ids': [first['id'], 'gone']}).status_code, 404)
+
     def add_effort_activity(self, identity, date, power, sport='ride'):
         self.client.get('/api/health')
         with self.backend.app.app_context():

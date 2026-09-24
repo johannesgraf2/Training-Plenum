@@ -34,4 +34,23 @@ p.batch-error { padding: 10px; margin-top: 12px; font-size: 12px; }
 .batch-footer { padding: 16px 24px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--bd-e2e8f0); }
 .batch-dialog .batch-primary { background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); }
 .batch-dialog .batch-link { border: 0; margin-right: auto; padding-left: 0; color: var(--fg-64748b); }
+.batch-tabs { display: flex; gap: 4px; padding: 0 24px; border-bottom: 1px solid var(--bd-e2e8f0); }
+.batch-dialog .batch-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; margin-bottom: -1px; padding: 12px 10px; font-weight: 500; color: var(--fg-64748b); background: none; }
+.batch-dialog .batch-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--fg-243248); }
+
+/* Export tab: planned workouts to tick and download for the Garmin. */
+.export-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
+.batch-dialog .export-presets button { padding: 7px 12px; font-size: 12px; }
+.export-past { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; color: var(--fg-64748b); cursor: pointer; }
+.export-list { max-height: 300px; }
+.export-list li { padding: 0; }
+.export-list label { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; cursor: pointer; }
+.export-list input, .export-past input { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); }
+.export-day { flex-shrink: 0; width: 64px; font-size: 12px; color: var(--fg-64748b); font-variant-numeric: tabular-nums; }
+.export-empty { padding: 18px; border: 1px dashed var(--bd-c5d2e1); border-radius: 4px; font-size: 13px; color: var(--fg-64748b); text-align: center; }
+p.export-done { margin-top: 12px; padding: 10px; font-size: 12px; background: var(--bg-eaf7ef); color: var(--fg-247b48); }
+.export-garmin { margin-top: 16px; font-size: 12px; line-height: 1.6; color: var(--fg-64748b); }
+.export-garmin > strong { color: var(--fg-243248); }
+.export-garmin ol { margin-top: 4px; padding-left: 18px; }
+@media(max-width: 480px) { .batch-tabs { padding: 0 16px; } .export-past { margin-left: 0; } }
 @media(max-width: 480px) { .batch-header, .batch-content, .batch-footer { padding: 16px; } .batch-drop { padding: 16px 12px; } .batch-header h2 { font-size: 19px; } }
