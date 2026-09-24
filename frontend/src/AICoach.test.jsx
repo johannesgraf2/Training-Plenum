@@ -103,12 +103,28 @@ test('a proposal is human-readable and only saves after explicit confirmation', 
   await click(preview.querySelector('input[value="mehr"]'));
   await click(button('Diese Option übernehmen'));
   expect(requests.find(r => r.path.endsWith('/confirm')).body).toEqual({ confirm: true, optionId: 'mehr' });
-  expect(changed).toHaveBeenCalledTimes(1);
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
-  expect(container.querySelector('[aria-label="Erste Woche planen"]').textContent).toContain('Erste Woche jetzt planen?');
-  await click(button('Erste Woche planen'));
-  expect(requests.filter(r => r.path === '/api/coach/proposals').pop().body).toEqual({ kind: 'week', week: '2026-W39', instruction: '' });
-  expect(container.querySelector('[aria-label="Erste Woche planen"]')).toBeNull();
+  // Taking over the block plans all of its weeks one after another.
+  await act(async () => {});
+  expect(requests.filter(r => r.path === '/api/coach/proposals').slice(1).map(r => r.body)).toEqual([
+    { kind: 'week', week: '2026-W39', instruction: '' }, { kind: 'week', week: '2026-W40', instruction: '' }]);
+  expect(requests.filter(r => r.path.endsWith('/confirm')).slice(1).map(r => r.body)).toEqual([{ confirm: true }, { confirm: true }]);
+  expect(changed).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain('2 Wochen geplant.');
+  expect(container.textContent).toContain('2026-W39: Kurze Woche.');
+});
+
+test('the remaining weeks are planned on request and a failing week stops with a clear message', async () => {
+  initialPlan = { revision: 1, blocks: [activeBlock], weeks: { '2026-W39': weekPlan } };
+  let calls = 0;
+  responses['POST /api/coach/proposals'] = async () => { calls += 1; return { ok: false, json: async () => ({ error: 'Regel verletzt.' }) }; };
+  await render();
+  expect(container.textContent).toContain('Ausnahme für diese Woche');
+  await click(button('Restliche Wochen planen (1)'));
+  await act(async () => {});
+  expect(calls).toBe(2);
+  expect(container.querySelector('[role="alert"]').textContent).toContain('2026-W40 konnte nicht geplant werden: Regel verletzt.');
+  expect(requests.some(r => r.path.endsWith('/confirm'))).toBe(false);
 });
 
 test('the own-choice path sends the chosen type, length and focus as structured data', async () => {
@@ -265,6 +281,24 @@ test('a season plan is proposed, adjusted by swapping blocks and confirmed', asy
   expect(container.textContent).toContain('Von dir angepasst');
 });
 
+test('planned blocks stay in the season editor as fixed first rows', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
+  const segments = [{ ...seasonSegments[0], blockId: 'b1', secondaryFocus: 'radfahren', secondaryName: 'Radfahren' }, ...seasonSegments.slice(1)];
+  const option = (id, recommended) => ({ id, recommended, rationale: `Plan ${id}.`, season: { ...season, segments } });
+  responses['POST /api/coach/proposals'] = async () => ({ ok: true, json: async () => ({ id: 'season-2', kind: 'season', before: null, hinweise: [], rejectedOptions: [],
+    after: { options: [option('a', true), option('b', false)], openFrom: '2026-11-23', remainingWeeks: 10, fixedCount: 1 } }) });
+  await render();
+  await click(button('Saisonplan vorschlagen lassen'));
+  await click(button('Anpassen'));
+  const rows = container.querySelectorAll('.coach-season-editor li');
+  expect(rows).toHaveLength(3);
+  expect(rows[0].className).toBe('coach-season-fixed');
+  expect(rows[0].textContent).toContain('Grundlage8+ RadfahrenFest');
+  expect(rows[0].querySelector('select, input, button')).toBeNull();
+  expect(container.querySelector('[aria-label="Block 2 Typ"]').value).toBe('vo2max');
+  expect(container.textContent).toContain('10 von 10 freien Wochen verplant');
+});
+
 test('a saved season plan is edited within the rules and prefills the next block', async () => {
   responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
   initialPlan = { ...initialPlan, season };
@@ -399,6 +433,28 @@ test('from Friday the week is closed with review, check-in and planning the next
   await click(button('Nächste Woche planen'));
   expect(requests.filter(r => r.path === '/api/coach/proposals').pop().body).toEqual({ kind: 'week', week: '2026-W40', instruction: '', feedbackWeek: '2026-W39', missedSessions: ['session-1'] });
   expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W40');
+});
+
+test('an already planned next week is adjusted or kept after the weekly review', async () => {
+  jest.setSystemTime(new Date('2026-09-25T12:00:00Z'));
+  const nextWeek = { ...weekPlan, week: '2026-W40', sessions: [{ ...session, id: 'session-2' }] };
+  initialPlan = { revision: 1, blocks: [activeBlock], weeks: { '2026-W39': weekPlan, '2026-W40': nextWeek } };
+  responses['PUT /api/coach/weeks/2026-W39/missed'] = async body => ({ ok: true, json: async () => ({ ...initialPlan, weeks: { ...initialPlan.weeks, '2026-W39': { ...weekPlan, ...body } } }) });
+  await render();
+  const card = () => container.querySelector('[aria-label="Woche abschließen"]');
+  await click([...card().querySelectorAll('label')].find(l => l.textContent.includes('Grundlage')).querySelector('input'));
+  await click(button('Weiter zum Check-in'));
+  await click(button('Weiter'));
+  expect(card().textContent).toContain('Die Woche ist schon geplant.');
+  expect(button('Nächste Woche planen')).toBeUndefined();
+  await click(button('Nächste Woche anpassen'));
+  expect(requests.filter(r => r.path === '/api/coach/proposals').pop().body).toEqual({ kind: 'patch', week: '2026-W40', instruction: '', feedbackWeek: '2026-W39', missedSessions: ['session-1'] });
+  await click(button('Vorschlag verwerfen'));
+  await click(button('Unverändert lassen'));
+  expect(requests.find(r => r.method === 'PUT' && r.path === '/api/coach/weeks/2026-W39/missed').body).toEqual({ missedSessions: ['session-1'] });
+  expect(card()).toBeNull();
+  expect(container.textContent).toContain('Rückblick gespeichert.');
+  jest.setSystemTime(new Date('2026-09-23T12:00:00Z'));
 });
 
 test('an open current week after a planned one starts the rhythm right away', async () => {

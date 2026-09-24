@@ -54,6 +54,17 @@ export function nextMonday(today = localDate()) {
   return monday === today ? today : addDays(monday, 7);
 }
 
+// Block weeks that are not over yet and have no plan, in order.
+export function openBlockWeeks(block, weeks = {}, today = localDate()) {
+  const range = blockRange(block);
+  const result = [];
+  for (let day = range?.start; range && day <= range.end; day = addDays(day, 7)) {
+    const key = isoWeek(day);
+    if (weekEnd(key) >= today && !weeks[key]) result.push(key);
+  }
+  return result;
+}
+
 export function blockRange(block) {
   if (!block?.startDate || !block.weeks?.length) return null;
   return { start: block.startDate, end: block.endDate || addDays(block.startDate, block.weeks.length * 7 - 1), weeks: block.weeks.length };
@@ -222,7 +233,7 @@ function WeekSessions({ value, own, workoutsById, busy, onLock, onOpen }) {
 }
 
 // Close the week → review (athlete-reported missed sessions) → check-in → plan the next week.
-function WeekRhythm({ review, next, reviewPlan, nextBlockWeek, feedback, busy, canPlan, checkInForm, wishField, onLoad, onPlan }) {
+function WeekRhythm({ review, next, planned, reviewPlan, nextBlockWeek, feedback, busy, canPlan, checkInForm, wishField, onLoad, onPlan, onKeep }) {
   const [step, setStep] = useState(0);
   const [missed, setMissed] = useState([]);
   useEffect(() => { onLoad(review); }, [review]);
@@ -242,8 +253,12 @@ function WeekRhythm({ review, next, reviewPlan, nextBlockWeek, feedback, busy, c
     {step === 1 && <>{checkInForm}<div className="coach-actions"><button type="button" className="coach-primary" onClick={() => setStep(2)}>Weiter</button><button type="button" onClick={() => setStep(0)}>Zurück</button></div></>}
     {step === 2 && <>
       <p className="coach-week-focus"><strong>{next}</strong>{nextBlockWeek && <> · {PHASES[nextBlockWeek.phase] || nextBlockWeek.phase} · Ziel {hours(nextBlockWeek.targetHours)}{nextBlockWeek.focus ? ` · ${nextBlockWeek.focus}` : ''}</>}</p>
+      {planned && <p className="coach-muted">Die Woche ist schon geplant. Lass sie an deinen Rückblick anpassen oder behalte sie so.</p>}
       {wishField}
-      <div className="coach-actions"><button type="button" className="coach-primary" disabled={!canPlan} onClick={() => onPlan(missed)}>Nächste Woche planen</button><button type="button" onClick={() => setStep(1)}>Zurück</button></div>
+      <div className="coach-actions">{planned ? <>
+        <button type="button" className="coach-primary" disabled={!canPlan} onClick={() => onPlan(missed)}>Nächste Woche anpassen</button>
+        <button type="button" disabled={busy} onClick={() => onKeep(missed)}>Unverändert lassen</button>
+      </> : <button type="button" className="coach-primary" disabled={!canPlan} onClick={() => onPlan(missed)}>Nächste Woche planen</button>}<button type="button" onClick={() => setStep(1)}>Zurück</button></div>
     </>}
   </section>;
 }
@@ -437,8 +452,12 @@ function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, 
     return [...list.slice(0, at), item, ...list.slice(at)];
   });
   return <div className="coach-season-editor">
-    {fixed.length > 0 && <p className="coach-muted">Bereits geplant und fest: {fixed.map(s => `${segmentName(s)} (${s.weeks} Wo.)`).join(', ')}. Die Blöcke unten folgen ab {seasonDate(addDays(fixed.at(-1).endDate, 1))}.</p>}
-    <ol>{items.map((item, i) => { const n = fixed.length + i + 1; const type = typeOf(item.blockType); return <li key={item.key}>
+    <ol>{fixed.map((segment, i) => <li key={`fixed-${i}`} className="coach-season-fixed">
+      <span className="coach-step" aria-hidden="true">{i + 1}</span>
+      <span>{segment.typeName}</span><span>{segment.weeks}</span><span>{segment.secondaryName ? `+ ${segment.secondaryName}` : 'Kein Nebenschwerpunkt'}</span>
+      <span className="coach-season-lock">Fest</span>
+      <small>Bereits geplant, {seasonDate(segment.startDate)} – {seasonDate(segment.endDate)}. Bleibt unverändert.</small>
+    </li>)}{items.map((item, i) => { const n = fixed.length + i + 1; const type = typeOf(item.blockType); return <li key={item.key}>
       <span className="coach-step" aria-hidden="true">{n}</span>
       <select aria-label={`Block ${n} Typ`} value={item.blockType} disabled={busy} onChange={e => update(i, { blockType: e.target.value, weeks: typeOf(e.target.value)?.defaultWeeks || item.weeks, purpose: '' })}>{types.map(t => <option key={t.id} value={t.id} disabled={t.id === 'wettkampfspezifisch' && !profile.goal.date}>{t.name}</option>)}</select>
       <input aria-label={`Block ${n} Wochen`} type="number" min={type?.minWeeks} max={type?.maxWeeks} value={item.weeks} disabled={busy} onChange={e => update(i, { weeks: e.target.value === '' ? '' : Number(e.target.value) })} />
@@ -450,7 +469,7 @@ function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, 
       </span>
       {item.purpose && <small>{item.purpose}</small>}
     </li>; })}</ol>
-    <div className="coach-actions"><button type="button" disabled={busy} onClick={add}>Block hinzufügen</button><p className={`coach-season-sum ${problems.length ? '' : 'ok'}`}><strong>{total} von {remainingWeeks} Wochen verplant</strong>{problems.map(problem => ` · ${problem}`).join('')}</p></div>
+    <div className="coach-actions"><button type="button" disabled={busy} onClick={add}>Block hinzufügen</button><p className={`coach-season-sum ${problems.length ? '' : 'ok'}`}><strong>{total} von {remainingWeeks} {fixed.length ? 'freien ' : ''}Wochen verplant</strong>{problems.map(problem => ` · ${problem}`).join('')}</p></div>
     <div className="coach-actions"><button type="button" className="coach-primary" disabled={busy || problems.length > 0} onClick={() => onSave(items.map(({ key, ...item }) => ({ ...item, weeks: Number(item.weeks) })))}>{saveLabel}</button><button type="button" disabled={busy} onClick={onCancel}>Abbrechen</button></div>
   </div>;
 }
@@ -516,7 +535,9 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
   const [daily, setDaily] = useState({ date: localDate(), action: 'normal', maxMinutes: '', note: '' });
   const [checkIn, setCheckIn] = useState({ date: localDate(), fatigue: 3, motivation: 3, stress: 3, sleepQuality: 3, soreness: 3, notes: '' });
   const [catalog, setCatalog] = useState(null);
-  const [firstWeek, setFirstWeek] = useState(null);
+  const [autoStart, setAutoStart] = useState(null);
+  const [planning, setPlanning] = useState(false);
+  const [planHints, setPlanHints] = useState([]);
   const [timeline, setTimeline] = useState(null);
   const [rhythmFeedback, setRhythmFeedback] = useState(null);
   const [review, setReview] = useState(null);
@@ -533,6 +554,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
   const [notice, setNotice] = useState('');
   const contextVersion = useRef(0);
   const pending = useRef(false);
+  const stopPlanning = useRef(false);
   const priorWorkouts = useRef(workouts);
   const currentWeek = plan?.weeks?.[week];
   const anyDirty = Object.values(dirty).some(Boolean);
@@ -602,7 +624,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
     if (anyDirty) { setError('Speichere zuerst deine offenen Änderungen.'); return; }
     const version = contextVersion.current;
     await run('Der Coach erstellt einen Vorschlag …', async () => {
-      setProposal(null); setFirstWeek(null);
+      setProposal(null);
       const context = extra.feedbackWeek ? { feedbackWeek: extra.feedbackWeek, missedSessions: extra.missedSessions } : kind === 'patch' && feedbackWeek ? { feedbackWeek } : {};
       const body = kind === 'block' ? extra : kind === 'season' ? { kind, ...(seasonWish.trim() ? { instruction: seasonWish.trim() } : {}) }
         : { kind, week: extra.week || week, instruction, ...context };
@@ -629,12 +651,49 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
         setPlan(saved); setProposal(null); await onWorkoutsChanged?.();
         if (proposal.kind === 'season') setNotice('Saisonplan übernommen. Du planst weiterhin Block für Block.');
         else if (proposal.kind === 'block') {
-          const first = isoWeek(proposal.after.options.find(option => option.id === optionId).block.startDate);
-          setWeek(first); setFeedback(null); setFirstWeek(first);
+          const chosen = proposal.after.options.find(option => option.id === optionId).block;
+          setWeek(isoWeek(chosen.startDate)); setFeedback(null); setAutoStart({ block: chosen, weeks: saved.weeks || {} });
         } else setNotice('Plan übernommen. Die Einheiten sind im Kalender verfügbar.');
       } catch (e) { setProposal(null); throw e; }
     });
   }
+  // All weeks of a block are planned one after another with the standard week from the profile; each week
+  // builds on the ones before. The athlete started it by taking over the block or with the button.
+  async function planBlockWeeks(target, planned) {
+    const keys = openBlockWeeks(target, planned, localDate());
+    if (!keys.length) return;
+    if (anyDirty) { setError('Speichere zuerst deine offenen Änderungen.'); return; }
+    stopPlanning.current = false; setPlanHints([]); setPlanning(true);
+    await run(`Woche 1 von ${keys.length} wird geplant …`, async () => {
+      const hints = [];
+      let done = 0;
+      try {
+        for (const key of keys) {
+          if (stopPlanning.current) break;
+          setBusy(`Woche ${done + 1} von ${keys.length} wird geplant · ${key} …`);
+          const body = { kind: 'week', week: key, instruction };
+          const path = `/api/coach/proposals?${tzQuery()}`;
+          // One retry: an AI answer occasionally breaks a block rule.
+          const next = await request(path, 'POST', body).catch(() => request(path, 'POST', body));
+          setPlan(await request(`/api/coach/proposals/${next.id}/confirm`, 'POST', { confirm: true }));
+          hints.push(...(next.hinweise || []).map(hint => `${key}: ${hint}`));
+          done += 1;
+        }
+      } catch (e) {
+        throw new Error(`${keys[done]} konnte nicht geplant werden: ${e.message}${done ? ` Die ${done} Wochen davor sind gespeichert.` : ''} Mit „Restliche Wochen planen“ geht es dort weiter.`);
+      } finally {
+        setPlanHints(hints); setPlanning(false);
+        if (done) await onWorkoutsChanged?.();
+      }
+      setNotice(done === keys.length ? `${done} ${done === 1 ? 'Woche' : 'Wochen'} geplant. Die Einheiten stehen im Kalender, jede Woche lässt sich noch anpassen.`
+        : `Angehalten: ${done} von ${keys.length} Wochen geplant.`);
+    });
+  }
+  useEffect(() => {
+    if (!autoStart || busy) return;
+    setAutoStart(null);
+    planBlockWeeks(autoStart.block, autoStart.weeks);
+  }, [autoStart, busy]);
   useEffect(() => {
     if (stage !== 'active' || !block?.id) { setTimeline(null); return undefined; }
     let cancelled = false;
@@ -674,13 +733,19 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
   const ownWorkouts = weekWorkouts.filter(workout => !(currentWeek?.sessions || []).some(session => session.id === workout.id));
   const thisWeek = isoWeek(today);
   const inBlock = key => !!range && weekStart(key) >= range.start && weekStart(key) <= range.end;
-  // Close the week when the next block week is still empty: from Friday on, or right away if last week was left open.
+  // Close the week: from Friday on, or right away if last week was left open. An empty next week is planned,
+  // an already planned one is adjusted or kept until the week has its review.
   let rhythm = null;
-  if (stage === 'active' && !firstWeek) {
+  if (stage === 'active' && !planning && !autoStart) {
     const lastWeek = isoWeek(addDays(today, -7)), nextWeek = isoWeek(addDays(today, 7));
+    const reviewed = plan.weeks?.[thisWeek]?.missedSessions !== undefined;
     if (inBlock(thisWeek) && !plan.weeks?.[thisWeek] && plan.weeks?.[lastWeek]) rhythm = { review: lastWeek, next: thisWeek };
-    else if ((new Date(`${today}T12:00:00`).getDay() + 6) % 7 >= 4 && plan.weeks?.[thisWeek] && inBlock(nextWeek) && !plan.weeks?.[nextWeek]) rhythm = { review: thisWeek, next: nextWeek };
+    else if ((new Date(`${today}T12:00:00`).getDay() + 6) % 7 >= 4 && plan.weeks?.[thisWeek] && inBlock(nextWeek)) {
+      if (!plan.weeks?.[nextWeek]) rhythm = { review: thisWeek, next: nextWeek };
+      else if (!reviewed) rhythm = { review: thisWeek, next: nextWeek, planned: true };
+    }
   }
+  const openWeeks = stage === 'active' ? openBlockWeeks(block, plan.weeks, today) : [];
   async function toggleLock(identity, locked) {
     await run('Einheit wird aktualisiert …', async () => {
       invalidate(); await request(`/api/workouts/${identity}/lock`, 'PUT', { locked });
@@ -723,7 +788,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
   const messages = <>
     {error && <div role="alert" className="coach-message error">{error}{!profile && !loading && <button onClick={() => window.location.reload()}>Erneut laden</button>}</div>}
     {notice && <div role="status" className="coach-message success">{notice}</div>}
-    {busy && <div role="status" className="coach-message"><span className="coach-spinner" />{busy}</div>}
+    {busy && <div role="status" className="coach-message"><span className="coach-spinner" />{busy}{planning && <button type="button" onClick={() => { stopPlanning.current = true; setBusy('Wird nach dieser Woche angehalten …'); }}>Anhalten</button>}</div>}
   </>;
 
   return <div className="ai-coach">
@@ -789,22 +854,21 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
         <p className="coach-muted">Verlauf, ausgelassene Einheiten und deine Einschätzung gehen als Kontext in die Vorschläge ein.</p>
         {wizard}
       </section>}
-      {stage === 'active' && firstWeek && !plan.weeks?.[firstWeek] && <section className="coach-card coach-next" aria-label="Erste Woche planen"><span className="coach-eyebrow">Trainingsblock übernommen</span><h2>Erste Woche jetzt planen?</h2>
-        <p className="coach-muted">{dateLabel(weekStart(firstWeek))} – {dateLabel(weekEnd(firstWeek))} · {firstWeek}. Du kannst die Woche auch später planen.</p>
-        <div className="coach-actions"><button className="coach-primary" disabled={!canPlan} onClick={() => propose('week')}>Erste Woche planen</button><button onClick={() => setFirstWeek(null)}>Später</button></div>
-      </section>}
-      {rhythm && <WeekRhythm key={rhythm.review} review={rhythm.review} next={rhythm.next} reviewPlan={plan.weeks?.[rhythm.review]} nextBlockWeek={block.weeks?.[blockWeek(range, weekStart(rhythm.next)) - 1]}
+      {rhythm && <WeekRhythm key={`${rhythm.review}-${!!rhythm.planned}`} review={rhythm.review} next={rhythm.next} planned={!!rhythm.planned} reviewPlan={plan.weeks?.[rhythm.review]} nextBlockWeek={block.weeks?.[blockWeek(range, weekStart(rhythm.next)) - 1]}
         feedback={rhythmFeedback?.week === rhythm.review ? rhythmFeedback : null} busy={!!busy} canPlan={canPlan} checkInForm={checkInForm} wishField={wishField}
         onLoad={key => request(`/api/coach/feedback?week=${encodeURIComponent(key)}&${tzQuery()}`).then(setRhythmFeedback).catch(e => setError(e.message))}
-        onPlan={missedSessions => { setWeek(rhythm.next); setFeedback(null); propose('week', { week: rhythm.next, feedbackWeek: rhythm.review, missedSessions }); }} />}
+        onPlan={missedSessions => { setWeek(rhythm.next); setFeedback(null); propose(rhythm.planned ? 'patch' : 'week', { week: rhythm.next, feedbackWeek: rhythm.review, missedSessions }); }}
+        onKeep={missedSessions => run('Rückblick wird gespeichert …', async () => { invalidate(); setPlan(await request(`/api/coach/weeks/${rhythm.review}/missed`, 'PUT', { missedSessions })); setNotice('Rückblick gespeichert. Die nächste Woche bleibt, wie sie ist.'); })} />}
       {stage === 'active' && <><section className="coach-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">Aktueller Trainingsblock</span><h2>{today < range.start ? `Startet am ${dateLabel(range.start)}` : `Woche ${blockWeek(range, today)} von ${range.weeks}`}</h2></div><span className="coach-badge recommendation">AI-Empfehlung</span></div>
         <BlockOverview value={block} chart={timeline && <BlockTimeline timeline={timeline} selected={week} onSelect={key => { if (dirty.weekly) setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); else if (key !== week) { invalidate(); setFeedback(null); setWeek(key); } }} />} />
+        {openWeeks.length > 0 && <div className="coach-actions"><button className="coach-primary" disabled={!canPlan} onClick={() => planBlockWeeks(block, plan.weeks)}>{blockHasWeeks ? 'Restliche Wochen planen' : 'Alle Wochen planen'} ({openWeeks.length})</button><small className="coach-muted">Mit deiner Standardwoche aus dem Athletenprofil. Ausnahmen trägst du in der jeweiligen Woche ein.</small></div>}
+        <Hinweise items={planHints} />
         {!blockHasWeeks && <details className="coach-details" open={proposal?.kind === 'block' || undefined}><summary>Block neu planen</summary><p className="coach-muted">Solange noch keine Woche geplant ist, kannst du den Block ersetzen.</p>{wizard}</details>}
       </section>
       <section className="coach-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">{weekStart(week) >= range.start && weekStart(week) <= range.end ? `Woche ${blockWeek(range, weekStart(week))} von ${range.weeks}` : 'Außerhalb des Blocks'}</span><h2>Deine Trainingswoche</h2></div><Field label="Kalenderwoche"><input aria-label="Planungswoche" type="week" min={isoWeek(range.start)} max={isoWeek(range.end)} value={week} disabled={!!busy} onChange={e => { if (e.target.value && !dirty.weekly) { invalidate(); setFeedback(null); setWeek(e.target.value); } else if (dirty.weekly) setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); }} /></Field></div>
         <p className="coach-muted">{dateLabel(weekStart(week))} – {dateLabel(weekEnd(week))} · {week}</p>
         <WeekSessions value={currentWeek} own={ownWorkouts} workoutsById={workoutsById} busy={!!busy} onLock={toggleLock} onOpen={onOpenWorkout} />
-        <details className="coach-details"><summary>Verfügbarkeit für diese Woche {dirty.weekly ? '· ungespeichert' : ''}</summary><p className="coach-muted">Nur für {week}. Deine normale Wochenverfügbarkeit bleibt bestehen.</p><form onSubmit={event => { event.preventDefault(); run('Wochenverfügbarkeit wird gespeichert …', async () => {
+        <details className="coach-details"><summary>Ausnahme für diese Woche {dirty.weekly ? '· ungespeichert' : ''}</summary><p className="coach-muted">Geplant wird mit deiner Standardwoche aus dem Athletenprofil. Nur wenn {week} anders aussieht (Urlaub, Termine), hier abweichen und die Woche danach anpassen lassen.</p><form onSubmit={event => { event.preventDefault(); run('Wochenverfügbarkeit wird gespeichert …', async () => {
           const body = { overrides: Object.fromEntries(Object.entries(weekly.overrides).map(([day, values]) => [day, Object.fromEntries(Object.entries(values).filter(([, v]) => v !== undefined && v !== '' && v !== null))])), note: weekly.note };
           await request(`/api/coach/weekly-overrides/${week}`, 'PUT', body); setDirty(d => ({ ...d, weekly: false })); invalidate();
           setProfile(p => ({ ...p, weeklyOverrides: [...(p.weeklyOverrides || []).filter(w => w.week !== week), { week, ...body }] })); await refreshSnapshot(); setNotice('Wochenverfügbarkeit gespeichert. Du kannst jetzt eine Anpassung vorschlagen lassen.');

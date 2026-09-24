@@ -99,6 +99,15 @@ class CoachAPITests(unittest.TestCase):
                                     {'week': self.week, 'targetHours': 1, 'focus': 'Locker', 'hinweise': [], 'sessions': [self.session()]})
         return self.confirm(proposal)['weeks'][self.week]
 
+    def test_weekly_review_is_saved_without_replanning(self):
+        planned = self.week_plan()
+        url = f'/api/coach/weeks/{self.week}/missed'
+        self.assertEqual(self.client.put(url, json={'missedSessions': ['fremd']}).status_code, 400)
+        self.assertEqual(self.client.put('/api/coach/weeks/2030-W01/missed', json={'missedSessions': []}).status_code, 400)
+        saved = self.client.put(url, json={'missedSessions': [planned['sessions'][0]['id']]}).get_json()
+        self.assertEqual(saved['weeks'][self.week]['missedSessions'], [planned['sessions'][0]['id']])
+        self.assertEqual(saved['weeks'][self.week]['sessions'], planned['sessions'])
+
     def test_encrypted_key_is_never_returned_and_fail_closed(self):
         status = self.client.get('/api/ai-provider')
         self.assertEqual(status.headers['Cache-Control'], 'no-store')
