@@ -31,6 +31,18 @@ test('example preserves repeat structure and shows known duration plus distance'
   expect(container.textContent).toContain('Gesamtdistanz10 km');
 });
 
+test('a note such as fueling advice is kept while editing and saved with the workout', async () => {
+  const workout = { ...exampleWorkout('2026-09-24'), notes: 'Verpflegung (LIT): Optional nur Wasser.' };
+  expect(toWorkout(toDraft(workout))).toEqual(workout);
+  expect(toWorkout(toDraft({ ...workout, notes: '  ' }))).not.toHaveProperty('notes');
+  global.fetch = jest.fn().mockImplementation(async (_, request) => ({ ok: true, json: async () => ({ ...JSON.parse(request.body), id: 'saved-1' }) }));
+  render();
+  edit('Workout-Hinweis', 'Kohlenhydrate 60 g/h');
+  expect(container.querySelector('.workout-notes-preview').textContent).toBe('Kohlenhydrate 60 g/h');
+  await act(async () => button('Workout speichern').click());
+  expect(JSON.parse(global.fetch.mock.calls[0][1].body).notes).toBe('Kohlenhydrate 60 g/h');
+});
+
 test('saving, editing and saving again uses one persistent workout', async () => {
   const onSaved = jest.fn();
   global.fetch = jest.fn().mockImplementation(async (_, request) => ({ ok: true, json: async () => ({ ...JSON.parse(request.body), id: 'saved-1' }) }));

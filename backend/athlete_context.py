@@ -208,6 +208,34 @@ duration cycling session has the reliable factor computed by analytics.py.
     return result
 
 
+def session_pattern(rows, zone, today, weeks=8):
+    """How the athlete actually trains: sessions, training days and session length over recent complete weeks."""
+    zone = _zone(zone)
+    today = _day(today, zone)
+    end = today - timedelta(days=today.weekday() + 1)
+    start = end - timedelta(days=7 * weeks - 1)
+    dated, _ = _prepared(rows, zone)
+    chosen = [(day, row) for day, row in dated if start <= day <= end]
+    sessions, days = defaultdict(int), defaultdict(set)
+    for day, row in chosen:
+        monday = day - timedelta(days=day.weekday())
+        sessions[monday] += 1
+        days[monday].add(day)
+    mondays = [start + timedelta(weeks=i) for i in range(weeks)]
+    minutes = [row['seconds'] / 60 for _, row in chosen if valid(row.get('seconds')) and row['seconds'] > 0]
+    rides = [row['seconds'] / 60 for _, row in chosen
+             if row['sport'] == 'ride' and valid(row.get('seconds')) and row['seconds'] > 0]
+    rounded = lambda value: round(value) if value is not None else None
+    return {'start': start.isoformat(), 'end': end.isoformat(), 'weeks': weeks,
+            'sessionsPerWeekMedian': median(sessions[m] for m in mondays),
+            'trainingDaysPerWeekMedian': median(len(days[m]) for m in mondays),
+            'sessionMinutesMedian': rounded(median(minutes) if minutes else None),
+            'rideMinutesMedian': rounded(median(rides) if rides else None),
+            'longestSessionMinutes': rounded(max(minutes) if minutes else None),
+            'sessionsUnder60MinShare': round(sum(m < 60 for m in minutes) / len(minutes), 2) if minutes else None,
+            'definition': 'Complete Monday-Sunday weeks before the current week; weeks without activities count as zero.'}
+
+
 def _weeks(dated, start, end):
     """Return every Monday-Sunday week entirely contained in the bounds."""
     monday = start + timedelta(days=(-start.weekday()) % 7)

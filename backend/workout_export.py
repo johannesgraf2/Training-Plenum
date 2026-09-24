@@ -109,8 +109,13 @@ def validate_workout(data):
             count += 1
     if count > MAX_STEPS:
         raise WorkoutError('Maximal 50 FIT-Schritte, einschließlich Wiederholungsmarkern, sind möglich.')
-    return {'version': 1, 'name': short_text(data.get('name'), 'Workout-Name', 80, required=True),
-            'sport': sport, 'date': day, 'steps': steps}
+    result = {'version': 1, 'name': short_text(data.get('name'), 'Workout-Name', 80, required=True),
+              'sport': sport, 'date': day, 'steps': steps}
+    # Free text such as fueling advice; a FIT string field holds at most 250 bytes here.
+    notes = short_text(data.get('notes') or '', 'Hinweis', 250)
+    if notes:
+        result['notes'] = notes
+    return result
 
 
 def workout_messages(workout):
@@ -165,6 +170,8 @@ def export_workout(data):
     # Prefix the actual on-device name, not just the downloaded filename.
     header = {'wkt_name': garmin_workout_name(workout), 'sport': 'running' if workout['sport'] == 'run' else 'cycling',
               'num_valid_steps': len(steps)}
+    if workout.get('notes'):
+        header['wkt_description'] = workout['notes']
     encoder.on_mesg(Profile['mesg_num']['WORKOUT'], header)
     for step in steps:
         encoder.on_mesg(Profile['mesg_num']['WORKOUT_STEP'], step)

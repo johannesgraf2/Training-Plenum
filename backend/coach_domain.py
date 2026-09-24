@@ -69,29 +69,52 @@ def iso_week(value):
 DEFAULT_PROFILE = {
     'goal': {'type': 'general_endurance', 'name': '', 'date': None, 'target': None},
     'availability': {'preferredWeeklyHours': None, 'absoluteMaxWeeklyHours': None,
-                     'defaultAvailability': dict.fromkeys(DAYS)},
+                     'defaultAvailability': dict.fromkeys(DAYS), 'trainingDaysPerWeek': None,
+                     'minRideMinutes': {'indoor': None, 'outdoor': None}},
     'preferences': {'preferredRestDay': None, 'preferredLongSessionDay': None,
-                    'indoorPreference': 'neutral', 'outdoorPreference': 'neutral', 'gymAvailability': False},
+                    'indoorPreference': 'neutral', 'outdoorPreference': 'neutral', 'gymAvailability': False,
+                    'trainingEnvironment': 'mixed'},
     'limitations': {'notes': ''}, 'currentState': {'notes': ''},
     'weeklyOverrides': [], 'dailyOverrides': [], 'checkIns': [],
 }
 PROFILE_SCHEMA = obj({
     'goal': obj({'type': text(80), 'name': text(200), 'date': text(10, True), 'target': text(300, True)}),
     'availability': obj({'preferredWeeklyHours': num(0, 80, True), 'absoluteMaxWeeklyHours': num(0, 80, True),
-                         'defaultAvailability': obj({day: num(0, 1440, True, True) for day in DAYS})}),
+                         'defaultAvailability': obj({day: num(0, 1440, True, True) for day in DAYS}),
+                         'trainingDaysPerWeek': num(1, 7, True, True),
+                         'minRideMinutes': obj({place: num(0, 600, True, True) for place in ('indoor', 'outdoor')})}),
     'preferences': obj({'preferredRestDay': {'enum': [None, *DAYS]}, 'preferredLongSessionDay': {'enum': [None, *DAYS]},
                         'indoorPreference': {'enum': ['neutral', 'prefer', 'avoid']},
-                        'outdoorPreference': {'enum': ['neutral', 'prefer', 'avoid']}, 'gymAvailability': {'type': 'boolean'}}),
+                        'outdoorPreference': {'enum': ['neutral', 'prefer', 'avoid']}, 'gymAvailability': {'type': 'boolean'},
+                        'trainingEnvironment': {'enum': ['indoor', 'outdoor', 'mixed']}}),
     'limitations': obj({'notes': text(1500)}), 'currentState': obj({'notes': text(1500)}),
 })
+
+
+def complete_profile(value):
+    """Stored profiles predate later fields; fill them with their defaults."""
+    result = copy.deepcopy(value)
+    for section in ('availability', 'preferences'):
+        result[section] = {**copy.deepcopy(DEFAULT_PROFILE[section]), **result.get(section, {})}
+    return result
+
+
+def min_ride_minutes(profile):
+    """The athlete's minimum for a normal ride in the current season; mixed allows the shorter one."""
+    values = profile['availability']['minRideMinutes']
+    environment = profile['preferences']['trainingEnvironment']
+    if environment in values:
+        return values[environment] or None
+    return min((v for v in values.values() if v), default=None)
 
 
 def update_profile(current, changes):
     if not isinstance(changes, dict) or set(changes) - set(PROFILE_SCHEMA['properties']):
         raise CoachError('Unbekannte Profilfelder. Overrides und Check-ins separat speichern.')
-    result = copy.deepcopy(current)
+    result = complete_profile(current)
     for key, value in changes.items():
-        result[key] = value
+        # Clients that predate a field keep its stored value.
+        result[key] = {**result[key], **value} if key in ('availability', 'preferences') and isinstance(value, dict) else value
     validate({key: result[key] for key in PROFILE_SCHEMA['properties']}, PROFILE_SCHEMA)
     if result['goal']['date']:
         day_date(result['goal']['date'])

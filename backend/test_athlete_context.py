@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from dateutil.tz import gettz
 
-from athlete_context import build_snapshot, summarize_period
+from athlete_context import build_snapshot, session_pattern, summarize_period
 
 
 TODAY = date(2026, 9, 23)
@@ -31,6 +31,21 @@ def snapshot(rows, efforts=None, athlete=None, today=TODAY, reported=None):
 
 
 class AthleteContextTests(unittest.TestCase):
+    def test_session_pattern_describes_recent_complete_weeks(self):
+        # TODAY is Wednesday 2026-09-23; the current week and older weeks are left out.
+        rows = [row('2026-09-15T08:00:00Z', 1.5), row('2026-09-17T08:00:00Z', 2), row('2026-09-19T08:00:00Z', 3),
+                row('2026-09-19T15:00:00Z', .5, sport='run'), row('2026-09-09T08:00:00Z', 1),
+                row('2026-09-22T08:00:00Z', 5), row('2026-07-01T08:00:00Z', 9)]
+        result = session_pattern(rows, 'Europe/Berlin', TODAY, weeks=2)
+        self.assertEqual((result['start'], result['end']), ('2026-09-07', '2026-09-20'))
+        self.assertEqual(result['sessionsPerWeekMedian'], 2.5)
+        self.assertEqual(result['trainingDaysPerWeekMedian'], 2)
+        self.assertEqual(result['sessionMinutesMedian'], 90)
+        self.assertEqual(result['rideMinutesMedian'], 105)
+        self.assertEqual(result['longestSessionMinutes'], 180)
+        self.assertEqual(result['sessionsUnder60MinShare'], .2)
+        self.assertIsNone(session_pattern([], 'Europe/Berlin', TODAY)['sessionMinutesMedian'])
+
     def test_recorded_totals_and_sensor_denominators_without_raw_samples(self):
         result = snapshot([row(activity_id=1), row(sport='run', hours=2, activity_id=2)])
         current = result['observed']['currentTraining']['last7Days']

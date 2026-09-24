@@ -10,7 +10,7 @@ import uuid
 from datetime import timedelta
 
 from coach_domain import BLOCK_WEEKS_SCHEMA, HINWEISE_SCHEMA, CoachError, day_date, iso_week, obj, text
-from coach_templates import TEMPLATES
+from coach_templates import TEMPLATES, flat_steps
 
 DELOAD_PHASES = {'recovery', 'taper'}
 MAX_LOAD_STREAK = 3
@@ -18,20 +18,23 @@ MAX_LOAD_STREAK = 3
 _SPORT = {sport: {key for key, spec in TEMPLATES.items() if spec['sport'] == sport} for sport in ('ride', 'run')}
 _TEMPO = {'bike_tempo', 'bike_sweetspot'}
 _THRESHOLD = {'bike_threshold', 'bike_threshold_intervals', 'run_threshold'}
+_VO2 = {'bike_vo2', 'bike_vo2_micro'}
 GROUPS = {
-    'easy': {'bike_recovery', 'bike_z2', 'bike_z2_short', 'bike_z2_long', 'bike_long', 'run_easy', 'run_long'},
+    'easy': {'bike_recovery', 'bike_z2', 'bike_z2_short', 'bike_z2_long', 'bike_z2_sprints', 'bike_long', 'run_easy', 'run_long'},
     'tempo': _TEMPO,
     'threshold': _THRESHOLD,
     'thresholdWork': _TEMPO | _THRESHOLD,
-    'vo2': {'bike_vo2'},
-    'quality': _TEMPO | _THRESHOLD | {'bike_vo2'},
+    'vo2': _VO2,
+    'sprint': {'bike_sit'},
+    'quality': _TEMPO | _THRESHOLD | _VO2 | {'bike_sit'},
     'strength': {'strength_general'},
     'ride': _SPORT['ride'],
     'run': _SPORT['run'],
 }
 GROUP_NAMES = {
     'tempo': 'Tempo-/Sweetspot-Einheit', 'threshold': 'Schwelleneinheit', 'thresholdWork': 'Schwellen-/Sweetspot-Einheit',
-    'vo2': 'VO2max-Einheit', 'quality': 'Qualitätseinheit (Tempo, Sweetspot, Schwelle, VO2max)',
+    'vo2': 'VO2max-Einheit', 'sprint': 'Sprintintervall-Einheit (SIT)',
+    'quality': 'Qualitätseinheit (Tempo, Sweetspot, Schwelle, VO2max, SIT)',
     'strength': 'Krafteinheit', 'ride': 'Radeinheit', 'run': 'Laufeinheit',
 }
 
@@ -48,23 +51,37 @@ def _block(name, summary, default, low, high, *, forbidden=(), max_per_week=None
 
 BLOCK_TYPES = {
     'wiedereinstieg': _block('Wiedereinstieg', 'Nach einer Pause behutsam Umfang und Routine aufbauen.', 3, 2, 4,
-                             forbidden=('vo2', 'threshold'), max_per_week={'tempo': 1},
-                             guidance='Start below recent volume, increase gradually, mostly easy endurance.'),
+                             forbidden=('vo2', 'threshold', 'sprint'), max_per_week={'tempo': 1},
+                             guidance='Start below recent volume and increase gradually, mostly easy endurance. Lengthen the '
+                                      'longest easy ride week by week; short sprints inside easy rides (bike_z2_sprints) are fine.'),
     'grundlage': _block('Grundlage', 'Aerobe Basis mit viel lockerem Umfang.', 8, 6, 12,
                         forbidden=('vo2',), max_per_week={'quality': 1}, easy_share=.8,
-                        guidance='Volume focus, long easy sessions, at most one tempo or sweetspot session.'),
+                        guidance='Volume focus: easy endurance is the foundation. Progress the long easy ride across the block '
+                                 '(for example 1:30 -> 2:00 -> 2:30 -> 3:00 h). At most one tempo, sweetspot or SIT session; '
+                                 'keep neuromuscular power with sprints inside easy rides (bike_z2_sprints) or short SIT '
+                                 '(4x30 s -> 6x30 s -> 8x30 s).'),
     'aufbau': _block('Aufbau', 'Umfang halten und die Intensität schrittweise steigern.', 6, 4, 8,
                      max_per_week={'vo2': 1}, min_per_load_week={'quality': 2},
-                     guidance='Two quality sessions per load week, progress work duration across the block.'),
+                     guidance='Two quality sessions per load week plus a long easy ride. Progress work duration across the '
+                              'block, for example sweetspot 3x12 -> 3x15 -> 2x20 min or VO2 4x4 -> 5x4 min; vary formats.'),
     'schwelle': _block('Schwelle', 'Leistung an der Schwelle verbessern.', 6, 4, 8,
                        max_per_week={'vo2': 1}, min_per_load_week={'thresholdWork': 2},
-                       guidance='Two threshold or sweetspot sessions per load week, extend time in zone week by week.'),
+                       guidance='Two threshold or sweetspot sessions per load week plus a long easy ride. Extend time in zone '
+                                'week by week (for example 3x10 -> 3x12 -> 3x15 -> 2x20 -> 4x16 min) rather than raising watts.'),
     'vo2max': _block('VO2max', 'Maximale aerobe Leistung mit kurzen, harten Intervallen.', 4, 3, 6,
                      max_per_week={'thresholdWork': 1}, min_per_load_week={'vo2': 2},
-                     guidance='Two VO2 sessions per load week, remaining time mostly easy; progress interval duration.'),
+                     guidance='Concentrated VO2max stimulus on top of plenty of easy riding (1-3 h easy rides between the hard '
+                              'days). Two VO2 sessions per load week, sometimes on nearby days. Progress accumulated time at high '
+                              'oxygen uptake, not watts, along parallel chains: long intervals 5x3 -> 5x5 -> 5x6 or 6x5 min '
+                              '(bike_vo2), micro intervals 3x9x30/15 -> 3x11x30/15 -> 3x13x30/15, later 3x10x40/20 '
+                              '(bike_vo2_micro); vary formats (4x4, 5x5, 30/15, 40/20) week to week. High cadence (90-110 rpm) '
+                              'suits VO2 work. Keep a short SIT or sprint touch every week or two. Deload weeks keep one short VO2 '
+                              'session.'),
     'wettkampfspezifisch': _block('Wettkampfspezifisch', 'Wettkampfbelastungen üben und frisch am Start stehen.', 4, 2, 6,
                                   taper_drop=.3, ends_by_goal=True,
-                                  guidance='Rehearse race demands, then taper; the last week must end by the goal date.'),
+                                  guidance='Rehearse race demands with long rides at race intensity and race-like efforts '
+                                           '(for example 4x16 min at tempo or threshold inside a long ride), then taper; keep short '
+                                           'intense touches during the taper. The last week must end in the goal week.'),
     'uebergang': _block('Übergang', 'Aktive Erholung nach der Saison oder einem Höhepunkt.', 2, 1, 4,
                         forbidden=('quality',), last_week_deload=False, rhythm=False, max_preferred_share=.6,
                         guidance='Only recovery, easy endurance, strength or rest; well below usual volume.'),
@@ -114,7 +131,7 @@ def rule_texts(identity):
     if spec['maxPreferredShare']:
         texts.append(f"Höchstens {round(spec['maxPreferredShare'] * 100)} % des Wunschumfangs")
     if spec['endsByGoal']:
-        texts.append('Endet spätestens am Zieldatum')
+        texts.append('Endet spätestens in der Woche des Zieldatums')
     return texts
 
 
@@ -185,8 +202,10 @@ def check_block(identity, secondary, weeks, *, start, profile):
         goal = profile['goal']['date']
         if not goal:
             raise CoachError('Für einen wettkampfspezifischen Block bitte ein Zieldatum im Profil speichern.')
-        if start + timedelta(weeks=len(weeks)) - timedelta(days=1) > day_date(goal):
-            raise CoachError('Der wettkampfspezifische Block muss spätestens am Zieldatum enden.')
+        goal_day = day_date(goal)
+        # Blocks run Monday to Sunday, so an event on a Saturday still ends its block that week.
+        if start + timedelta(weeks=len(weeks)) - timedelta(days=1) > goal_day + timedelta(days=6 - goal_day.weekday()):
+            raise CoachError('Der wettkampfspezifische Block muss spätestens in der Woche des Zieldatums enden.')
     deloads = [w['phase'] in DELOAD_PHASES for w in weeks]
     if spec['lastWeekDeload'] and not deloads[-1]:
         raise CoachError(f'Ein Block „{name}“ endet mit einer Entlastungswoche.')
@@ -227,9 +246,14 @@ def check_week_rules(block, block_week, sessions):
         if focus and not count(focus['group']):
             raise CoachError(f"Der Nebenschwerpunkt {focus['name']} braucht mindestens eine {GROUP_NAMES[focus['group']]} pro Belastungswoche.")
     if spec['easyShare']:
-        minutes = [(s['template'], s['rendered']['durationMin'] or 0) for s in sessions if s['template'] in GROUPS['ride'] | GROUPS['run']]
-        total = sum(m for _, m in minutes)
-        if total and sum(m for t, m in minutes if t in GROUPS['easy']) < total * spec['easyShare'] - 1e-9:
+        endurance = [s for s in sessions if s['template'] in GROUPS['ride'] | GROUPS['run']]
+        total = sum(s['rendered']['durationMin'] or 0 for s in endurance)
+        # Only interval work is hard; warmup, recoveries and easy riding around the intervals count as easy.
+        hard = sum(sum(step['duration']['value'] / 60 for step in flat_steps(s['rendered']['workout']['steps'])
+                       if step['intensity'] == 'interval')
+                   if s['rendered'].get('workout') else s['rendered']['durationMin'] or 0
+                   for s in endurance if s['template'] not in GROUPS['easy'])
+        if total and total - hard < total * spec['easyShare'] - 1e-9:
             raise CoachError(f"Im Block „{name}“ sind mindestens {round(spec['easyShare'] * 100)} % der Rad-/Laufzeit locker.")
 
 

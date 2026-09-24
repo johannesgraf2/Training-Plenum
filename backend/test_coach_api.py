@@ -306,6 +306,9 @@ class CoachAPITests(unittest.TestCase):
         proposal, provider = self.propose({'kind': 'week', 'week': second, 'feedbackWeek': first, 'missedSessions': [identity]},
                                           {'week': second, 'targetHours': 1, 'focus': 'Locker', 'hinweise': [], 'sessions': [self.session('tuesday', 'tue')]})
         self.assertEqual(provider.generate.call_args.args[3]['feedback']['missedSessions'], {'source': 'athlete', 'ids': [identity]})
+        history = provider.generate.call_args.args[3]['blockHistory']
+        self.assertEqual([(w['week'], w['blockWeek']) for w in history], [(first, 1)])
+        self.assertEqual((history[0]['sessions'][0]['template'], history[0]['sessions'][0]['params']), ('bike_z2', {'durationMin': 60}))
         self.assertIsNone(self.client.get('/api/coach/plan').json['weeks'][first].get('missedSessions'))
         self.confirm(proposal)
         self.assertEqual(self.client.get('/api/coach/plan').json['weeks'][first]['missedSessions'], [identity])
@@ -399,6 +402,74 @@ class CoachAPITests(unittest.TestCase):
         manual = render_session('bike_z2', {'durationMin': 90}, self.start.isoformat(), 250)['workout']
         self.client.post('/api/workouts', json=manual)
         self.propose({'kind': 'week', 'week': self.week}, {**decision, 'targetHours': 2.5}, expected=400)
+
+    def test_training_days_and_minimum_ride_length_are_enforced(self):
+        self.block()
+        self.client.put('/api/athlete-profile', json={'availability': {'trainingDaysPerWeek': 2, 'minRideMinutes': {'indoor': 60, 'outdoor': 90}},
+                                                       'preferences': {'trainingEnvironment': 'outdoor'}})
+        sessions = [self.session('a', 'mon', 60), self.session('b', 'tue', 90), self.session('c', 'wed', 90)]
+        decision = {'week': self.week, 'targetHours': 4, 'focus': 'Basis', 'hinweise': []}
+        response, _ = self.propose({'kind': 'week', 'week': self.week}, {**decision, 'sessions': sessions}, expected=400)
+        self.assertIn('mindestens 90 Minuten', response['error'])
+        recovery = {**self.session('a', 'mon', 60), 'template': 'bike_recovery'}
+        response, _ = self.propose({'kind': 'week', 'week': self.week}, {**decision, 'sessions': [recovery, *sessions[1:]]}, expected=400)
+        self.assertIn('Höchstens 2 Trainingstage', response['error'])
+        proposal, provider = self.propose({'kind': 'week', 'week': self.week},
+                                          {**decision, 'targetHours': 2.5, 'sessions': [recovery, sessions[1]]})
+        context = provider.generate.call_args.args[3]
+        self.assertEqual(context['trainingRules'], {'source': 'athlete', 'trainingDaysPerWeek': 2, 'environment': 'outdoor', 'minRideMinutes': 90})
+        self.assertIn('rideMinutesMedian', context['recentPattern'])
+
+    def test_season_plan_is_proposed_adjusted_confirmed_and_guides_the_next_block(self):
+        goal = (self.start + timedelta(weeks=17, days=6)).isoformat()  # Sunday of the 18th week
+        self.client.put('/api/athlete-profile', json={'goal': {'type': 'cycling_event', 'name': 'Rennen', 'date': goal, 'target': None}})
+        seg = lambda identity, weeks: {'blockType': identity, 'secondaryFocus': None, 'weeks': weeks, 'purpose': 'Zweck.'}
+        plan_a = {'id': 'a', 'recommended': True, 'rationale': 'Erst Basis.', 'segments': [
+            seg('grundlage', 6), seg('aufbau', 4), seg('vo2max', 4), seg('wettkampfspezifisch', 4)]}
+        plan_b = {'id': 'b', 'recommended': False, 'rationale': 'Zu kurz.', 'segments': [seg('grundlage', 6), seg('wettkampfspezifisch', 4)]}
+        plan_c = {'id': 'c', 'recommended': False, 'rationale': 'Schwelle.', 'segments': [
+            seg('grundlage', 8), seg('schwelle', 6), seg('wettkampfspezifisch', 4)]}
+        self.propose({'kind': 'season'}, {'options': [{**plan_a, 'segments': plan_a['segments'][:3]}, plan_c], 'hinweise': []}, expected=400)
+        proposal, provider = self.propose({'kind': 'season', 'instruction': 'Winter auf der Rolle'},
+                                          {'options': [plan_a, plan_b, plan_c], 'hinweise': ['Lange Saison.']})
+        context = provider.generate.call_args.args[3]
+        self.assertEqual((context['startDate'], context['weeksToFill'], context['fixedBlocks']), (self.start.isoformat(), 18, []))
+        self.assertEqual(context['athleteWish'], {'source': 'athlete', 'text': 'Winter auf der Rolle'})
+        self.assertEqual([o['id'] for o in proposal['after']['options']], ['a', 'c'])
+        self.assertIn('ergeben 10 Wochen', proposal['rejectedOptions'][0]['reason'])
+        self.assertEqual(proposal['after']['options'][0]['season']['segments'][-1]['endDate'], goal)
+        swapped = [seg('grundlage', 6), seg('vo2max', 4), seg('aufbau', 4), seg('wettkampfspezifisch', 4)]
+        response = self.client.post(f"/api/coach/proposals/{proposal['id']}/confirm", json={'confirm': True, 'optionId': 'a', 'segments': swapped[:3]})
+        self.assertEqual(response.status_code, 400)
+        saved = self.client.post(f"/api/coach/proposals/{proposal['id']}/confirm",
+                                 json={'confirm': True, 'optionId': 'a', 'segments': swapped}).get_json()
+        season = saved['season']
+        self.assertEqual((season['source'], season['rationale'], season['aligned']), ('athleteEdited', 'Erst Basis.', True))
+        self.assertEqual([s['blockType'] for s in season['segments']], ['grundlage', 'vo2max', 'aufbau', 'wettkampfspezifisch'])
+        # Later edits keep the rules; the next block proposal sees the season plan.
+        self.assertEqual(self.client.put('/api/coach/season', json={'segments': swapped[:3]}).status_code, 400)
+        edited = self.client.put('/api/coach/season', json={'segments': [seg('grundlage', 8), seg('vo2max', 6), seg('wettkampfspezifisch', 4)]})
+        self.assertEqual([s['weeks'] for s in edited.json['season']['segments']], [8, 6, 4])
+        body = {'kind': 'block', 'mode': 'choose', 'blockType': 'grundlage', 'secondaryFocus': None,
+                'startDate': self.start.isoformat(), 'weeks': 8}
+        _, provider = self.propose(body, {'options': [self.option(block_type='grundlage', phases=('base', 'base', 'base', 'recovery') * 2)], 'hinweise': []})
+        self.assertEqual(provider.generate.call_args.args[3]['seasonPlan']['segments'][1]['blockType'], 'vo2max')
+        self.assertIsNone(self.client.delete('/api/coach/season').json['season'])
+
+    def test_season_plan_keeps_planned_blocks_at_the_start(self):
+        goal = (self.start + timedelta(weeks=9, days=5)).isoformat()  # Saturday of the 10th week
+        self.client.put('/api/athlete-profile', json={'goal': {'type': 'cycling_event', 'name': 'Rennen', 'date': goal, 'target': None}})
+        self.block()  # two weeks
+        seg = lambda identity, weeks: {'blockType': identity, 'secondaryFocus': None, 'weeks': weeks, 'purpose': ''}
+        options = [{'id': 'a', 'recommended': True, 'rationale': '', 'segments': [seg('aufbau', 4), seg('wettkampfspezifisch', 4)]},
+                   {'id': 'b', 'recommended': False, 'rationale': '', 'segments': [seg('vo2max', 4), seg('wettkampfspezifisch', 4)]}]
+        proposal, provider = self.propose({'kind': 'season'}, {'options': options, 'hinweise': []})
+        context = provider.generate.call_args.args[3]
+        self.assertEqual((context['weeksToFill'], context['startDate']), (8, (self.start + timedelta(weeks=2)).isoformat()))
+        self.assertEqual(context['fixedBlocks'][0]['blockType'], 'wiedereinstieg')
+        season = self.confirm(proposal, option='a')['season']
+        self.assertEqual([s['blockType'] for s in season['segments']], ['wiedereinstieg', 'aufbau', 'wettkampfspezifisch'])
+        self.assertTrue(season['segments'][0]['blockId'])
 
     def test_overrides_are_separate_checkins_are_athlete_data(self):
         self.client.put('/api/coach/weekly-overrides/' + self.week, json={'overrides': {'thu': {'available': False}}, 'note': 'Arbeit'})
