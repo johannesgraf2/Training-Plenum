@@ -49,7 +49,15 @@ export function nextMonday(today = localDate()) {
 
 export function blockRange(block) {
   if (!block?.startDate || !block.weeks?.length) return null;
-  return { start: block.startDate, end: addDays(block.startDate, block.weeks.length * 7 - 1), weeks: block.weeks.length };
+  return { start: block.startDate, end: block.endDate || addDays(block.startDate, block.weeks.length * 7 - 1), weeks: block.weeks.length };
+}
+
+// The running block, else the next one, else the most recent; replaced blocks are history only.
+export function currentBlock(blocks = [], today = localDate()) {
+  const usable = blocks.filter(block => block.status !== 'abandoned' && blockRange(block));
+  return usable.find(block => block.startDate <= today && today <= blockRange(block).end)
+    || usable.filter(block => block.startDate > today).sort((a, b) => a.startDate.localeCompare(b.startDate))[0]
+    || usable[usable.length - 1] || null;
 }
 const blockWeek = (range, date) => Math.floor(daysBetween(range.start, date) / 7) + 1;
 
@@ -107,7 +115,8 @@ function BlockOverview({ value }) {
   const range = blockRange(value);
   if (!range) return <p className="coach-muted">Noch kein Trainingsblock.</p>;
   const max = Math.max(...value.weeks.map(w => Number(w.targetHours) || 0), 1);
-  return <><p className="coach-muted">{dateLabel(range.start)} – {dateLabel(range.end)} · {range.weeks} {range.weeks === 1 ? 'Woche' : 'Wochen'}</p>
+  const type = [value.typeName, value.secondaryName && `+ ${value.secondaryName}`].filter(Boolean).join(' ');
+  return <><p className="coach-muted">{type && <strong className="coach-block-type">{type}</strong>}{type && ' · '}{dateLabel(range.start)} – {dateLabel(range.end)} · {range.weeks} {range.weeks === 1 ? 'Woche' : 'Wochen'}</p>
     <div className="coach-macro" aria-label="Wochenvolumen und Trainingsphasen">{value.weeks.map((w, i) =>
       <div key={w.week ?? i} className="coach-macro-week" title={`Woche ${w.week}: ${PHASES[w.phase] || w.phase}, ${hours(w.targetHours)}. ${w.focus || ''}`}>
         <span>{fmt(w.targetHours)}</span><div className="coach-bar-track"><div className={`coach-bar ${w.phase}`} style={{ height: `${Math.max(3, Number(w.targetHours) / max * 100)}%` }} /></div>
@@ -206,7 +215,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
       .then(([s, p, ai, saved]) => {
         if (cancelled) return;
         setSnapshot(s); setProfile(blankProfile(p)); setProvider(ai); setModel(ai.model || 'gpt-4.1-mini'); setPlan(saved);
-        const range = blockRange(saved.macroPlan);
+        const range = blockRange(currentBlock(saved.blocks));
         if (range && localDate() < range.start) setWeek(isoWeek(range.start)); // An upcoming block starts with its first week.
       })
       .catch(e => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading(false); });
@@ -251,9 +260,10 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
     });
   }
   const canPlan = !busy && !anyDirty && provider?.configured;
-  const block = plan?.macroPlan;
-  const range = blockRange(block);
   const today = localDate();
+  const block = currentBlock(plan?.blocks, today);
+  const range = blockRange(block);
+  const blockHasWeeks = !!range && Object.keys(plan?.weeks || {}).some(key => weekStart(key) >= range.start && weekStart(key) <= range.end);
   const missing = profile ? missingSetup(profile) : [];
   const profileReady = !missing.length && !dirty.profile;
   // Exactly one next step: set up, start a block, work through it, or start the next one.
@@ -321,7 +331,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
       </section>}
       {stage === 'active' && <><section className="coach-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">Aktueller Trainingsblock</span><h2>{today < range.start ? `Startet am ${dateLabel(range.start)}` : `Woche ${blockWeek(range, today)} von ${range.weeks}`}</h2></div><span className="coach-badge recommendation">AI-Empfehlung</span></div>
         <BlockOverview value={block} />
-        {!Object.keys(plan.weeks || {}).length && <details className="coach-details"><summary>Block neu planen</summary><p className="coach-muted">Solange noch keine Woche geplant ist, kannst du den Block ersetzen.</p>{blockForm('Neuen Trainingsblock vorschlagen')}</details>}
+        {!blockHasWeeks && <details className="coach-details"><summary>Block neu planen</summary><p className="coach-muted">Solange noch keine Woche geplant ist, kannst du den Block ersetzen.</p>{blockForm('Neuen Trainingsblock vorschlagen')}</details>}
       </section>
       <section className="coach-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">{weekStart(week) >= range.start && weekStart(week) <= range.end ? `Woche ${blockWeek(range, weekStart(week))} von ${range.weeks}` : 'Außerhalb des Blocks'}</span><h2>Deine Trainingswoche</h2></div><Field label="Kalenderwoche"><input aria-label="Planungswoche" type="week" min={isoWeek(range.start)} max={isoWeek(range.end)} value={week} disabled={!!busy} onChange={e => { if (e.target.value && !dirty.weekly) { invalidate(); setFeedback(null); setWeek(e.target.value); } else if (dirty.weekly) setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); }} /></Field></div>
         <p className="coach-muted">{dateLabel(weekStart(week))} – {dateLabel(weekEnd(week))} · {week}</p><SessionList value={currentWeek} />

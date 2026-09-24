@@ -44,14 +44,35 @@ Ein Verbindungstest prüft API-Key und Zugriff auf die Modell-ID über den Model
 | `backend/athlete_context.py` | Reine Berechnung des Snapshots und abgeschlossener Zeiträume aus vorhandenen Cache-Zusammenfassungen; kein Datenbank- oder Providerzugriff. |
 | `backend/analytics.py`, `backend/best_efforts.py` | Bestehende deterministische Sensor-, Zonen-, Normalized-Power- und Bestwertberechnungen mit versionierten Aktivitäts-Caches. |
 | `backend/coach_domain.py` | JSON-Schemas, Athletenangaben, ISO-Wochen, effektive Verfügbarkeit und Patch-Operationen. |
+| `backend/coach_blocks.py` | Blocktyp-Katalog mit Längen, Rhythmus und Prüfregeln, gespeicherte Blöcke und Migration früherer Makropläne. |
 | `backend/coach_templates.py` | Template-Katalog, Parametergrenzen, konkrete Dauer und Watt-/HF-Ziele sowie geschätzte geplante Cycling-TSS. |
 | `backend/ai_provider.py` | Provider-Abstraktion, Fernet-Ver-/Entschlüsselung, OpenAI-Adapter und Prüfung strukturierter Antworten. |
 | `backend/coach_api.py` | Persistenz, Kontext-Auswahl, Vorschläge, serverseitige Beschränkungen, Fixierungen und ausdrückliche Übernahme. |
 | `frontend/src/AICoach.jsx` | Athletenprofil, Provider-Einrichtung, Wochenverfügbarkeit, Check-ins und Vorher-/Nachher-Prüfung. |
 
-`athlete_coach_state` speichert Athletenangaben, bestätigten Makroplan, konkrete Wochen und eine Revision. `ai_provider_settings` speichert Provider, Modell, verschlüsselten API-Key und die letzten vier Zeichen. `coach_proposal` speichert Vorschläge mit Status, Erstellungszeit und einem Fingerabdruck des Ausgangszustands. Bestätigte Rad- und Laufeinheiten verwenden die bestehende Tabelle `planned_workout`; importierte Aktivitäten bleiben davon getrennt.
+`athlete_coach_state` speichert Athletenangaben, die Liste bestätigter Trainingsblöcke (`blocks[]`), konkrete Wochen und eine Revision. `ai_provider_settings` speichert Provider, Modell, verschlüsselten API-Key und die letzten vier Zeichen. `coach_proposal` speichert Vorschläge mit Status, Erstellungszeit und einem Fingerabdruck des Ausgangszustands. Bestätigte Rad- und Laufeinheiten verwenden die bestehende Tabelle `planned_workout`; importierte Aktivitäten bleiben davon getrennt.
 
 Das vorhandene `training_plan.py` wurde geprüft: Es enthält deterministische Logik für einen bestehenden vierwöchigen Radtrainingsblock und erzeugt validierte Workouts innerhalb des Backends. Es ist kein separater externer AI-Workflow und bleibt für die bestehenden Abläufe erhalten. Der neue AI Coach verwendet die gemeinsame Analytics- und Workout-Infrastruktur.
+
+## Trainingsblöcke
+
+Ein Trainingsblock hat einen Haupttyp, optional einen Nebenschwerpunkt, einen Startmontag, 1–12 Wochen (ein übernommener Makroplan auch mehr) mit Phase (`base`, `build`, `peak`, `taper`, `recovery`), Zielstunden und Fokus sowie einen Status. Die Regeln stehen zentral in `coach_blocks.py`. `recovery` und `taper` gelten als Entlastungswochen; dort entfallen Mindestanzahlen.
+
+| Typ | Wochen (Standard) | Regeln |
+| --- | --- | --- |
+| `wiedereinstieg` Wiedereinstieg | 2–4 (3) | Keine VO2max- oder Schwelleneinheit, höchstens 1× Tempo/Sweetspot pro Woche. |
+| `grundlage` Grundlage | 6–12 (8) | Keine VO2max-Einheit, höchstens 1 Qualitätseinheit pro Woche, mindestens 80 % der Rad-/Laufzeit locker. |
+| `aufbau` Aufbau | 4–8 (6) | Mindestens 2 Qualitätseinheiten pro Belastungswoche, höchstens 1× VO2max. |
+| `schwelle` Schwelle | 4–8 (6) | Mindestens 2 Schwellen-/Sweetspot-Einheiten pro Belastungswoche, höchstens 1× VO2max. |
+| `vo2max` VO2max | 3–6 (4) | Mindestens 2 VO2max-Einheiten pro Belastungswoche, höchstens 1 Schwellen-/Sweetspot-Einheit. |
+| `wettkampfspezifisch` Wettkampfspezifisch | 2–6 (4) | Endet spätestens am Zieldatum, letzte Woche mindestens 30 % weniger Umfang als die stärkste Woche davor. |
+| `uebergang` Übergang | 1–4 (2) | Keine Qualitätseinheiten, jede Woche höchstens 60 % des Wunschumfangs, kein Entlastungsrhythmus. |
+
+Außer beim Übergang endet jeder Block mit einer Entlastungswoche, und auf höchstens drei Belastungswochen folgt eine Entlastung. Der vorgeschlagene Rhythmus ist 3:1; kürzere Blöcke verwenden 2:1 bzw. passende kürzere Zyklen (5 Wochen: Belastung, Belastung, Entlastung, Belastung, Entlastung). Als Nebenschwerpunkt stehen `kraft`, `laufen` und `radfahren` zur Auswahl; er verlangt mindestens eine passende Einheit pro Belastungswoche, `kraft` zusätzlich die Krafttraining-Verfügbarkeit.
+
+Der Status ist `active`, `completed` (Enddatum vorbei, berechnet) oder `abandoned`. Beginnt ein neuer Block, während ein anderer noch läuft oder bevorsteht, endet dieser am Vortag und gilt als `abandoned`; bereits geplante Wochen gehören weiter zu ihm und bleiben per **Woche anpassen** änderbar. Ein neuer Block darf keine bereits geplante Kalenderwoche überdecken.
+
+Ein früher gespeicherter Makroplan wird beim Lesen zu einem Block vom Typ `custom` („Eigener Block“, ohne Typregeln) mit der festen ID `custom-<Startdatum>` und bei der nächsten bestätigten Änderung im neuen Format gespeichert. `custom` kann für neue Blöcke nicht gewählt werden. Bis Blocktyp und Nebenschwerpunkt bei Vorschlägen gewählt werden können, entstehen neue Blöcke ebenfalls als `custom`.
 
 ## Athlete Snapshot und Datenherkunft
 
@@ -105,7 +126,7 @@ Die API speichert zunächst einen Vorschlag mit `before`, `after` und der strukt
 
 Der Provider bekommt kompaktes JSON ohne vollständige Sensorstreams, GPS-Tracks, Original-FIT-Dateien oder API-Key im Planungskontext. Die lokalen Caches können bei Bedarf aus vorhandenen Aufzeichnungen aufgebaut werden; diese Rohdaten verlassen dabei TrainHub nicht. Ziele, Notizen und subjektive Check-ins gehören zum Kontext und werden bei entsprechenden Planungsanfragen an den gewählten Provider übertragen.
 
-Der Makroplan erhält den Snapshot, Startdatum und Wochenzahl; ältere Check-ins und Overrides werden aus diesem Provider-Kontext gekürzt. Eine neue konkrete Woche erhält nur die betreffende Makrowoche, aktuelle Verfügbarkeit, kompakte Plan-/Template-Informationen und jüngstes Training. Ein Patch verwendet den bestehenden kompakten Wochenplan und gegebenenfalls einen abgeschlossenen Wochenrückblick, ohne erneut die vollständige Historie zu schicken. Es wird kein fortlaufender Chatverlauf gespeichert oder übertragen.
+Ein Trainingsblock-Vorschlag erhält den Snapshot, Startdatum und Wochenzahl; ältere Check-ins und Overrides werden aus diesem Provider-Kontext gekürzt. Eine neue konkrete Woche erhält nur den zugehörigen Block (Typ, Nebenschwerpunkt, Woche X von N, Regeln) und dessen Blockwoche, aktuelle Verfügbarkeit, kompakte Plan-/Template-Informationen und jüngstes Training. Ein Patch verwendet den bestehenden kompakten Wochenplan und gegebenenfalls einen abgeschlossenen Wochenrückblick, ohne erneut die vollständige Historie zu schicken. Es wird kein fortlaufender Chatverlauf gespeichert oder übertragen.
 
 Der OpenAI-Adapter verwendet `POST /v1/responses`, `store: false` und `text.format` mit `type: "json_schema"` und `strict: true`, entsprechend der [offiziellen Dokumentation zu Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs). Das Backend validiert jede Antwort zusätzlich lokal gegen das JSON-Schema und anschließend gegen die fachlichen Regeln. Unvollständige Antworten, Ablehnungen, unbekannte Felder und ungültige Zahlen verändern keinen Plan. Requests haben ein 60-Sekunden-Zeitlimit, Antworten eine Grenze von 1 MiB; es gibt keine automatischen kostenpflichtigen Wiederholungen. `store: false` ist die verwendete API-Einstellung und kein Versprechen, dass beim Provider keinerlei Daten verarbeitet oder aufbewahrt werden.
 
@@ -131,8 +152,9 @@ Alle schreibenden JSON-Anfragen verwenden `Content-Type: application/json`. Die 
 | GET / PUT / DELETE | `/api/ai-provider` | Status lesen, `{"provider":"openai","model":"gpt-4.1-mini","apiKey":"…"}` speichern oder gespeicherten Key entfernen. Beim Modellwechsel kann `apiKey` entfallen. |
 | POST | `/api/ai-provider/test` | `{}`; Zugang und Modell prüfen. |
 | GET | `/api/coach/templates` | Template-IDs, Defaults, Parametergrenzen und Dauerregeln. |
-| GET | `/api/coach/plan` | Bestätigter Makroplan, gespeicherte Wochen und Revision. |
-| POST | `/api/coach/proposals` | `kind: "macro"`, `"week"` oder `"patch"`; erzeugt einen Vorschlag. |
+| GET | `/api/coach/plan` | Bestätigte Trainingsblöcke (`blocks[]` mit berechnetem `status`, `typeName`, `secondaryName`), gespeicherte Wochen und Revision. |
+| GET | `/api/coach/block-types` | Wählbare Blocktypen mit Längen, Regeln auf Deutsch und vorgeschlagenem Rhythmus sowie mögliche Nebenschwerpunkte. |
+| POST | `/api/coach/proposals` | `kind: "macro"` (Trainingsblock), `"week"` oder `"patch"`; erzeugt einen Vorschlag. |
 | POST | `/api/coach/proposals/<id>/confirm` | Ausschließlich `{"confirm":true}`; geprüften Vorschlag übernehmen. |
 | POST | `/api/coach/proposals/<id>/discard` | `{}`; Vorschlag verwerfen. |
 | PUT | `/api/workouts/<id>/lock` | `{"locked":true}` bzw. `false`; Workout fixieren/lösen. |
@@ -141,7 +163,7 @@ Alle schreibenden JSON-Anfragen verwenden `Content-Type: application/json`. Die 
 Beispiele für Vorschlagsanfragen; die Datumswerte müssen zum tatsächlichen Planungszeitpunkt passen:
 
 ```json
-{"kind":"macro","startDate":"2026-09-28","weeks":16}
+{"kind":"macro","startDate":"2026-09-28","weeks":6}
 ```
 
 ```json

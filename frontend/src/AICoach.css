@@ -54,6 +54,7 @@
 .coach-checkbox input { accent-color: var(--accent); }
 .coach-season { margin: 0 0 18px; color: var(--fg-64748b); }
 .coach-season strong { color: var(--fg-1e293b); }
+.coach-block-type { color: var(--fg-1e293b); font-weight: 600; }
 .coach-checklist { list-style: none; padding: 0; margin: 6px 0 0; }
 .coach-checklist li { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--bd-e2e8f0); font-size: 13px; }
 .coach-checklist li > div { flex: 1; min-width: 0; }
