@@ -308,11 +308,40 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             {key: segment.get(key) for key in ('blockType', 'secondaryFocus', 'weeks', 'startDate', 'endDate', 'purpose')}
             for segment in season['segments']]}
 
+    def remove_blocks(plan, identities):
+        """Drops blocks with their planned weeks and the calendar workouts of those weeks; returns the workout count."""
+        removed = [b for b in plan['blocks'] if b['id'] in identities]
+        owned = lambda week: any(day_date(b['startDate']) <= week_start(week) <= day_date(b['endDate']) for b in removed)
+        # The stored plan also knows workouts the athlete moved out of their week.
+        stored = migrate_plan(json.loads(state().plan))['weeks']
+        sessions = {s['id'] for key, value in stored.items() if owned(key) for s in value['sessions']}
+        saved = workouts()
+        deleted = [saved[identity] for identity in sessions if identity in saved]
+        for row in deleted:
+            db.session.delete(row)
+        plan['blocks'] = [b for b in plan['blocks'] if b['id'] not in identities]
+        plan['weeks'] = {key: value for key, value in plan['weeks'].items() if not owned(key)}
+        return len(deleted)
+
+    @app.route('/api/coach/blocks/<identity>', methods=['DELETE'])
+    def delete_block(identity):
+        plan = current_plan()
+        find_block(plan, identity)
+        count = remove_blocks(plan, {identity})
+        save_plan(plan)
+        db.session.commit()
+        return jsonify({**public_plan(), 'deletedWorkouts': count})
+
     @app.route('/api/coach/season', methods=['PUT', 'DELETE'])
     def edit_season():
         plan = current_plan()
+        count = None
         if request.method == 'DELETE':
             plan.pop('season', None)
+            if request.args.get('blocks') == 'true':
+                # With the season, its current and upcoming blocks go too; finished blocks stay as history.
+                today = datetime.now(zone()).date()
+                count = remove_blocks(plan, {b['id'] for b in plan['blocks'] if day_date(b['endDate']) >= today})
         else:
             if not plan.get('season'):
                 raise CoachError('Es gibt noch keinen Saisonplan.')
@@ -325,7 +354,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                                         plan['season'].get('rationale', ''), 'athleteEdited')
         save_plan(plan)
         db.session.commit()
-        return jsonify(public_plan())
+        return jsonify({**public_plan(), **({'deletedWorkouts': count} if count is not None else {})})
 
     @app.route('/api/coach/weeks/<week>/missed', methods=['PUT'])
     def save_missed(week):

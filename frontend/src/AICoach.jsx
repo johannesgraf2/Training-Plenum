@@ -325,12 +325,14 @@ function RhythmStrip({ pattern }) {
 }
 
 // Situation → path → own choice or AI options → preview; the AI proposal is shown as the last step.
-function BlockWizard({ catalog, profile, busy, canPlan, proposal, seasonNext, onEdit, onPropose, onConfirm, onDiscard }) {
-  const [step, setStep] = useState(0);
-  const [startDate, setStartDate] = useState(() => nextMonday());
-  const [situation, setSituation] = useState('');
-  const [path, setPath] = useState(null);
-  const [choice, setChoice] = useState({ blockType: '', secondaryFocus: null, weeks: '' });
+// A preset (a season segment) opens the own choice with type, length and start already filled in.
+function BlockWizard({ catalog, profile, busy, canPlan, proposal, seasonNext, preset, initialStart, onEdit, onPropose, onConfirm, onDiscard }) {
+  const [step, setStep] = useState(preset ? 2 : 0);
+  const [startDate, setStartDate] = useState(() => preset?.startDate || initialStart || nextMonday());
+  const [situation, setSituation] = useState(preset ? 'mitten_im_training' : '');
+  const [path, setPath] = useState(preset ? 'choose' : null);
+  const [choice, setChoice] = useState(() => preset ? { blockType: preset.blockType, secondaryFocus: preset.secondaryFocus ?? null, weeks: preset.weeks }
+    : { blockType: '', secondaryFocus: null, weeks: '' });
   const [wish, setWish] = useState('');
   const edit = change => { onEdit(); change(); };
   const types = catalog?.blockTypes || [];
@@ -402,14 +404,22 @@ function BlockWizard({ catalog, profile, busy, canPlan, proposal, seasonNext, on
 const seasonDate = date => new Date(`${date}T12:00:00`).toLocaleDateString('de-DE', { day: 'numeric', month: 'short', year: 'numeric' });
 const segmentName = segment => `${segment.typeName}${segment.secondaryName ? ` + ${segment.secondaryName}` : ''}`;
 
-// One bar to the goal: each block as wide as its weeks, with a marker for today.
-function SeasonStrip({ segments }) {
+// One bar to the goal: each block as wide as its weeks, with a marker for today. With onSelect, a click
+// on a segment that is not over yet jumps into that block.
+function SeasonStrip({ segments, selected, onSelect }) {
   const total = segments.reduce((sum, segment) => sum + segment.weeks, 0);
-  const elapsed = segments.length ? daysBetween(segments[0].startDate, localDate()) / 7 : 0;
-  return <div className="coach-season-strip" role="img" aria-label={`Saisonplan: ${segments.map(s => `${segmentName(s)}, ${s.weeks} Wochen`).join(' · ')}`}>
-    {segments.map((segment, i) => <div key={i} className={`coach-season-segment ${segment.blockType}`} style={{ flexGrow: segment.weeks }}
-      title={`${segmentName(segment)} · ${segment.weeks} Wochen · ${seasonDate(segment.startDate)} – ${seasonDate(segment.endDate)}${segment.purpose ? `. ${segment.purpose}` : ''}`}>
-      <strong>{segment.typeName}</strong><small>{segment.weeks} Wo.</small></div>)}
+  const today = localDate();
+  const elapsed = segments.length ? daysBetween(segments[0].startDate, today) / 7 : 0;
+  return <div className="coach-season-strip" role={onSelect ? 'group' : 'img'} aria-label={`Saisonplan: ${segments.map(s => `${segmentName(s)}, ${s.weeks} Wochen`).join(' · ')}`}>
+    {segments.map((segment, i) => {
+      const title = `${segmentName(segment)} · ${segment.weeks} Wochen · ${seasonDate(segment.startDate)} – ${seasonDate(segment.endDate)}${segment.purpose ? `. ${segment.purpose}` : ''}`;
+      const content = <><strong>{segment.typeName}</strong><small>{segment.weeks} Wo.</small></>;
+      const className = `coach-season-segment ${segment.blockType}`;
+      return onSelect && segment.endDate >= today
+        ? <button key={i} type="button" className={className} style={{ flexGrow: segment.weeks }} aria-pressed={selected === segment.startDate}
+          title={`${title}. ${segment.blockId ? 'Block öffnen' : 'Block anlegen'}`} onClick={() => onSelect(segment)}>{content}</button>
+        : <div key={i} className={className} style={{ flexGrow: segment.weeks }} title={title}>{content}</div>;
+    })}
     {elapsed > 0 && elapsed < total && <i className="coach-season-today" style={{ left: `${elapsed / total * 100}%` }} title="Heute" />}
   </div>;
 }
@@ -547,6 +557,11 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
   const [feedbackWeek, setFeedbackWeek] = useState('');
   const [feedback, setFeedback] = useState(null);
   const [proposal, setProposal] = useState(null);
+  const [selectedBlockId, setSelectedBlockId] = useState(null);
+  const [jumpSegment, setJumpSegment] = useState(null);
+  const [blockOrigin, setBlockOrigin] = useState('main');
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [scrollTarget, setScrollTarget] = useState(null);
   const [dirty, setDirty] = useState({});
   const [busy, setBusy] = useState('');
   const [loading, setLoading] = useState(true);
@@ -634,13 +649,18 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
   }
   const canPlan = !busy && !anyDirty && provider?.configured;
   const today = localDate();
-  const block = currentBlock(plan?.blocks, today);
-  const range = blockRange(block);
-  const blockHasWeeks = !!range && Object.keys(plan?.weeks || {}).some(key => weekStart(key) >= range.start && weekStart(key) <= range.end);
+  const current = currentBlock(plan?.blocks, today);
+  const currentRange = blockRange(current);
   const missing = profile ? missingSetup(profile) : [];
   const profileReady = !missing.length && !dirty.profile;
   // Exactly one next step: set up, start a block, work through it, or start the next one.
-  const stage = range ? (today > range.end ? 'ended' : 'active') : profileReady && provider?.configured ? 'start' : 'setup';
+  const stage = currentRange ? (today > currentRange.end ? 'ended' : 'active') : profileReady && provider?.configured ? 'start' : 'setup';
+  // Current and upcoming blocks. The block card shows the one the athlete jumped into, else the current one.
+  const keptBlocks = (plan?.blocks || []).filter(b => b.status !== 'abandoned' && blockRange(b)?.end >= today).sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const block = (stage === 'active' && keptBlocks.find(b => b.id === selectedBlockId)) || current;
+  const range = blockRange(block);
+  const weeksIn = target => { const r = blockRange(target); return Object.entries(plan?.weeks || {}).filter(([key]) => !!r && weekStart(key) >= r.start && weekStart(key) <= r.end).map(([, value]) => value); };
+  const blockHasWeeks = weeksIn(block).length > 0;
   function discardProposal() {
     return run('Vorschlag wird verworfen …', async () => { await request(`/api/coach/proposals/${proposal.id}/discard`, 'POST', {}); setProposal(null); setNotice('Vorschlag verworfen.'); });
   }
@@ -652,6 +672,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
         if (proposal.kind === 'season') setNotice('Saisonplan übernommen. Du planst weiterhin Block für Block.');
         else if (proposal.kind === 'block') {
           const chosen = proposal.after.options.find(option => option.id === optionId).block;
+          setSelectedBlockId(chosen.id || null); setJumpSegment(null); setScrollTarget('.coach-block-card');
           setWeek(isoWeek(chosen.startDate)); setFeedback(null); setAutoStart({ block: chosen, weeks: saved.weeks || {} });
         } else setNotice('Plan übernommen. Die Einheiten sind im Kalender verfügbar.');
       } catch (e) { setProposal(null); throw e; }
@@ -721,18 +742,56 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
       invalidate(); setPlan(await request(`/api/coach/season?${tzQuery()}`, 'PUT', { segments })); setSeasonEditing(false); setNotice('Saisonplan gespeichert.');
     });
   }
-  async function deleteSeason() {
+  const deletedText = count => count ? ` ${count} ${count === 1 ? 'Workout wurde' : 'Workouts wurden'} aus dem Kalender entfernt.` : '';
+  // After a deletion the plan shows the block that is now current, starting with its first open week.
+  function afterDelete(saved) {
+    const next = blockRange(currentBlock(saved.blocks, localDate()));
+    setPlan(saved); setSelectedBlockId(null); setJumpSegment(null); setConfirmDelete(null); setPlanHints([]); setFeedback(null);
+    setWeek(next && localDate() < next.start ? isoWeek(next.start) : isoWeek());
+  }
+  async function deleteSeason(withBlocks) {
     await run('Saisonplan wird gelöscht …', async () => {
-      invalidate(); setPlan(await request(`/api/coach/season?${tzQuery()}`, 'DELETE')); setSeasonEditing(false); setNotice('Saisonplan gelöscht. Deine Trainingsblöcke bleiben bestehen.');
+      invalidate(); setSeasonEditing(false);
+      const saved = await request(`/api/coach/season?${tzQuery()}${withBlocks ? '&blocks=true' : ''}`, 'DELETE');
+      afterDelete(saved);
+      if (withBlocks) await onWorkoutsChanged?.();
+      setNotice(withBlocks ? `Saisonplan und seine Trainingsblöcke gelöscht.${deletedText(saved.deletedWorkouts)}` : 'Saisonplan gelöscht. Deine Trainingsblöcke bleiben bestehen.');
     });
   }
+  async function deleteBlock(target) {
+    await run('Trainingsblock wird gelöscht …', async () => {
+      invalidate();
+      const saved = await request(`/api/coach/blocks/${encodeURIComponent(target.id)}?${tzQuery()}`, 'DELETE');
+      afterDelete(saved); await onWorkoutsChanged?.();
+      setNotice(`Trainingsblock gelöscht.${deletedText(saved.deletedWorkouts)}`);
+    });
+  }
+  // Jump into a block: a planned one opens in the block card, a season block without plan can be created there.
+  function showBlock(target) {
+    if (dirty.weekly) { setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); return; }
+    const r = blockRange(target);
+    invalidate(); setFeedback(null); setJumpSegment(null); setConfirmDelete(null);
+    setSelectedBlockId(target.id === current?.id ? null : target.id);
+    setWeek(r.start <= today && today <= r.end ? isoWeek(today) : isoWeek(r.start));
+    setScrollTarget('.coach-block-card');
+  }
+  function jumpTo(segment) {
+    const target = segment.blockId && keptBlocks.find(b => b.id === segment.blockId);
+    if (target) { showBlock(target); return; }
+    invalidate(); setConfirmDelete(null); setJumpSegment(segment.startDate); setScrollTarget('.coach-jump-card');
+  }
+  useEffect(() => {
+    if (!scrollTarget) return;
+    document.querySelector(scrollTarget)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    setScrollTarget(null);
+  }, [scrollTarget]);
   useEffect(() => {
     if (proposal && !['block', 'season'].includes(proposal.kind)) document.querySelector('.coach-proposal')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }, [proposal]);
   const workoutsById = useMemo(() => Object.fromEntries(workouts.map(workout => [workout.id, workout])), [workouts]);
   const ownWorkouts = weekWorkouts.filter(workout => !(currentWeek?.sessions || []).some(session => session.id === workout.id));
   const thisWeek = isoWeek(today);
-  const inBlock = key => !!range && weekStart(key) >= range.start && weekStart(key) <= range.end;
+  const inBlock = key => !!currentRange && weekStart(key) >= currentRange.start && weekStart(key) <= currentRange.end;
   // Close the week: from Friday on, or right away if last week was left open. An empty next week is planned,
   // an already planned one is adjusted or kept until the week has its review.
   let rhythm = null;
@@ -746,6 +805,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
     }
   }
   const openWeeks = stage === 'active' ? openBlockWeeks(block, plan.weeks, today) : [];
+  const blockWorkouts = weeksIn(block).flatMap(value => value.sessions || []).filter(session => session.rendered?.workout).length;
   async function toggleLock(identity, locked) {
     await run('Einheit wird aktualisiert …', async () => {
       invalidate(); await request(`/api/workouts/${identity}/lock`, 'PUT', { locked });
@@ -769,19 +829,40 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
       : season ? <>
         {season.rationale && <p>{season.rationale}</p>}
         {(season.goalChanged || !season.aligned) && <div className="coach-message">{season.goalChanged ? 'Dein Zieldatum hat sich geändert.' : 'Der Saisonplan passt nicht mehr zu deinen geplanten Blöcken.'} Passe ihn an oder lass ihn neu vorschlagen.</div>}
-        <SeasonStrip segments={season.segments} />
+        <SeasonStrip segments={season.segments} selected={jumpSegment || (stage === 'active' ? season.segments.find(segment => segment.blockId && segment.blockId === block?.id)?.startDate : null)} onSelect={busy ? null : jumpTo} />
+        <p className="coach-muted coach-season-hint">Klicke auf einen Block, um ihn zu öffnen oder anzulegen und seine Workouts zu planen.</p>
         <details className="coach-details"><summary>Blöcke im Detail</summary><SeasonList segments={season.segments} /></details>
         <details className="coach-details"><summary>Neu vorschlagen lassen</summary><p className="coach-muted">Bereits geplante Blöcke bleiben fest. Der Coach plant die Zeit danach neu.</p>{seasonWishField}
           <div className="coach-actions"><button className="coach-primary" disabled={!canPlan} onClick={() => propose('season')}>Neue Vorschläge erstellen</button></div></details>
-        <div className="coach-actions"><button disabled={!!busy} onClick={() => { invalidate(); setSeasonEditing(true); }}>Saisonplan bearbeiten</button><button className="coach-danger" disabled={!!busy} onClick={deleteSeason}>Saisonplan löschen</button></div>
+        {confirmDelete === 'season' ? <div className="coach-confirm-delete" role="group" aria-label="Saisonplan löschen">
+          <p><strong>Was soll gelöscht werden?</strong> Nur der Saisonplan, oder auch seine laufenden und kommenden Trainingsblöcke{keptBlocks.length ? ` (${keptBlocks.length})` : ''} mit allen geplanten Wochen und Workouts im Kalender. Abgeschlossene Blöcke und eigene Workouts bleiben.</p>
+          <div className="coach-actions"><button disabled={!!busy} onClick={() => deleteSeason(false)}>Nur Saisonplan löschen</button><button className="coach-danger" disabled={!!busy} onClick={() => deleteSeason(true)}>Mit Blöcken und Workouts löschen</button><button disabled={!!busy} onClick={() => setConfirmDelete(null)}>Abbrechen</button></div>
+        </div> : <div className="coach-actions"><button disabled={!!busy} onClick={() => { invalidate(); setSeasonEditing(true); }}>Saisonplan bearbeiten</button><button className="coach-danger" disabled={!!busy} onClick={() => setConfirmDelete('season')}>Saisonplan löschen</button></div>}
       </> : <>
         <p className="coach-muted">Der Coach teilt die Zeit bis {dateLabel(profile.goal.date)} in Trainingsblöcke auf, zum Beispiel Grundlage, Aufbau, VO2max, Schwelle und zum Schluss wettkampfspezifisch. Du bekommst zwei bis drei Varianten, kannst Blöcke tauschen und anpassen und planst danach weiter Block für Block.</p>
         {seasonWishField}
         <div className="coach-actions"><button className="coach-primary" disabled={!canPlan} onClick={() => propose('season')}>Saisonplan vorschlagen lassen</button></div>
       </>}
   </section>;
-  const wizard = <BlockWizard catalog={catalog} profile={profile} busy={!!busy} canPlan={canPlan} proposal={proposal?.kind === 'block' ? proposal : null} seasonNext={seasonNext}
-    onEdit={() => invalidate()} onPropose={body => propose('block', body)} onConfirm={confirmProposal} onDiscard={discardProposal} />;
+  // Several wizards can be on screen; a block proposal shows in the one that asked for it.
+  const wizardFor = (origin, extra = {}) => <BlockWizard key={origin} catalog={catalog} profile={profile} busy={!!busy} canPlan={canPlan} proposal={proposal?.kind === 'block' && blockOrigin === origin ? proposal : null}
+    onEdit={() => invalidate()} onPropose={body => { setBlockOrigin(origin); propose('block', body); }} onConfirm={confirmProposal} onDiscard={discardProposal} {...extra} />;
+  const wizard = wizardFor('main', { seasonNext });
+  const jumpTarget = jumpSegment && season?.segments.find(segment => segment.startDate === jumpSegment && !segment.blockId && segment.endDate >= today);
+  // Blocks are laid out in order: the first season block without a plan is the one that can be created next.
+  const nextOpenSegment = season?.aligned ? season.segments.find(segment => !segment.blockId && segment.startDate >= season.openFrom) : null;
+  const jumpCard = jumpTarget && <section className="coach-card coach-jump-card" aria-label="Block aus dem Saisonplan">
+    <div className="coach-section-heading"><div><span className="coach-eyebrow">Saisonplan · Block noch nicht angelegt</span><h2>{segmentName(jumpTarget)} · {jumpTarget.weeks} {jumpTarget.weeks === 1 ? 'Woche' : 'Wochen'}</h2></div>
+      <button type="button" disabled={!!busy} onClick={() => { invalidate(); setJumpSegment(null); }}>Schließen</button></div>
+    <p className="coach-muted">{seasonDate(jumpTarget.startDate)} – {seasonDate(jumpTarget.endDate)}{jumpTarget.purpose ? ` · ${jumpTarget.purpose}` : ''}</p>
+    {nextOpenSegment?.startDate === jumpTarget.startDate && jumpTarget.startDate >= nextMonday(today) ? <>
+      <p className="coach-muted">Der Coach arbeitet Umfang und Entlastung des Blocks aus. Nach dem Übernehmen plant er alle Wochen mit Workouts für deinen Kalender.</p>
+      {wizardFor(`season-${jumpTarget.startDate}`, { preset: jumpTarget })}
+    </> : nextOpenSegment ? <>
+      <p>Trainingsblöcke werden der Reihe nach angelegt, jeder baut auf dem vorherigen auf. Als Nächstes kommt {segmentName(nextOpenSegment)} ab {dateLabel(nextOpenSegment.startDate)}.</p>
+      <div className="coach-actions"><button className="coach-primary" disabled={!!busy} onClick={() => jumpTo(nextOpenSegment)}>Zu {segmentName(nextOpenSegment)} springen</button></div>
+    </> : <div className="coach-message">Der Saisonplan passt nicht mehr zu deinen Trainingsblöcken. Passe ihn an oder lass ihn neu vorschlagen, dann lassen sich seine Blöcke anlegen.</div>}
+  </section>;
 
   // On the provider tab the buttons sit far below the header, so feedback appears next to them.
   const messagesInCard = !loading && !!provider && tab === 'provider';
@@ -840,6 +921,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
     {!loading && profile && tab === 'plan' && <>
       <SeasonGoal goal={profile.goal} />
       {seasonCard}
+      {jumpCard}
       {stage !== 'setup' && !provider?.configured && <div className="coach-message">Verbinde deinen eigenen API-Zugang, um Vorschläge zu erstellen. <button onClick={() => setTab('provider')}>Provider einrichten</button></div>}
       {anyDirty && <div className="coach-message">Speichere deine offenen Angaben, bevor du einen neuen AI-Vorschlag erstellst.</div>}
       {stage === 'setup' && <SetupChecklist missing={dirty.profile ? [...missing, 'Änderungen speichern'] : missing} providerReady={!!provider?.configured} onProfile={() => setTab('profile')} onProvider={() => setTab('provider')} />}
@@ -854,16 +936,22 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
         <p className="coach-muted">Verlauf, ausgelassene Einheiten und deine Einschätzung gehen als Kontext in die Vorschläge ein.</p>
         {wizard}
       </section>}
-      {rhythm && <WeekRhythm key={`${rhythm.review}-${!!rhythm.planned}`} review={rhythm.review} next={rhythm.next} planned={!!rhythm.planned} reviewPlan={plan.weeks?.[rhythm.review]} nextBlockWeek={block.weeks?.[blockWeek(range, weekStart(rhythm.next)) - 1]}
+      {rhythm && <WeekRhythm key={`${rhythm.review}-${!!rhythm.planned}`} review={rhythm.review} next={rhythm.next} planned={!!rhythm.planned} reviewPlan={plan.weeks?.[rhythm.review]} nextBlockWeek={current.weeks?.[blockWeek(currentRange, weekStart(rhythm.next)) - 1]}
         feedback={rhythmFeedback?.week === rhythm.review ? rhythmFeedback : null} busy={!!busy} canPlan={canPlan} checkInForm={checkInForm} wishField={wishField}
         onLoad={key => request(`/api/coach/feedback?week=${encodeURIComponent(key)}&${tzQuery()}`).then(setRhythmFeedback).catch(e => setError(e.message))}
-        onPlan={missedSessions => { setWeek(rhythm.next); setFeedback(null); propose(rhythm.planned ? 'patch' : 'week', { week: rhythm.next, feedbackWeek: rhythm.review, missedSessions }); }}
+        onPlan={missedSessions => { setSelectedBlockId(null); setWeek(rhythm.next); setFeedback(null); propose(rhythm.planned ? 'patch' : 'week', { week: rhythm.next, feedbackWeek: rhythm.review, missedSessions }); }}
         onKeep={missedSessions => run('Rückblick wird gespeichert …', async () => { invalidate(); setPlan(await request(`/api/coach/weeks/${rhythm.review}/missed`, 'PUT', { missedSessions })); setNotice('Rückblick gespeichert. Die nächste Woche bleibt, wie sie ist.'); })} />}
-      {stage === 'active' && <><section className="coach-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">Aktueller Trainingsblock</span><h2>{today < range.start ? `Startet am ${dateLabel(range.start)}` : `Woche ${blockWeek(range, today)} von ${range.weeks}`}</h2></div><span className="coach-badge recommendation">AI-Empfehlung</span></div>
+      {stage === 'active' && <><section className="coach-card coach-block-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">{block === current ? 'Aktueller Trainingsblock' : 'Kommender Trainingsblock'}</span><h2>{today < range.start ? `Startet am ${dateLabel(range.start)}` : `Woche ${blockWeek(range, today)} von ${range.weeks}`}</h2></div><span className="coach-badge recommendation">AI-Empfehlung</span></div>
+        {keptBlocks.length > 1 && <div className="coach-block-switch" role="group" aria-label="Trainingsblöcke">{keptBlocks.map(item => <button key={item.id} type="button" aria-pressed={item.id === block.id} disabled={!!busy}
+          onClick={() => { if (item.id !== block.id) showBlock(item); }}><strong>{item.typeName || 'Block'}</strong><small>{dateLabel(item.startDate)} – {dateLabel(blockRange(item).end)}</small></button>)}</div>}
         <BlockOverview value={block} chart={timeline && <BlockTimeline timeline={timeline} selected={week} onSelect={key => { if (dirty.weekly) setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); else if (key !== week) { invalidate(); setFeedback(null); setWeek(key); } }} />} />
         {openWeeks.length > 0 && <div className="coach-actions"><button className="coach-primary" disabled={!canPlan} onClick={() => planBlockWeeks(block, plan.weeks)}>{blockHasWeeks ? 'Restliche Wochen planen' : 'Alle Wochen planen'} ({openWeeks.length})</button><small className="coach-muted">Mit deiner Standardwoche aus dem Athletenprofil. Ausnahmen trägst du in der jeweiligen Woche ein.</small></div>}
         <Hinweise items={planHints} />
-        {!blockHasWeeks && <details className="coach-details" open={proposal?.kind === 'block' || undefined}><summary>Block neu planen</summary><p className="coach-muted">Solange noch keine Woche geplant ist, kannst du den Block ersetzen.</p>{wizard}</details>}
+        {!blockHasWeeks && <details className="coach-details" open={(proposal?.kind === 'block' && blockOrigin === `replace-${block.id}`) || undefined}><summary>Block neu planen</summary><p className="coach-muted">Solange noch keine Woche geplant ist, kannst du den Block ersetzen.</p>{wizardFor(`replace-${block.id}`, { initialStart: range.start > nextMonday(today) ? range.start : nextMonday(today) })}</details>}
+        {confirmDelete === `block-${block.id}` ? <div className="coach-confirm-delete" role="group" aria-label="Trainingsblock löschen">
+          <p><strong>{[block.typeName, block.secondaryName && `+ ${block.secondaryName}`].filter(Boolean).join(' ') || 'Trainingsblock'} ({dateLabel(range.start)} – {dateLabel(range.end)}) löschen?</strong> {blockHasWeeks ? `${weeksIn(block).length === 1 ? 'Die geplante Woche' : `Die ${weeksIn(block).length} geplanten Wochen`} und ${blockWorkouts} ${blockWorkouts === 1 ? 'Workout' : 'Workouts'} im Kalender werden entfernt, auch bereits vergangene.` : 'Es ist noch keine Woche geplant.'} Eigene Workouts bleiben.</p>
+          <div className="coach-actions"><button className="coach-danger" disabled={!!busy} onClick={() => deleteBlock(block)}>Endgültig löschen</button><button disabled={!!busy} onClick={() => setConfirmDelete(null)}>Abbrechen</button></div>
+        </div> : <div className="coach-actions"><button className="coach-danger" disabled={!!busy || planning} onClick={() => setConfirmDelete(`block-${block.id}`)}>Block löschen</button></div>}
       </section>
       <section className="coach-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">{weekStart(week) >= range.start && weekStart(week) <= range.end ? `Woche ${blockWeek(range, weekStart(week))} von ${range.weeks}` : 'Außerhalb des Blocks'}</span><h2>Deine Trainingswoche</h2></div><Field label="Kalenderwoche"><input aria-label="Planungswoche" type="week" min={isoWeek(range.start)} max={isoWeek(range.end)} value={week} disabled={!!busy} onChange={e => { if (e.target.value && !dirty.weekly) { invalidate(); setFeedback(null); setWeek(e.target.value); } else if (dirty.weekly) setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); }} /></Field></div>
         <p className="coach-muted">{dateLabel(weekStart(week))} – {dateLabel(weekEnd(week))} · {week}</p>
