@@ -437,8 +437,12 @@ function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, 
     return [...list.slice(0, at), item, ...list.slice(at)];
   });
   return <div className="coach-season-editor">
-    {fixed.length > 0 && <p className="coach-muted">Bereits geplant und fest: {fixed.map(s => `${segmentName(s)} (${s.weeks} Wo.)`).join(', ')}. Die Blöcke unten folgen ab {seasonDate(addDays(fixed.at(-1).endDate, 1))}.</p>}
-    <ol>{items.map((item, i) => { const n = fixed.length + i + 1; const type = typeOf(item.blockType); return <li key={item.key}>
+    <ol>{fixed.map((segment, i) => <li key={`fixed-${i}`} className="coach-season-fixed">
+      <span className="coach-step" aria-hidden="true">{i + 1}</span>
+      <span>{segment.typeName}</span><span>{segment.weeks}</span><span>{segment.secondaryName ? `+ ${segment.secondaryName}` : 'Kein Nebenschwerpunkt'}</span>
+      <span className="coach-season-lock">Fest</span>
+      <small>Bereits geplant, {seasonDate(segment.startDate)} – {seasonDate(segment.endDate)}. Bleibt unverändert.</small>
+    </li>)}{items.map((item, i) => { const n = fixed.length + i + 1; const type = typeOf(item.blockType); return <li key={item.key}>
       <span className="coach-step" aria-hidden="true">{n}</span>
       <select aria-label={`Block ${n} Typ`} value={item.blockType} disabled={busy} onChange={e => update(i, { blockType: e.target.value, weeks: typeOf(e.target.value)?.defaultWeeks || item.weeks, purpose: '' })}>{types.map(t => <option key={t.id} value={t.id} disabled={t.id === 'wettkampfspezifisch' && !profile.goal.date}>{t.name}</option>)}</select>
       <input aria-label={`Block ${n} Wochen`} type="number" min={type?.minWeeks} max={type?.maxWeeks} value={item.weeks} disabled={busy} onChange={e => update(i, { weeks: e.target.value === '' ? '' : Number(e.target.value) })} />
@@ -450,7 +454,7 @@ function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, 
       </span>
       {item.purpose && <small>{item.purpose}</small>}
     </li>; })}</ol>
-    <div className="coach-actions"><button type="button" disabled={busy} onClick={add}>Block hinzufügen</button><p className={`coach-season-sum ${problems.length ? '' : 'ok'}`}><strong>{total} von {remainingWeeks} Wochen verplant</strong>{problems.map(problem => ` · ${problem}`).join('')}</p></div>
+    <div className="coach-actions"><button type="button" disabled={busy} onClick={add}>Block hinzufügen</button><p className={`coach-season-sum ${problems.length ? '' : 'ok'}`}><strong>{total} von {remainingWeeks} {fixed.length ? 'freien ' : ''}Wochen verplant</strong>{problems.map(problem => ` · ${problem}`).join('')}</p></div>
     <div className="coach-actions"><button type="button" className="coach-primary" disabled={busy || problems.length > 0} onClick={() => onSave(items.map(({ key, ...item }) => ({ ...item, weeks: Number(item.weeks) })))}>{saveLabel}</button><button type="button" disabled={busy} onClick={onCancel}>Abbrechen</button></div>
   </div>;
 }
