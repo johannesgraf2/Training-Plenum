@@ -265,6 +265,24 @@ test('a season plan is proposed, adjusted by swapping blocks and confirmed', asy
   expect(container.textContent).toContain('Von dir angepasst');
 });
 
+test('planned blocks stay in the season editor as fixed first rows', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
+  const segments = [{ ...seasonSegments[0], blockId: 'b1', secondaryFocus: 'radfahren', secondaryName: 'Radfahren' }, ...seasonSegments.slice(1)];
+  const option = (id, recommended) => ({ id, recommended, rationale: `Plan ${id}.`, season: { ...season, segments } });
+  responses['POST /api/coach/proposals'] = async () => ({ ok: true, json: async () => ({ id: 'season-2', kind: 'season', before: null, hinweise: [], rejectedOptions: [],
+    after: { options: [option('a', true), option('b', false)], openFrom: '2026-11-23', remainingWeeks: 10, fixedCount: 1 } }) });
+  await render();
+  await click(button('Saisonplan vorschlagen lassen'));
+  await click(button('Anpassen'));
+  const rows = container.querySelectorAll('.coach-season-editor li');
+  expect(rows).toHaveLength(3);
+  expect(rows[0].className).toBe('coach-season-fixed');
+  expect(rows[0].textContent).toContain('Grundlage8+ RadfahrenFest');
+  expect(rows[0].querySelector('select, input, button')).toBeNull();
+  expect(container.querySelector('[aria-label="Block 2 Typ"]').value).toBe('vo2max');
+  expect(container.textContent).toContain('10 von 10 freien Wochen verplant');
+});
+
 test('a saved season plan is edited within the rules and prefills the next block', async () => {
   responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
   initialPlan = { ...initialPlan, season };
