@@ -33,6 +33,8 @@ class CatalogTests(unittest.TestCase):
         vo2 = next(item for item in result['blockTypes'] if item['id'] == 'vo2max')
         self.assertEqual((vo2['minWeeks'], vo2['defaultWeeks'], vo2['maxWeeks']), (3, 4, 6))
         self.assertIn('Mindestens 2× VO2max-Einheit pro Belastungswoche', vo2['rules'])
+        self.assertEqual(list(vo2['rhythms']), ['3', '4', '5', '6'])
+        self.assertEqual(vo2['rhythms']['3'], [False, False, True])
         self.assertEqual([item['id'] for item in result['secondaryFocus']], ['kraft', 'laufen', 'radfahren'])
 
     def test_rhythm_is_three_to_one_with_shorter_cycles_for_short_blocks(self):
