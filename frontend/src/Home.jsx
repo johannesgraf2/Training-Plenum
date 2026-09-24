@@ -211,7 +211,7 @@ export default function Home({ apiBase, activities, plannedWorkouts, workoutLoad
           {restDay && <><span aria-hidden="true">·</span><span className="home-kicker-rest">Ruhetag</span></>}
         </p>
         <h1><span>{weekday}, </span><em>{dateParts.join(', ')}</em></h1>
-        <p className="home-lede">{lede} Diese Woche hast du <strong>{hm(done)}</strong> absolviert{target > done ? <> von geplanten <strong>{hm(target)}</strong></> : null}.</p>
+        <p className="home-lede">{lede} Diese Woche hast du <strong className="home-time">{hm(done)}</strong> absolviert{target > done ? <> von geplanten <strong className="home-time">{hm(target)}</strong></> : null}.</p>
       </div>
       <RaceGoal apiBase={apiBase} onEdit={onEditGoal} photo={imageUrl(apiBase, appearance.raceGoalImage)} />
     </section>
