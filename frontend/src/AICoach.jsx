@@ -325,7 +325,8 @@ function RhythmStrip({ pattern }) {
 }
 
 // Situation → path → own choice or AI options → preview; the AI proposal is shown as the last step.
-// A preset (a season segment) opens the own choice with type, length and start already filled in.
+// A preset (a season segment) opens the own choice with type, length and start already filled in; the
+// season plan fixes the block type there, so the type grid only shows when the athlete picks the own choice.
 function BlockWizard({ catalog, profile, busy, canPlan, proposal, seasonNext, preset, initialStart, onEdit, onPropose, onConfirm, onDiscard }) {
   const [step, setStep] = useState(preset ? 2 : 0);
   const [startDate, setStartDate] = useState(() => preset?.startDate || initialStart || nextMonday());
@@ -334,6 +335,7 @@ function BlockWizard({ catalog, profile, busy, canPlan, proposal, seasonNext, pr
   const [choice, setChoice] = useState(() => preset ? { blockType: preset.blockType, secondaryFocus: preset.secondaryFocus ?? null, weeks: preset.weeks }
     : { blockType: '', secondaryFocus: null, weeks: '' });
   const [wish, setWish] = useState('');
+  const [fromSeason, setFromSeason] = useState(!!preset);
   const edit = change => { onEdit(); change(); };
   const types = catalog?.blockTypes || [];
   const type = types.find(item => item.id === choice.blockType);
@@ -350,9 +352,9 @@ function BlockWizard({ catalog, profile, busy, canPlan, proposal, seasonNext, pr
     {proposal ? <BlockOptions key={proposal.id} value={proposal} busy={busy} onConfirm={onConfirm} onDiscard={onDiscard} /> : <fieldset disabled={busy}>
       {step === 0 && <>
         {seasonNext && <button type="button" className="coach-choice coach-season-next" onClick={() => {
-          edit(() => { setSituation('mitten_im_training'); setPath('choose'); setStartDate(seasonNext.startDate); setChoice({ blockType: seasonNext.blockType, secondaryFocus: seasonNext.secondaryFocus ?? null, weeks: seasonNext.weeks }); });
+          edit(() => { setSituation('mitten_im_training'); setPath('choose'); setStartDate(seasonNext.startDate); setChoice({ blockType: seasonNext.blockType, secondaryFocus: seasonNext.secondaryFocus ?? null, weeks: seasonNext.weeks }); setFromSeason(true); });
           setStep(2);
-        }}><strong>Laut Saisonplan: {segmentName(seasonNext)} · {seasonNext.weeks} Wochen</strong><small>Ab {dateLabel(seasonNext.startDate)}.{seasonNext.purpose ? ` ${seasonNext.purpose}` : ''} Typ und Länge sind vorausgewählt, du kannst sie noch ändern.</small></button>}
+        }}><strong>Laut Saisonplan: {segmentName(seasonNext)} · {seasonNext.weeks} Wochen</strong><small>Ab {dateLabel(seasonNext.startDate)}.{seasonNext.purpose ? ` ${seasonNext.purpose}` : ''} Der Blocktyp steht fest, Länge und Nebenschwerpunkt kannst du noch anpassen.</small></button>}
         <h3>Wo stehst du gerade?</h3>
         <div className="coach-choice-grid" role="radiogroup" aria-label="Ausgangslage">{Object.entries(SITUATIONS).map(([key, name]) => <label key={key} className={`coach-choice ${situation === key ? 'selected' : ''}`}>
           <input type="radio" name="situation" value={key} checked={situation === key} onChange={() => edit(() => setSituation(key))} /><strong>{name}</strong><small>{SITUATION_HINTS[key]}</small>
@@ -364,7 +366,7 @@ function BlockWizard({ catalog, profile, busy, canPlan, proposal, seasonNext, pr
         <h3>Wie möchtest du vorgehen?</h3>
         <div className="coach-choice-grid two">
           <button type="button" className="coach-choice" onClick={() => { edit(() => setPath('recommend')); setStep(2); }}><strong>Schlag mir was vor</strong><small>Der Coach schlägt zwei bis drei passende Blöcke vor, einer davon als Empfehlung.</small></button>
-          <button type="button" className="coach-choice" onClick={() => { edit(() => setPath('choose')); setStep(2); }}><strong>Ich weiß, was ich will</strong><small>Du wählst Blocktyp und Länge. Der Coach arbeitet Umfang, Verteilung und Entlastung aus.</small></button>
+          <button type="button" className="coach-choice" onClick={() => { edit(() => { setPath('choose'); setFromSeason(false); }); setStep(2); }}><strong>Ich weiß, was ich will</strong><small>Du wählst Blocktyp und Länge. Der Coach arbeitet Umfang, Verteilung und Entlastung aus.</small></button>
         </div>
         <div className="coach-actions"><button type="button" onClick={() => setStep(0)}>Zurück</button></div>
       </>}
@@ -374,6 +376,7 @@ function BlockWizard({ catalog, profile, busy, canPlan, proposal, seasonNext, pr
         <div className="coach-actions"><button type="button" className="coach-primary" disabled={!canPlan} onClick={submit}>Vorschläge erstellen</button><button type="button" onClick={() => setStep(1)}>Zurück</button></div>
       </>}
       {step === 2 && path === 'choose' && <>
+        {fromSeason && type ? <><h3>Block laut Saisonplan: {type.name}</h3><p className="coach-muted">{type.summary} · Start am {dateLabel(startDate)}</p></> : <>
         <h3>Blocktyp wählen</h3><p className="coach-muted">{SITUATIONS[situation]} · Start am {dateLabel(startDate)}</p>
         <div className="coach-choice-grid types" role="radiogroup" aria-label="Blocktyp">{types.map(item => {
           const blocked = item.id === 'wettkampfspezifisch' && !profile.goal.date;
@@ -381,7 +384,7 @@ function BlockWizard({ catalog, profile, busy, canPlan, proposal, seasonNext, pr
             <input type="radio" name="block-type" value={item.id} disabled={blocked} checked={choice.blockType === item.id} onChange={() => edit(() => setChoice(c => ({ ...c, blockType: item.id, weeks: item.defaultWeeks })))} />
             <strong>{item.name}</strong><small>{item.summary}</small><small className="coach-choice-meta">{item.minWeeks}–{item.maxWeeks} Wochen{blocked ? ' · braucht ein Zieldatum im Athletenprofil' : ''}</small>
           </label>;
-        })}</div>
+        })}</div></>}
         {type && <div className="coach-type-detail">
           <div className="coach-inline-form">
             <Field label="Wochen"><input type="number" min={type.minWeeks} max={type.maxWeeks} value={choice.weeks} onChange={e => edit(() => setChoice(c => ({ ...c, weeks: e.target.value })))} /></Field>
