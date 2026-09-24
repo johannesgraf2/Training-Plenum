@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Icon } from './icons';
 import { localDate, summary as workoutSummary } from './workoutModel';
 import './AICoach.css';
 
@@ -114,18 +115,41 @@ function SetupChecklist({ missing, providerReady, onProfile, onProvider }) {
   </section>;
 }
 
-function BlockOverview({ value }) {
+function BlockOverview({ value, chart }) {
   const range = blockRange(value);
   if (!range) return <p className="coach-muted">Noch kein Trainingsblock.</p>;
   const max = Math.max(...value.weeks.map(w => Number(w.targetHours) || 0), 1);
   const type = [value.typeName, value.secondaryName && `+ ${value.secondaryName}`].filter(Boolean).join(' ');
   return <><p className="coach-muted">{type && <strong className="coach-block-type">{type}</strong>}{type && ' · '}{dateLabel(range.start)} – {dateLabel(range.end)} · {range.weeks} {range.weeks === 1 ? 'Woche' : 'Wochen'}</p>
+    {chart || <>
     <div className="coach-macro" aria-label="Wochenvolumen und Trainingsphasen">{value.weeks.map((w, i) =>
       <div key={w.week ?? i} className="coach-macro-week" title={`Woche ${w.week}: ${PHASES[w.phase] || w.phase}, ${hours(w.targetHours)}. ${w.focus || ''}`}>
         <span>{fmt(w.targetHours)}</span><div className="coach-bar-track"><div className={`coach-bar ${w.phase}`} style={{ height: `${Math.max(3, Number(w.targetHours) / max * 100)}%` }} /></div>
         <strong>{w.week ?? i + 1}</strong><small>{PHASES[w.phase] || w.phase}</small>
       </div>)}</div>
     <details className="coach-details"><summary>Wochenziele lesen</summary><ul className="coach-focus-list">{value.weeks.map((w, i) => <li key={i}><strong>Woche {w.week ?? i + 1} · {PHASES[w.phase] || w.phase} · {hours(w.targetHours)}</strong><span>{w.focus || 'Kein zusätzlicher Fokus'}</span></li>)}</ul></details>
+    </>}
+  </>;
+}
+
+// Bullet chart per block week: outline = planned (dashed = block target only), solid = completed hours.
+function BlockTimeline({ timeline, selected, onSelect }) {
+  const weeks = timeline.weeks;
+  const planned = w => w.plannedHours ?? w.targetHours;
+  const max = Math.max(1, ...weeks.flatMap(w => [Number(planned(w)) || 0, Number(w.completedHours) || 0]));
+  const height = value => `${value ? Math.max(3, value / max * 100) : 0}%`;
+  const describe = w => `Woche ${w.number}, ${PHASES[w.phase] || w.phase}: ${w.planned ? 'geplant' : 'Blockziel'} ${hours(planned(w))}, absolviert ${w.completedHours == null ? 'noch offen' : hours(w.completedHours)}`;
+  return <>
+    <ol className="coach-timeline" aria-label="Block-Zeitstrahl: geplant und absolviert">{weeks.map(w => <li key={w.week} className={w.state}>
+      <button type="button" aria-pressed={selected === w.week} aria-label={describe(w)} title={`${describe(w)}${w.focus ? `. ${w.focus}` : ''}`} onClick={() => onSelect(w.week)}>
+        <span className="coach-timeline-value">{w.state === 'current' && <em>Jetzt</em>}{w.completedHours == null ? '—' : fmt(w.completedHours)} / {fmt(planned(w))}</span>
+        <span className="coach-timeline-track"><i className={`target ${w.planned ? '' : 'open'}`} style={{ height: height(planned(w)) }} /><i className="done" style={{ height: height(w.completedHours) }} /></span>
+        <strong>{w.number}</strong><small>{PHASES[w.phase] || w.phase}</small>
+      </button>
+    </li>)}</ol>
+    <div className="coach-timeline-legend"><span><i className="target" />Geplant</span><span><i className="target open" />Blockziel, Woche noch nicht geplant</span><span><i className="done" />Absolviert (Stunden, aus Trainingsdaten)</span></div>
+    <details className="coach-details"><summary>Als Tabelle anzeigen</summary><table className="coach-table"><thead><tr><th>Woche</th><th>Phase</th><th>Geplant</th><th>Absolviert</th><th>Fokus</th></tr></thead>
+      <tbody>{weeks.map(w => <tr key={w.week}><td>{w.number} · {w.week}{w.state === 'current' ? ' (jetzt)' : ''}</td><td>{PHASES[w.phase] || w.phase}</td><td>{hours(planned(w))}{w.planned ? '' : ' (Blockziel)'}</td><td>{w.completedHours == null ? '—' : hours(w.completedHours)}</td><td>{w.focus || '—'}</td></tr>)}</tbody></table></details>
   </>;
 }
 
@@ -139,6 +163,55 @@ function SessionList({ value }) {
       <div><strong>{sessionName(session)}</strong><small>{session.rendered?.date && `${dateLabel(session.rendered.date)} · `}{sessionDuration(session) == null ? 'Dauer offen' : `${fmt(sessionDuration(session))} min`}{session.rendered?.estimatedTss != null && ` · ${fmt(session.rendered.estimatedTss)} TSS`}</small></div>
       {session.locked && <span className="coach-badge">Fixiert</span>}
     </div>)}</div></>;
+}
+
+const weekday = date => DAYS[(new Date(`${date}T12:00:00`).getDay() + 6) % 7][1];
+function WeekSessions({ value, own, workoutsById, busy, onLock, onOpen }) {
+  const rows = [
+    ...(value?.sessions || []).map(session => ({ id: session.id, date: session.rendered?.date || '', name: sessionName(session), locked: !!session.locked,
+      day: DAYS.find(([d]) => d === session.day)?.[1] || session.day, lockable: !!session.rendered?.workout, workout: workoutsById[session.id],
+      detail: `${sessionDuration(session) == null ? 'Dauer offen' : `${fmt(sessionDuration(session))} min`}${session.rendered?.estimatedTss != null ? ` · ${fmt(session.rendered.estimatedTss)} TSS` : ''}` })),
+    ...own.map(workout => ({ id: workout.id, date: workout.date, name: workout.name, locked: !!workout.locked, day: weekday(workout.date), lockable: true, own: true, workout,
+      detail: workout.steps ? workoutSummary(workout) : '' })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+  return <>{value ? <p className="coach-week-focus"><strong>{hours(value.targetHours)}</strong> · {value.focus || 'Trainingswoche'}</p> : <p className="coach-muted">Noch keine Woche geplant.</p>}
+    {rows.length > 0 && <div className="coach-sessions">{rows.map(row => <div className="coach-session" key={row.id}>
+      <strong className="coach-day">{row.day}</strong>
+      <div>{row.workout && onOpen ? <button type="button" className="coach-workout-link" disabled={busy} onClick={() => onOpen(row.workout)}><strong>{row.name}</strong></button> : <strong>{row.name}</strong>}
+        <small>{row.date && `${dateLabel(row.date)} · `}{row.own ? 'Eigene Einheit' : row.detail}</small></div>
+      {row.lockable ? <button type="button" className="coach-lock" disabled={busy} aria-pressed={row.locked} aria-label={`${row.name} ${row.locked ? 'lösen' : 'fixieren'}`}
+        title={row.locked ? 'Fixiert: bleibt bei AI-Anpassungen unverändert. Klicken zum Lösen.' : 'Fixieren: bleibt bei AI-Anpassungen unverändert.'} onClick={() => onLock(row.id, !row.locked)}>
+        <Icon name={row.locked ? 'lock' : 'unlock'} size={15} /></button> : row.locked && <span className="coach-badge">Fixiert</span>}
+    </div>)}</div>}
+    {rows.some(row => row.lockable) && <p className="coach-muted">Mit dem Schloss fixierst du eine Einheit. Der Coach lässt sie bei Anpassungen unverändert.</p>}
+  </>;
+}
+
+// Close the week → review (athlete-reported missed sessions) → check-in → plan the next week.
+function WeekRhythm({ review, next, reviewPlan, nextBlockWeek, feedback, busy, canPlan, checkInForm, wishField, onLoad, onPlan }) {
+  const [step, setStep] = useState(0);
+  const [missed, setMissed] = useState([]);
+  useEffect(() => { onLoad(review); }, [review]);
+  const today = localDate();
+  const sessions = (reviewPlan?.sessions || []).filter(session => (session.rendered?.date || '') <= today);
+  return <section className="coach-card coach-next" aria-label="Woche abschließen">
+    <span className="coach-eyebrow">Wochenrhythmus · {review} → {next}</span><h2>Woche abschließen</h2>
+    <ol className="coach-wizard-steps">{['Rückblick', 'Check-in', 'Nächste Woche'].map((label, i) => <li key={label} className={i === step ? 'current' : i < step ? 'done' : ''} aria-current={i === step ? 'step' : undefined}><span>{i + 1}</span>{label}</li>)}</ol>
+    {step === 0 && <>
+      <div className="coach-feedback"><div><small>Geplant</small><strong>{hours(feedback?.planned?.hours)}</strong></div><div><small>Absolviert{feedback?.partial ? ' (bis heute)' : ''}</small><strong>{hours(feedback?.completed?.hours)}</strong></div><div><small>Ausgelassen (deine Angabe)</small><strong>{missed.length} {missed.length === 1 ? 'Einheit' : 'Einheiten'}</strong></div></div>
+      {sessions.length > 0 ? <fieldset className="coach-missed" disabled={busy}><legend>Welche Einheiten hast du ausgelassen?</legend>{sessions.map(session => <label className="coach-checkbox" key={session.id}>
+        <input type="checkbox" checked={missed.includes(session.id)} onChange={e => setMissed(list => e.target.checked ? [...list, session.id] : list.filter(id => id !== session.id))} />
+        {DAYS.find(([d]) => d === session.day)?.[1]} · {sessionName(session)}</label>)}</fieldset> : <p className="coach-muted">In dieser Woche liegen noch keine geplanten Einheiten hinter dir.</p>}
+      <p className="coach-muted">TrainHub ordnet Aktivitäten nicht automatisch zu. Deine Angabe fließt in die Planung der nächsten Woche ein.</p>
+      <div className="coach-actions"><button type="button" className="coach-primary" onClick={() => setStep(1)}>Weiter zum Check-in</button></div>
+    </>}
+    {step === 1 && <>{checkInForm}<div className="coach-actions"><button type="button" className="coach-primary" onClick={() => setStep(2)}>Weiter</button><button type="button" onClick={() => setStep(0)}>Zurück</button></div></>}
+    {step === 2 && <>
+      <p className="coach-week-focus"><strong>{next}</strong>{nextBlockWeek && <> · {PHASES[nextBlockWeek.phase] || nextBlockWeek.phase} · Ziel {hours(nextBlockWeek.targetHours)}{nextBlockWeek.focus ? ` · ${nextBlockWeek.focus}` : ''}</>}</p>
+      {wishField}
+      <div className="coach-actions"><button type="button" className="coach-primary" disabled={!canPlan} onClick={() => onPlan(missed)}>Nächste Woche planen</button><button type="button" onClick={() => setStep(1)}>Zurück</button></div>
+    </>}
+  </section>;
 }
 
 function Hinweise({ items }) {
@@ -279,6 +352,8 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
   const [checkIn, setCheckIn] = useState({ date: localDate(), fatigue: 3, motivation: 3, stress: 3, sleepQuality: 3, soreness: 3, notes: '' });
   const [catalog, setCatalog] = useState(null);
   const [firstWeek, setFirstWeek] = useState(null);
+  const [timeline, setTimeline] = useState(null);
+  const [rhythmFeedback, setRhythmFeedback] = useState(null);
   const [instruction, setInstruction] = useState('');
   const [feedbackWeek, setFeedbackWeek] = useState('');
   const [feedback, setFeedback] = useState(null);
@@ -355,12 +430,13 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
       await refreshSnapshot(); setNotice('Dein Athletenprofil wurde gespeichert.');
     });
   }
-  async function propose(kind, blockRequest) {
+  async function propose(kind, extra = {}) {
     if (anyDirty) { setError('Speichere zuerst deine offenen Änderungen.'); return; }
     const version = contextVersion.current;
     await run('Der Coach erstellt einen Vorschlag …', async () => {
       setProposal(null); setFirstWeek(null);
-      const body = kind === 'block' ? blockRequest : { kind, week, instruction, ...(kind === 'patch' && feedbackWeek ? { feedbackWeek } : {}) };
+      const context = extra.feedbackWeek ? { feedbackWeek: extra.feedbackWeek, missedSessions: extra.missedSessions } : kind === 'patch' && feedbackWeek ? { feedbackWeek } : {};
+      const body = kind === 'block' ? extra : { kind, week: extra.week || week, instruction, ...context };
       const next = await request(`/api/coach/proposals?${tzQuery()}`, 'POST', body);
       if (contextVersion.current === version) setProposal(next);
     });
@@ -389,6 +465,36 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
       } catch (e) { setProposal(null); throw e; }
     });
   }
+  useEffect(() => {
+    if (stage !== 'active' || !block?.id) { setTimeline(null); return undefined; }
+    let cancelled = false;
+    request(`/api/coach/blocks/${encodeURIComponent(block.id)}/timeline?${tzQuery()}`)
+      .then(result => { if (!cancelled) setTimeline(result); }).catch(() => { if (!cancelled) setTimeline(null); });
+    return () => { cancelled = true; };
+    // Plan revisions and calendar changes refresh planned and completed hours.
+  }, [stage, block?.id, plan?.revision, workouts]);
+  useEffect(() => {
+    if (proposal && proposal.kind !== 'block') document.querySelector('.coach-proposal')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }, [proposal]);
+  const workoutsById = useMemo(() => Object.fromEntries(workouts.map(workout => [workout.id, workout])), [workouts]);
+  const ownWorkouts = weekWorkouts.filter(workout => !(currentWeek?.sessions || []).some(session => session.id === workout.id));
+  const thisWeek = isoWeek(today);
+  const inBlock = key => !!range && weekStart(key) >= range.start && weekStart(key) <= range.end;
+  // Close the week when the next block week is still empty: from Friday on, or right away if last week was left open.
+  let rhythm = null;
+  if (stage === 'active' && !firstWeek) {
+    const lastWeek = isoWeek(addDays(today, -7)), nextWeek = isoWeek(addDays(today, 7));
+    if (inBlock(thisWeek) && !plan.weeks?.[thisWeek] && plan.weeks?.[lastWeek]) rhythm = { review: lastWeek, next: thisWeek };
+    else if ((new Date(`${today}T12:00:00`).getDay() + 6) % 7 >= 4 && plan.weeks?.[thisWeek] && inBlock(nextWeek) && !plan.weeks?.[nextWeek]) rhythm = { review: thisWeek, next: nextWeek };
+  }
+  async function toggleLock(identity, locked) {
+    await run('Einheit wird aktualisiert …', async () => {
+      invalidate(); await request(`/api/workouts/${identity}/lock`, 'PUT', { locked });
+      setPlan(await request('/api/coach/plan')); await onWorkoutsChanged?.(); setNotice(locked ? 'Einheit fixiert.' : 'Fixierung aufgehoben.');
+    });
+  }
+  const checkInForm = <form onSubmit={event => { event.preventDefault(); run('Check-in wird gespeichert …', async () => { await request('/api/coach/check-ins', 'POST', checkIn); setDirty(d => ({ ...d, checkIn: false })); invalidate(); await refreshSnapshot(); setNotice('Check-in gespeichert.'); }); }}><fieldset disabled={!!busy}><p className="coach-muted">1 = sehr niedrig / schlecht, 5 = sehr hoch / gut. Deine persönliche Einschätzung.</p><Field label="Check-in Datum"><input type="date" required value={checkIn.date} onChange={e => { invalidate('checkIn'); setCheckIn(c => ({ ...c, date: e.target.value })); }} /></Field>{[['fatigue', 'Müdigkeit'], ['motivation', 'Motivation'], ['stress', 'Stress'], ['sleepQuality', 'Schlafqualität'], ['soreness', 'Muskelkater']].map(([key, label]) => <label className="coach-rating" key={key}><span>{label}</span><input aria-label={label} type="range" min="1" max="5" value={checkIn[key]} onChange={e => { invalidate('checkIn'); setCheckIn(c => ({ ...c, [key]: Number(e.target.value) })); }} /><output>{checkIn[key]}/5</output></label>)}<Field label="Check-in Notiz"><textarea maxLength={2000} value={checkIn.notes} onChange={e => { invalidate('checkIn'); setCheckIn(c => ({ ...c, notes: e.target.value })); }} /></Field><button type="submit">Check-in speichern</button></fieldset></form>;
+  const wishField = <Field label="Wunsch für die Planung"><textarea maxLength={2000} value={instruction} placeholder="z. B. Donnerstag und Freitag frei halten, die lange Ausfahrt am Samstag beibehalten." onChange={e => { invalidate(); setInstruction(e.target.value); }} /></Field>;
   const wizard = <BlockWizard catalog={catalog} profile={profile} busy={!!busy} canPlan={canPlan} proposal={proposal?.kind === 'block' ? proposal : null}
     onEdit={() => invalidate()} onPropose={body => propose('block', body)} onConfirm={confirmProposal} onDiscard={discardProposal} />;
 
@@ -452,18 +558,23 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
         <p className="coach-muted">{dateLabel(weekStart(firstWeek))} – {dateLabel(weekEnd(firstWeek))} · {firstWeek}. Du kannst die Woche auch später planen.</p>
         <div className="coach-actions"><button className="coach-primary" disabled={!canPlan} onClick={() => propose('week')}>Erste Woche planen</button><button onClick={() => setFirstWeek(null)}>Später</button></div>
       </section>}
+      {rhythm && <WeekRhythm key={rhythm.review} review={rhythm.review} next={rhythm.next} reviewPlan={plan.weeks?.[rhythm.review]} nextBlockWeek={block.weeks?.[blockWeek(range, weekStart(rhythm.next)) - 1]}
+        feedback={rhythmFeedback?.week === rhythm.review ? rhythmFeedback : null} busy={!!busy} canPlan={canPlan} checkInForm={checkInForm} wishField={wishField}
+        onLoad={key => request(`/api/coach/feedback?week=${encodeURIComponent(key)}&${tzQuery()}`).then(setRhythmFeedback).catch(e => setError(e.message))}
+        onPlan={missedSessions => { setWeek(rhythm.next); setFeedback(null); propose('week', { week: rhythm.next, feedbackWeek: rhythm.review, missedSessions }); }} />}
       {stage === 'active' && <><section className="coach-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">Aktueller Trainingsblock</span><h2>{today < range.start ? `Startet am ${dateLabel(range.start)}` : `Woche ${blockWeek(range, today)} von ${range.weeks}`}</h2></div><span className="coach-badge recommendation">AI-Empfehlung</span></div>
-        <BlockOverview value={block} />
+        <BlockOverview value={block} chart={timeline && <BlockTimeline timeline={timeline} selected={week} onSelect={key => { if (dirty.weekly) setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); else if (key !== week) { invalidate(); setFeedback(null); setWeek(key); } }} />} />
         {!blockHasWeeks && <details className="coach-details" open={proposal?.kind === 'block' || undefined}><summary>Block neu planen</summary><p className="coach-muted">Solange noch keine Woche geplant ist, kannst du den Block ersetzen.</p>{wizard}</details>}
       </section>
       <section className="coach-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">{weekStart(week) >= range.start && weekStart(week) <= range.end ? `Woche ${blockWeek(range, weekStart(week))} von ${range.weeks}` : 'Außerhalb des Blocks'}</span><h2>Deine Trainingswoche</h2></div><Field label="Kalenderwoche"><input aria-label="Planungswoche" type="week" min={isoWeek(range.start)} max={isoWeek(range.end)} value={week} disabled={!!busy} onChange={e => { if (e.target.value && !dirty.weekly) { invalidate(); setFeedback(null); setWeek(e.target.value); } else if (dirty.weekly) setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); }} /></Field></div>
-        <p className="coach-muted">{dateLabel(weekStart(week))} – {dateLabel(weekEnd(week))} · {week}</p><SessionList value={currentWeek} />
+        <p className="coach-muted">{dateLabel(weekStart(week))} – {dateLabel(weekEnd(week))} · {week}</p>
+        <WeekSessions value={currentWeek} own={ownWorkouts} workoutsById={workoutsById} busy={!!busy} onLock={toggleLock} onOpen={onOpenWorkout} />
         <details className="coach-details"><summary>Verfügbarkeit für diese Woche {dirty.weekly ? '· ungespeichert' : ''}</summary><p className="coach-muted">Nur für {week}. Deine normale Wochenverfügbarkeit bleibt bestehen.</p><form onSubmit={event => { event.preventDefault(); run('Wochenverfügbarkeit wird gespeichert …', async () => {
           const body = { overrides: Object.fromEntries(Object.entries(weekly.overrides).map(([day, values]) => [day, Object.fromEntries(Object.entries(values).filter(([, v]) => v !== undefined && v !== '' && v !== null))])), note: weekly.note };
           await request(`/api/coach/weekly-overrides/${week}`, 'PUT', body); setDirty(d => ({ ...d, weekly: false })); invalidate();
           setProfile(p => ({ ...p, weeklyOverrides: [...(p.weeklyOverrides || []).filter(w => w.week !== week), { week, ...body }] })); await refreshSnapshot(); setNotice('Wochenverfügbarkeit gespeichert. Du kannst jetzt eine Anpassung vorschlagen lassen.');
         }); }}><fieldset disabled={!!busy}><div className="coach-week-availability">{DAYS.map(([day, label]) => { const values = weekly.overrides[day] || {}; return <div className="coach-availability-day" key={day}><strong>{label}</strong><small>Standard: {profile.availability.defaultAvailability[day] == null ? 'offen' : `${profile.availability.defaultAvailability[day]} min`}</small><select aria-label={`${label} Verfügbarkeit diese Woche`} value={values.available === false ? 'no' : values.available === true ? 'yes' : 'default'} onChange={e => editWeekly(day, { available: e.target.value === 'default' ? undefined : e.target.value === 'yes' })}><option value="default">Standard</option><option value="yes">Verfügbar</option><option value="no">Keine Zeit</option></select><input aria-label={`${label} Minuten diese Woche`} type="number" min="0" max="1440" step="5" placeholder="Minuten" disabled={values.available === false} value={values.maxMinutes ?? ''} onChange={e => editWeekly(day, { maxMinutes: number(e.target.value) })} /><label className="coach-checkbox"><input type="checkbox" checked={!!values.preferLong} disabled={values.available === false} onChange={e => editWeekly(day, { preferLong: e.target.checked })} />Lang bevorzugt</label></div>; })}</div><Field label="Notiz zur Woche"><textarea maxLength={2000} value={weekly.note} onChange={e => { invalidate('weekly'); setWeekly(w => ({ ...w, note: e.target.value })); }} /></Field><button type="submit">Wochenverfügbarkeit speichern</button></fieldset></form></details>
-        <fieldset disabled={!!busy}><Field label="Wunsch für die Planung"><textarea maxLength={2000} value={instruction} placeholder="z. B. Donnerstag und Freitag frei halten, die lange Ausfahrt am Samstag beibehalten." onChange={e => { invalidate(); setInstruction(e.target.value); }} /></Field>
+        <fieldset disabled={!!busy}>{!rhythm && wishField}
           <div className="coach-actions"><button className="coach-primary" disabled={!canPlan || !!currentWeek} onClick={() => propose('week')}>Woche planen</button><button disabled={!canPlan || !currentWeek} onClick={() => propose('patch')}>Woche anpassen</button></div>
         </fieldset>
         <details className="coach-details"><summary>Absolviertes Training berücksichtigen</summary><p className="coach-muted">Wähle eine abgeschlossene Woche als Grundlage für die nächste Anpassung.</p><fieldset disabled={!!busy}><div className="coach-inline-form"><Field label="Feedback-Woche"><input type="week" value={feedbackWeek} onChange={e => { invalidate(); setFeedback(null); setFeedbackWeek(e.target.value); }} /></Field><button disabled={!feedbackWeek} onClick={() => run('Wochenfeedback wird geladen …', async () => { setFeedback(await request(`/api/coach/feedback?week=${encodeURIComponent(feedbackWeek)}&${tzQuery()}`)); })}>Training vergleichen</button></div></fieldset>{feedback && <div className="coach-feedback"><div><small>Geplant</small><strong>{hours(feedback.planned?.hours ?? feedback.planned?.trainingHours)}</strong></div><div><small>Absolviert</small><strong>{hours(feedback.completed?.hours ?? feedback.completed?.trainingHours)}</strong></div><div><small>Nicht zugeordnet / ausgefallen</small><strong>{feedback.missedSessions?.length ?? '—'} Einheiten</strong></div></div>}{feedbackWeek && <p className="coach-muted">Eine Anpassung berücksichtigt {feedbackWeek}. Die Zuordnung von Aktivitäten zu Einheiten kann unvollständig sein.</p>}</details>
@@ -471,10 +582,10 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
 
       {proposal && proposal.kind !== 'block' && <Proposal key={proposal.id} value={proposal} busy={!!busy} onConfirm={confirmProposal} onDiscard={discardProposal} />}
 
-      {stage === 'active' && <div className="coach-secondary-grid"><section className="coach-card"><span className="coach-eyebrow">Dein Kalender / Feste Zusagen</span><h2>Einheiten fixieren</h2><p className="coach-muted">Fixierte Einheiten werden bei einer AI-Anpassung unverändert übernommen.</p>{weekWorkouts.length ? <div className="coach-lock-list">{weekWorkouts.map(workout => <div key={workout.id}><button className="coach-workout-link" disabled={!onOpenWorkout || !!busy} onClick={() => onOpenWorkout?.(workout)}><strong>{workout.name}</strong><small>{dateLabel(workout.date)} · {workout.steps ? workoutSummary(workout) : ''}</small></button><button disabled={!!busy} aria-pressed={!!workout.locked} onClick={() => run('Einheit wird aktualisiert …', async () => { invalidate(); await request(`/api/workouts/${workout.id}/lock`, 'PUT', { locked: !workout.locked }); setPlan(await request('/api/coach/plan')); await onWorkoutsChanged?.(); setNotice(workout.locked ? 'Fixierung aufgehoben.' : 'Einheit fixiert.'); })}>{workout.locked ? 'Fixiert · lösen' : 'Fixieren'}</button></div>)}</div> : <p className="coach-empty">In dieser Woche gibt es noch keine Kalendereinheiten. Du kannst auch eigene Workouts im Kalender anlegen und hier fixieren.</p>}</section>
+      {stage === 'active' && plan.weeks?.[thisWeek] && <div>
         <section className="coach-card"><span className="coach-eyebrow">Selbstauskunft / Tagesform</span><h2>Heute zählt auch</h2>
           <details className="coach-details"><summary>Kurzfristige Änderung {dirty.daily ? '· ungespeichert' : ''}</summary><form onSubmit={event => { event.preventDefault(); run('Tagesänderung wird gespeichert …', async () => { await request(`/api/coach/daily-overrides/${daily.date}`, 'PUT', { action: daily.action, ...(daily.action === 'skip' ? { available: false } : { available: true }), ...(daily.maxMinutes === '' ? {} : { maxMinutes: Number(daily.maxMinutes) }), note: daily.note }); setDirty(d => ({ ...d, daily: false })); invalidate(); await refreshSnapshot(); setNotice('Tagesänderung gespeichert. Lass den Plan bei Bedarf anpassen.'); }); }}><fieldset disabled={!!busy}><div className="coach-form-grid"><Field label="Tag"><input type="date" required value={daily.date} onChange={e => { invalidate('daily'); setDaily(d => ({ ...d, date: e.target.value })); }} /></Field><Field label="Änderung"><select value={daily.action} onChange={e => { invalidate('daily'); setDaily(d => ({ ...d, action: e.target.value })); }}><option value="normal">Normal / Zeit ändern</option><option value="reduce">Einheit reduzieren</option><option value="skip">Einheit auslassen</option></select></Field><Field label="Heute maximal (Minuten)"><input type="number" min="0" max="1440" step="5" value={daily.maxMinutes} onChange={e => { invalidate('daily'); setDaily(d => ({ ...d, maxMinutes: e.target.value })); }} /></Field></div><Field label="Notiz zur Tagesänderung"><textarea maxLength={2000} value={daily.note} onChange={e => { invalidate('daily'); setDaily(d => ({ ...d, note: e.target.value })); }} /></Field><button type="submit">Tagesänderung speichern</button></fieldset></form></details>
-          <details className="coach-details"><summary>Check-in {dirty.checkIn ? '· ungespeichert' : ''}</summary><p className="coach-muted">1 = sehr niedrig / schlecht, 5 = sehr hoch / gut. Deine persönliche Einschätzung.</p><form onSubmit={event => { event.preventDefault(); run('Check-in wird gespeichert …', async () => { await request('/api/coach/check-ins', 'POST', checkIn); setDirty(d => ({ ...d, checkIn: false })); invalidate(); await refreshSnapshot(); setNotice('Check-in gespeichert.'); }); }}><fieldset disabled={!!busy}><Field label="Check-in Datum"><input type="date" required value={checkIn.date} onChange={e => { invalidate('checkIn'); setCheckIn(c => ({ ...c, date: e.target.value })); }} /></Field>{[['fatigue', 'Müdigkeit'], ['motivation', 'Motivation'], ['stress', 'Stress'], ['sleepQuality', 'Schlafqualität'], ['soreness', 'Muskelkater']].map(([key, label]) => <label className="coach-rating" key={key}><span>{label}</span><input aria-label={label} type="range" min="1" max="5" value={checkIn[key]} onChange={e => { invalidate('checkIn'); setCheckIn(c => ({ ...c, [key]: Number(e.target.value) })); }} /><output>{checkIn[key]}/5</output></label>)}<Field label="Check-in Notiz"><textarea maxLength={2000} value={checkIn.notes} onChange={e => { invalidate('checkIn'); setCheckIn(c => ({ ...c, notes: e.target.value })); }} /></Field><button type="submit">Check-in speichern</button></fieldset></form></details>
+          <details className="coach-details"><summary>Check-in {dirty.checkIn ? '· ungespeichert' : ''}</summary>{checkInForm}</details>
         </section></div>}
     </>}
     {!loading && snapshot && <details className="coach-card coach-context"><summary>Datenbasis & Herkunft</summary><div className="coach-provenance"><span className="coach-badge">Berechnet · Trainingsdaten</span><span className="coach-badge athlete">Athlet · Selbstauskunft</span><span className="coach-badge recommendation">AI · Empfehlung</span></div><p className="coach-muted">Fehlende Messwerte bleiben offen. Der Snapshot enthält verdichtete Daten ohne Sensorstreams.</p><div className="coach-quality"><span>FTP: <strong>{snapshot.dataQuality?.ftpConfigured ? 'konfiguriert' : 'nicht konfiguriert'}</strong></span><span>Maximale Herzfrequenz: <strong>{snapshot.dataQuality?.maxHrConfigured ? 'konfiguriert' : 'nicht konfiguriert'}</strong></span><span>Leistungsdaten (42 Tage): <strong>{snapshot.dataQuality?.cyclingPowerCoverageLast42Days == null ? '—' : `${fmt(snapshot.dataQuality.cyclingPowerCoverageLast42Days * 100)} %`}</strong></span></div><details className="coach-details"><summary>Kompakten Athlete Snapshot ansehen</summary><pre>{JSON.stringify(snapshot, null, 2)}</pre></details></details>}

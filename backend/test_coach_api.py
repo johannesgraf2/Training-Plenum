@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import Mock, patch
 
 from cryptography.fernet import Fernet
@@ -250,6 +250,32 @@ class CoachAPITests(unittest.TestCase):
         self.confirm(patch)
         outside = iso_week(self.start + timedelta(weeks=5))
         self.propose({'kind': 'week', 'week': outside}, {'week': outside, 'targetHours': 1, 'focus': 'x', 'hinweise': [], 'sessions': []}, expected=400)
+
+    def test_block_timeline_compares_target_planned_and_completed_hours(self):
+        monday = date.today() - timedelta(days=date.today().weekday())
+        with patch('coach_api.datetime') as clock:
+            clock.now.return_value = datetime.combine(monday - timedelta(days=7), datetime.min.time())
+            clock.utcnow.side_effect = datetime.utcnow
+            self.block(start=monday)
+        week = iso_week(monday)
+        with patch('coach_api.datetime') as clock:
+            clock.now.return_value = datetime.combine(monday - timedelta(days=7), datetime.min.time())
+            clock.utcnow.side_effect = datetime.utcnow
+            proposal, _ = self.propose({'kind': 'week', 'week': week},
+                                       {'week': week, 'targetHours': 1, 'focus': 'Locker', 'hinweise': [], 'sessions': [self.session()]})
+            self.confirm(proposal)
+        self.client.post('/api/activities/manual', json={'date': monday.isoformat(), 'sport': 'ride', 'duration': 90, 'distance': 40})
+        block = self.client.get('/api/coach/plan').json['blocks'][0]
+        result = self.client.get(f"/api/coach/blocks/{block['id']}/timeline?timezone=Europe/Berlin").json
+        first, second = result['weeks']
+        self.assertEqual((first['week'], first['state'], first['targetHours'], first['plannedHours'], first['completedHours']),
+                         (week, 'current', 5, 1, 1.5))
+        self.assertEqual((second['state'], second['planned'], second['completedHours']), ('future', False, None))
+        self.assertEqual(self.client.get('/api/coach/blocks/unknown/timeline').status_code, 404)
+        partial = self.client.get(f'/api/coach/feedback?week={week}').json
+        self.assertTrue(partial['partial'])
+        self.assertEqual((partial['planned']['hours'], partial['completed']['hours']), (1, 1.5))
+        self.assertEqual(self.client.get(f'/api/coach/feedback?week={iso_week(monday + timedelta(weeks=1))}').status_code, 400)
 
     def test_block_types_catalog_is_public_to_the_coach(self):
         result = self.client.get('/api/coach/block-types').json

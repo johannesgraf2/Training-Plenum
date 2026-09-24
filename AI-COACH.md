@@ -30,8 +30,14 @@ Der Tab **Trainingsplan** zeigt immer genau einen nächsten Schritt:
 | --- | --- |
 | Einrichtung unvollständig, kein Block | Checkliste ① Athletenprofil · ② AI Provider · ③ Ersten Block planen. Fehlende Profilangaben werden genannt, die Schaltflächen springen in den passenden Tab. |
 | Kein Block | Karte **Neuen Trainingsblock starten** mit dem Block-Wizard (siehe unten). |
-| Block aktiv oder bevorstehend | Blockübersicht mit „Woche X von N“ bzw. „Startet am …“, darunter die Trainingswoche. Die Wochenauswahl ist auf den Block begrenzt; ein bevorstehender Block öffnet mit seiner ersten Woche. Solange keine Woche geplant ist, lässt sich der Block unter **Block neu planen** ersetzen. |
+| Block aktiv oder bevorstehend | Block-Zeitstrahl mit „Woche X von N“ bzw. „Startet am …“, darunter die Trainingswoche. Die Wochenauswahl ist auf den Block begrenzt; ein bevorstehender Block öffnet mit seiner ersten Woche. Solange keine Woche geplant ist, lässt sich der Block unter **Block neu planen** ersetzen. |
 | Block beendet | Übersicht des abgeschlossenen Blocks und der Wizard für den nächsten Block; die letzten Blöcke gehen als Kontext an die KI. |
+
+**Block-Zeitstrahl:** Pro Blockwoche zeigt ein Umriss den geplanten Umfang (gestrichelt: nur Blockziel, Woche noch nicht geplant) und ein gefüllter Balken die aus Trainingsdaten berechneten absolvierten Stunden, für die laufende Woche bis heute. Darüber stehen „absolviert / geplant“ in Stunden, die aktuelle Woche ist mit „Jetzt“ markiert. Ein Klick wählt die Woche zum Planen aus; **Als Tabelle anzeigen** zeigt dieselben Werte mit Fokus.
+
+**Diese Woche:** Coach-Einheiten und eigene Kalender-Workouts der Woche erscheinen gemeinsam. Rad- und Laufeinheiten werden per Schloss direkt an der Einheit fixiert oder gelöst; Krafttraining und Ruhetage haben kein Kalender-Workout und damit kein Schloss. Kurzfristige Änderung und Check-in erscheinen erst, wenn die laufende Kalenderwoche geplant ist.
+
+**Wochenrhythmus:** Ist die nächste Blockwoche noch leer, erscheint oben **Woche abschließen** mit drei Schritten: Rückblick (geplante gegen bisher absolvierte Stunden und ausgelassene Einheiten ankreuzen), Check-in (optional) und **Nächste Woche planen**. Die Planung erhält den Rückblick als `feedbackWeek` und die angekreuzten Einheiten als `missedSessions`. Die Karte erscheint ab Freitag, wenn die laufende Woche geplant ist, oder sofort, wenn die vergangene Woche geplant, die laufende aber noch leer ist.
 
 Der Block-Wizard führt in vier Schritten zum Block:
 
@@ -178,7 +184,8 @@ Alle schreibenden JSON-Anfragen verwenden `Content-Type: application/json`. Die 
 | POST | `/api/coach/proposals/<id>/confirm` | `{"confirm":true}`, bei Blockvorschlägen zusätzlich `"optionId"`; geprüften Vorschlag übernehmen. |
 | POST | `/api/coach/proposals/<id>/discard` | `{}`; Vorschlag verwerfen. |
 | PUT | `/api/workouts/<id>/lock` | `{"locked":true}` bzw. `false`; Workout fixieren/lösen. |
-| GET | `/api/coach/feedback?week=2026-W39` | Geplante und tatsächlich aufgezeichnete Stunden/TSS einer abgeschlossenen Kalenderwoche, dazu passende Check-ins. |
+| GET | `/api/coach/blocks/<id>/timeline` | Pro Blockwoche ISO-Woche, Phase, Fokus, `targetHours`, `plannedHours` (sofern geplant), `completedHours` (berechnet, laufende Woche bis heute) und `state` (`past`, `current`, `future`). |
+| GET | `/api/coach/feedback?week=2026-W39` | Geplante und tatsächlich aufgezeichnete Stunden/TSS einer begonnenen Kalenderwoche, dazu passende Check-ins. Für die laufende Woche gilt `partial: true` und der Stand bis heute. |
 
 Beispiele für Vorschlagsanfragen; die Datumswerte müssen zum tatsächlichen Planungszeitpunkt passen:
 
@@ -198,7 +205,7 @@ Beispiele für Vorschlagsanfragen; die Datumswerte müssen zum tatsächlichen Pl
 {"kind":"patch","week":"2026-W41","feedbackWeek":"2026-W40","missedSessions":[],"instruction":"Donnerstag ist jetzt nicht verfügbar; gespeicherte Overrides beachten."}
 ```
 
-`feedbackWeek` muss abgeschlossen sein. TrainHub ordnet absolvierte Aktivitäten nicht automatisch geplanten Einheiten zu. Daher ist `missedSessions` im berechneten Rückblick zunächst unbekannt; bei einer Vorschlagsanfrage können ausdrücklich athletenseitig gemeldete IDs der Rückblickwoche mitgesendet werden. Ein leeres Array ist die Aussage „keine ausgelassenen Einheiten gemeldet“, keine automatische Erkennung.
+`feedbackWeek` muss begonnen haben; eine laufende Woche geht mit dem Stand bis heute ein. TrainHub ordnet absolvierte Aktivitäten nicht automatisch geplanten Einheiten zu. Daher ist `missedSessions` im berechneten Rückblick zunächst unbekannt; bei einer Vorschlagsanfrage können ausdrücklich athletenseitig gemeldete IDs der Rückblickwoche mitgesendet werden. Ein leeres Array ist die Aussage „keine ausgelassenen Einheiten gemeldet“, keine automatische Erkennung.
 
 ## Verifikation
 

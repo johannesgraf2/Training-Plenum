@@ -352,17 +352,46 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
     def feedback(week):
         monday = week_start(week)
-        if monday + timedelta(days=6) >= datetime.now(zone()).date():
-            raise CoachError('Wochenrückblicke sind für abgeschlossene Wochen verfügbar.')
+        today = datetime.now(zone()).date()
+        if monday > today:
+            raise CoachError('Ein Wochenrückblick ist ab dem Montag der Woche möglich.')
         plan = current_plan()['weeks'].get(week)
-        completed = summarize_period(load_rows(), zone(), monday, monday + timedelta(days=6), user().ftp, user().max_hr)
+        # A running week can be closed early (Friday–Sunday); it then counts training up to today.
+        completed = summarize_period(load_rows(), zone(), monday, min(monday + timedelta(days=6), today), user().ftp, user().max_hr)
         sessions = (plan or {}).get('sessions', [])
         estimates = [s['rendered']['estimatedTss'] for s in sessions if s['rendered']['durationMin']]
-        return {'week': week, 'planned': {'source': 'aiRecommendation', 'hours': plan.get('calculatedHours') if plan else None,
+        return {'week': week, 'partial': monday + timedelta(days=6) >= today, 'planned': {'source': 'aiRecommendation', 'hours': plan.get('calculatedHours') if plan else None,
                                         'tss': round(sum(estimates), 1) if estimates and all(t is not None for t in estimates) else None},
                 'completed': {'source': 'calculated', 'hours': completed['trainingHours'], 'tss': completed['cyclingTss']},
                 'missedSessions': None, 'matchingReason': 'No automatic workout-to-activity matching; missed sessions must be athlete-reported.',
                 'changes': {'source': 'athlete', 'ftp': user().ftp, 'checkIns': [c for c in profile()['checkIns'] if monday.isoformat() <= c['date'] <= (monday + timedelta(days=6)).isoformat()]}}
+
+    @app.route('/api/coach/blocks/<identity>/timeline')
+    def block_timeline(identity):
+        plan = current_plan()
+        block = next((b for b in plan['blocks'] if b['id'] == identity), None)
+        if block is None:
+            return jsonify(error='Trainingsblock nicht gefunden.'), 404
+        today = datetime.now(zone()).date()
+        rows, ftp, max_hr = load_rows(), user().ftp, user().max_hr
+        start, end = day_date(block['startDate']), day_date(block['endDate'])
+        weeks = []
+        for item in block['weeks']:
+            monday = start + timedelta(weeks=item['week'] - 1)
+            if monday > end:
+                break  # A replaced block ends early.
+            sunday = monday + timedelta(days=6)
+            state = 'future' if monday > today else 'current' if today <= sunday else 'past'
+            planned = plan['weeks'].get(iso_week(monday))
+            completed = None if state == 'future' else \
+                summarize_period(rows, zone(), monday, min(sunday, today), ftp, max_hr)['trainingHours']
+            weeks.append({'number': item['week'], 'week': iso_week(monday), 'startDate': monday.isoformat(),
+                          'phase': item['phase'], 'focus': item['focus'], 'targetHours': item['targetHours'],
+                          'planned': planned is not None, 'plannedHours': planned.get('calculatedHours') if planned else None,
+                          'completedHours': completed, 'state': state})
+        db.session.commit()  # Activity summaries may have been cached.
+        return jsonify({'blockId': identity, 'weeks': weeks,
+                        'sources': {'targetHours': 'aiRecommendation', 'plannedHours': 'aiRecommendation', 'completedHours': 'calculated'}})
 
     @app.route('/api/coach/feedback')
     def get_feedback():
