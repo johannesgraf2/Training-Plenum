@@ -69,6 +69,15 @@
 .calendar-summary dl > div { display: flex; justify-content: space-between; gap: 8px; }
 .calendar-summary dt { color: var(--muted); }
 .calendar-summary dd { margin: 0; font-weight: 600; }
+.calendar-summary-planned { display: flex; flex-direction: column; gap: 3px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.calendar-summary-planned-total { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.calendar-summary-planned-total span { color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
+.calendar-summary-planned-total strong { font-family: var(--font-display); font-size: 20px; font-weight: 500; color: var(--ink); }
+.calendar-summary-planned-meta { color: var(--muted); }
+.calendar-summary-planned-sport { display: flex; justify-content: space-between; gap: 8px; }
+.calendar-summary-planned-sport .sport-mark { font-size: 12px; }
+.calendar-summary-progress { height: 4px; margin-top: 4px; background: var(--track); }
+.calendar-summary-progress i { display: block; height: 100%; background: var(--accent-text); }
 .calendar-summary-empty { margin: 0; color: var(--muted-2); font-style: italic; }
 
 @media (max-width: 900px) {

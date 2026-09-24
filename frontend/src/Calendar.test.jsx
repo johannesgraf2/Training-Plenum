@@ -137,3 +137,17 @@ test('a fixed (locked) plan is not draggable', async () => {
   expect(plan.getAttribute('draggable')).toBe('false');
   expect(plan.title).toContain('Fixiert');
 });
+
+test('the week column shows the planned weekly hours per week', async () => {
+  saved = [
+    { ...newWorkout('2026-01-30'), id: 'fri', name: 'Kurz' },
+    { ...newWorkout('2026-01-31'), id: 'sat', name: 'Lang', steps: [{ ...newWorkout().steps[0], duration: { type: 'time', value: 5400 } }] },
+    { ...newWorkout('2026-01-31'), id: 'run', name: 'Lauf', sport: 'run', steps: [{ ...newWorkout().steps[0], duration: { type: 'distance', value: 8000 } }] },
+  ];
+  await renderCalendar();
+  const summary = day('2026-01-31').closest('.calendar-week').querySelector('.calendar-summary-planned');
+  expect(summary.textContent).toContain('Geplant2:00 h');
+  expect(summary.textContent).toContain('3 Einheiten · + 8 km');
+  expect(summary.textContent).toContain('Radfahren2:00 h');
+  expect(day('2026-01-20').closest('.calendar-week').querySelector('.calendar-summary-planned')).toBeNull();
+});
