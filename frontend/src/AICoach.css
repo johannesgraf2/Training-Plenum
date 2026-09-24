@@ -232,9 +232,8 @@
 .coach-season-editor li > small { grid-column: 2 / -1; color: var(--fg-64748b); font-size: 12px; }
 .coach-season-move { display: flex; gap: 4px; }
 .coach-season-move button { width: 32px; padding: 6px 0; }
-.coach-season-sum { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--warning); }
+.coach-season-sum { margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--warning); }
 .coach-season-sum.ok { color: var(--success); }
-.coach-season-problems li { color: var(--warning); }
 .ai-coach .coach-season-next { width: 100%; margin-bottom: 14px; border-color: var(--accent); }
 @media (max-width: 650px) { .coach-season-editor li { grid-template-columns: 28px 1fr 76px; } .coach-season-editor li > select:nth-of-type(2), .coach-season-move { grid-column: 2 / -1; } .coach-season-segment { padding: 0 4px; } .coach-season-segment small { display: none; } }
 

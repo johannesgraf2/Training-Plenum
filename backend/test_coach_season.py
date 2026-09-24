@@ -4,7 +4,8 @@ from datetime import date
 
 from coach_blocks import new_block
 from coach_domain import DEFAULT_PROFILE, CoachError
-from coach_season import check_options, check_season, dated, new_season, public_season, season_frame, with_fixed
+from coach_season import (check_options, check_order, check_season, dated, new_season, public_season, season_frame,
+                          typical_season, with_fixed)
 
 TODAY = date(2026, 9, 23)  # Wednesday
 GOAL = '2027-01-31'  # Sunday; 18 weeks from Monday 2026-09-28
@@ -62,8 +63,8 @@ class RuleTests(unittest.TestCase):
                          self.frame, profile())
 
     def test_each_new_block_fits_its_type(self):
-        with self.assertRaisesRegex(CoachError, 'Block 3: „VO2max“ dauert 3–6 Wochen'):
-            check_season(with_fixed([segment('aufbau', 4), segment('vo2max', 8)], self.frame), self.frame, profile())
+        with self.assertRaisesRegex(CoachError, 'Block 3: „VO2max“ dauert 3–12 Wochen'):
+            check_season(with_fixed([segment('aufbau', 4), segment('vo2max', 2)], self.frame), self.frame, profile())
         with self.assertRaisesRegex(CoachError, 'Block 2: .*Krafttraining'):
             check_season(with_fixed([segment('aufbau', 8, 'kraft'), segment('wettkampfspezifisch', 4)], self.frame), self.frame, profile())
         check_season(with_fixed([segment('aufbau', 8, 'kraft'), segment('wettkampfspezifisch', 4)], self.frame), self.frame, profile(gym=True))
@@ -74,6 +75,34 @@ class RuleTests(unittest.TestCase):
         for options in ([plan('a', True)], [plan('a', True), plan('b', True)], [plan('a', True), plan('a', False)]):
             with self.assertRaises(CoachError):
                 check_options({'options': options})
+
+
+class BuildUpTests(unittest.TestCase):
+    def test_typical_season_fills_the_weeks_in_build_up_order(self):
+        outline = lambda weeks, after=None: [(s['blockType'], s['weeks']) for s in typical_season(weeks, after)]
+        self.assertEqual(outline(43), [('grundlage', 12), ('vo2max', 10), ('schwelle', 12), ('wettkampfspezifisch', 9)])
+        self.assertEqual(outline(12), [('vo2max', 3), ('schwelle', 5), ('wettkampfspezifisch', 4)])
+        self.assertEqual(outline(5), [('wettkampfspezifisch', 5)])
+        self.assertEqual(outline(60)[:2], [('grundlage', 12), ('grundlage', 12)])
+        # After a fixed VO2max block the season goes on at threshold; a long season starts over with the base.
+        self.assertEqual(outline(12, 'vo2max'), [('schwelle', 7), ('wettkampfspezifisch', 5)])
+        self.assertEqual(outline(43, 'vo2max')[0], ('grundlage', 12))
+        for after in (None, 'grundlage', 'vo2max', 'schwelle', 'wettkampfspezifisch', 'aufbau'):
+            for weeks in range(2, 105):
+                segments = typical_season(weeks, after)
+                self.assertEqual(sum(s['weeks'] for s in segments), weeks)
+                self.assertEqual(segments[-1]['blockType'], 'wettkampfspezifisch')
+                check_order(segments)
+
+    def test_ai_plans_keep_the_build_up_order(self):
+        order = lambda *types: check_order([segment(t, 4) for t in types])
+        order('wiedereinstieg', 'grundlage', 'grundlage', 'schwelle', 'vo2max', 'wettkampfspezifisch')
+        with self.assertRaisesRegex(CoachError, 'Block 2: „Aufbau“ gehört nicht'):
+            order('grundlage', 'aufbau', 'wettkampfspezifisch')
+        with self.assertRaisesRegex(CoachError, 'Block 3: „Grundlage“ nach „VO2max“'):
+            order('grundlage', 'vo2max', 'grundlage', 'wettkampfspezifisch')
+        with self.assertRaisesRegex(CoachError, 'Block 3: „VO2max“ kommt zweimal vor'):
+            order('vo2max', 'schwelle', 'vo2max', 'wettkampfspezifisch')
 
 
 class PublicSeasonTests(unittest.TestCase):

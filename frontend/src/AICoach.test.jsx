@@ -272,8 +272,17 @@ test('a saved season plan is edited within the rules and prefills the next block
   await render();
   expect(container.querySelector('.coach-season-strip').getAttribute('aria-label')).toContain('VO2max, 6 Wochen');
   await click(button('Saisonplan bearbeiten'));
+  await change(container.querySelector('[aria-label="Block 1 Typ"]'), 'vo2max');
+  expect(container.textContent).not.toContain('Höchstlängen');
   await click(container.querySelector('[aria-label="Block 2 entfernen"]'));
-  expect(container.textContent).toContain('Die Blöcke ergeben 12 Wochen, bis zur Zielwoche sind es 18.');
+  expect(container.textContent).toContain('auch mit Höchstlängen nur 12 Wochen, bitte einen Block hinzufügen');
+  await click(button('Abbrechen'));
+  await click(button('Saisonplan bearbeiten'));
+  await click(container.querySelector('[aria-label="Block 2 entfernen"]'));
+  expect(container.textContent).toContain('12 von 18 Wochen verplant · noch 6 Wochen bis zur Zielwoche');
+  expect(container.textContent).not.toContain('Höchstlängen');
+
+  expect(container.querySelector('.coach-season-editor .coach-rules')).toBeNull();
   expect(button('Saisonplan speichern').disabled).toBe(true);
   await click(button('Block hinzufügen'));
   await change(container.querySelector('[aria-label="Block 2 Typ"]'), 'vo2max');
