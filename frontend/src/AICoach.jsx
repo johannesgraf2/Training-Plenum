@@ -417,10 +417,12 @@ function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, 
   const typeOf = identity => types.find(type => type.id === identity);
   const total = items.reduce((sum, item) => sum + (Number(item.weeks) || 0), 0);
   const open = remainingWeeks - total;
+  const longest = items.reduce((sum, item) => sum + (typeOf(item.blockType)?.maxWeeks || 0), 0);
   const weeksLabel = n => `${n} ${n === 1 ? 'Woche' : 'Wochen'}`;
   // Short notes next to the week sum instead of a separate list.
   const problems = [
     ...(open > 0 ? [`noch ${weeksLabel(open)} bis zur Zielwoche`] : open < 0 ? [`${weeksLabel(-open)} zu viel`] : []),
+    ...(open > 0 && longest < remainingWeeks ? [`auch mit Höchstlängen nur ${weeksLabel(longest)}, bitte einen Block hinzufügen`] : []),
     ...items.flatMap((item, i) => {
       const type = typeOf(item.blockType), weeks = Number(item.weeks);
       return type && Number.isInteger(weeks) && weeks >= type.minWeeks && weeks <= type.maxWeeks ? [] : [`Block ${fixed.length + i + 1}: ${type?.name} dauert ${type?.minWeeks}–${type?.maxWeeks} Wochen`];
