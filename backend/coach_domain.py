@@ -135,19 +135,21 @@ def effective_availability(profile, week):
     return result
 
 
-MACRO_SCHEMA = obj({'weeks': {'type': 'array', 'minItems': 1, 'maxItems': 52, 'items': obj({
-    'week': num(1, 52, integer=True), 'phase': {'enum': ['base', 'build', 'peak', 'taper', 'recovery']},
-    'targetHours': num(0, 80), 'focus': text(160)})}})
+BLOCK_WEEKS_SCHEMA = {'type': 'array', 'minItems': 1, 'maxItems': 12, 'items': obj({
+    'week': num(1, 12, integer=True), 'phase': {'enum': ['base', 'build', 'peak', 'taper', 'recovery']},
+    'targetHours': num(0, 80), 'focus': text(160)})}
+# Concerns the AI may raise for the athlete; they never block or change a plan.
+HINWEISE_SCHEMA = {'type': 'array', 'maxItems': 5, 'items': text(300)}
 
 
 def response_schemas(session_schema):
     week = obj({'week': text(8), 'targetHours': num(0, 80), 'focus': text(160),
-                'sessions': {'type': 'array', 'maxItems': 21, 'items': session_schema}})
+                'sessions': {'type': 'array', 'maxItems': 21, 'items': session_schema}, 'hinweise': HINWEISE_SCHEMA})
     operation = obj({'op': {'enum': ['add', 'replace', 'remove']}, 'sessionId': text(80),
                      'session': {'anyOf': [session_schema, {'type': 'null'}]}})
     patch = obj({'week': text(8), 'targetHours': num(0, 80), 'focus': text(160),
-                 'operations': {'type': 'array', 'maxItems': 21, 'items': operation}})
-    return {'macro': MACRO_SCHEMA, 'week': week, 'patch': patch}
+                 'operations': {'type': 'array', 'maxItems': 21, 'items': operation}, 'hinweise': HINWEISE_SCHEMA})
+    return {'week': week, 'patch': patch}
 
 
 def apply_patch(before, patch):

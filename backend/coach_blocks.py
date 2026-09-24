@@ -9,7 +9,7 @@ import copy
 import uuid
 from datetime import timedelta
 
-from coach_domain import CoachError, day_date, iso_week
+from coach_domain import BLOCK_WEEKS_SCHEMA, HINWEISE_SCHEMA, CoachError, day_date, iso_week, obj, text
 from coach_templates import TEMPLATES
 
 DELOAD_PHASES = {'recovery', 'taper'}
@@ -79,6 +79,17 @@ SECONDARY_FOCUS = {
 }
 
 
+SITUATIONS = {'nach_pause': 'Nach einer Pause', 'mitten_im_training': 'Mitten im Training', 'saison_vorbei': 'Saison vorbei'}
+SELECTABLE = [key for key, spec in BLOCK_TYPES.items() if spec['selectable']]
+BLOCK_RESPONSE_SCHEMA = obj({
+    'options': {'type': 'array', 'minItems': 1, 'maxItems': 3, 'items': obj({
+        'id': text(40), 'blockType': {'type': 'string', 'enum': SELECTABLE},
+        'secondaryFocus': {'type': ['string', 'null'], 'enum': [*SECONDARY_FOCUS, None]},
+        'recommended': {'type': 'boolean'}, 'rationale': text(400), 'weeks': BLOCK_WEEKS_SCHEMA})},
+    'hinweise': HINWEISE_SCHEMA,
+})
+
+
 def block_type(identity):
     if identity not in BLOCK_TYPES:
         raise CoachError('Unbekannter Blocktyp.')
@@ -123,6 +134,40 @@ def suggested_rhythm(weeks, identity):
     cycles = -(-weeks // (MAX_LOAD_STREAK + 1))
     sizes = [weeks // cycles + (1 if i < weeks % cycles else 0) for i in range(cycles)]
     return [position == size - 1 for size in sizes for position in range(size)]
+
+
+def check_choice(identity, secondary, weeks, *, start, profile):
+    """An athlete's own block choice, checked before any paid provider call."""
+    if identity not in SELECTABLE:
+        raise CoachError('Bitte einen Blocktyp aus dem Katalog wählen.')
+    spec = BLOCK_TYPES[identity]
+    if not isinstance(weeks, int) or not spec['minWeeks'] <= weeks <= spec['maxWeeks']:
+        raise CoachError(f"Ein Block „{spec['name']}“ dauert {spec['minWeeks']}–{spec['maxWeeks']} Wochen.")
+    outline = [{'week': i + 1, 'phase': 'recovery' if deload else 'build', 'targetHours': 0, 'focus': ''}
+               for i, deload in enumerate(suggested_rhythm(weeks, identity))]
+    check_block(identity, secondary, outline, start=start, profile=profile)
+
+
+def check_options(decision, mode, choice=None):
+    """Shape of a block answer: 2–3 options with one recommendation, or exactly the chosen block."""
+    options = decision['options']
+    identities = [option['id'].strip() for option in options]
+    if not all(identities) or len(set(identities)) != len(identities):
+        raise CoachError('Die Optionen brauchen eindeutige IDs.')
+    if mode == 'recommend':
+        if not 2 <= len(options) <= 3:
+            raise CoachError('Die AI muss zwei bis drei Optionen vorschlagen.')
+        if sum(option['recommended'] for option in options) != 1:
+            raise CoachError('Genau eine Option muss als Empfehlung markiert sein.')
+    else:
+        if len(options) != 1:
+            raise CoachError('Für einen selbst gewählten Block wird genau eine Ausarbeitung erwartet.')
+        option = options[0]
+        if (option['blockType'], option['secondaryFocus'], len(option['weeks'])) !=                 (choice['blockType'], choice['secondaryFocus'], choice['weeks']):
+            raise CoachError('Die AI-Antwort entspricht nicht dem gewählten Blocktyp, Nebenschwerpunkt oder der Länge.')
+    for option in options:
+        if [w['week'] for w in option['weeks']] != list(range(1, len(option['weeks']) + 1)):
+            raise CoachError('Ein Trainingsblock muss alle Wochen lückenlos enthalten.')
 
 
 def check_block(identity, secondary, weeks, *, start, profile):

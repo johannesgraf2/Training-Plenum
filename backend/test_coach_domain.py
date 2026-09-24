@@ -2,7 +2,7 @@ import copy
 import unittest
 from datetime import date
 
-from coach_domain import (CHECK_IN_SCHEMA, DAILY_SCHEMA, DEFAULT_PROFILE, DAYS, MACRO_SCHEMA,
+from coach_domain import (CHECK_IN_SCHEMA, DAILY_SCHEMA, DEFAULT_PROFILE, DAYS, BLOCK_WEEKS_SCHEMA,
                           WEEK_OVERRIDE_SCHEMA, CoachError, apply_patch, day_date,
                           effective_availability, iso_week, response_schemas, update_profile,
                           validate, week_start)
@@ -166,7 +166,7 @@ class PatchTests(unittest.TestCase):
 
     def test_ai_schemas_require_exact_types_and_forbid_extra_workout_fields(self):
         schema = response_schemas(SESSION_SCHEMA)['week']
-        data = {'week': '2026-W40', 'targetHours': 1, 'focus': 'Grundlage', 'sessions': [
+        data = {'week': '2026-W40', 'targetHours': 1, 'focus': 'Grundlage', 'hinweise': [], 'sessions': [
             {'id': 'mon', 'day': 'mon', 'template': 'bike_z2', 'params': dict.fromkeys(PARAM_NAMES)}]}
         validate(data, schema)
         for bad in ({**data, 'targetHours': True}, {**data, 'sessions': None},
@@ -175,7 +175,9 @@ class PatchTests(unittest.TestCase):
             with self.assertRaises(CoachError):
                 validate(bad, schema)
         with self.assertRaises(CoachError):
-            validate({'weeks': [{'week': True, 'phase': 'base', 'targetHours': 1, 'focus': ''}]}, MACRO_SCHEMA)
+            validate([{'week': True, 'phase': 'base', 'targetHours': 1, 'focus': ''}], BLOCK_WEEKS_SCHEMA)
+        with self.assertRaises(CoachError):
+            validate({key: value for key, value in data.items() if key != 'hinweise'}, schema)
 
 
 if __name__ == '__main__':

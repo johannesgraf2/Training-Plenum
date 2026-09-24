@@ -22,14 +22,14 @@ TrainHub liefert einen verdichteten Athletenkontext und rendert geplante Einheit
 4. Nach Frontend-Änderungen in `frontend` mit `npm run build` neu bauen. Backend wie gewohnt über `app.py` starten; dessen Initialisierung ergänzt die Coach-Tabellen und das `locked`-Feld vorhandener geplanter Workouts.
 5. In **AI Coach → Athletenprofil** Ziel, normale Tagesverfügbarkeit und absolutes Wochenmaximum speichern. `preferredWeeklyHours` ist der gewünschte normale Umfang; `absoluteMaxWeeklyHours` ist eine verbindliche zeitliche Obergrenze. Ein offener Wert ist unbekannt, `0` bedeutet keine Zeit. Vor der Planung müssen alle sieben Tageswerte und das absolute Wochenmaximum ausgefüllt sein.
 6. Unter **AI Provider** den eigenen API-Key und eine Modell-ID speichern und die Verbindung testen. Aktuell ist OpenAI implementiert; das Modellfeld ist editierbar und verwendet im Code `gpt-4.1-mini` als Vorgabe. Die Vorschlagsliste ist keine live abgefragte Liste verfügbarer Modelle. Der Account muss Zugriff auf das gewählte Modell haben, und das Modell muss die verwendeten strukturierten Responses unterstützen.
-7. Einen Trainingsblock (meist 4–12 Wochen, in der Oberfläche höchstens 12) ab einem heutigen oder zukünftigen Montag vorschlagen lassen, prüfen und übernehmen. Danach einzelne ISO-Kalenderwochen innerhalb dieses Blocks mit **Woche planen** konkret planen. Sobald eine Woche existiert, wird sie über **Woche anpassen** geändert.
+7. Angeben, wo du gerade stehst, und für einen heutigen oder zukünftigen Montag zwei bis drei Trainingsblöcke vorschlagen lassen. Eine Option auswählen und übernehmen. Danach einzelne ISO-Kalenderwochen innerhalb dieses Blocks mit **Woche planen** konkret planen. Sobald eine Woche existiert, wird sie über **Woche anpassen** geändert.
 
 Der Tab **Trainingsplan** zeigt immer genau einen nächsten Schritt:
 
 | Zustand | Anzeige |
 | --- | --- |
 | Einrichtung unvollständig, kein Block | Checkliste ① Athletenprofil · ② AI Provider · ③ Ersten Block planen. Fehlende Profilangaben werden genannt, die Schaltflächen springen in den passenden Tab. |
-| Kein Block | Karte **Neuen Trainingsblock starten** mit Startmontag (Vorgabe: nächster Montag) und Wochenzahl (Vorgabe: 6). |
+| Kein Block | Karte **Neuen Trainingsblock starten** mit Startmontag (Vorgabe: nächster Montag) und der Frage „Wo stehst du gerade?“ (nach einer Pause, mitten im Training, Saison vorbei). |
 | Block aktiv oder bevorstehend | Blockübersicht mit „Woche X von N“ bzw. „Startet am …“, darunter die Trainingswoche. Die Wochenauswahl ist auf den Block begrenzt; ein bevorstehender Block öffnet mit seiner ersten Woche. Solange keine Woche geplant ist, lässt sich der Block unter **Block neu planen** ersetzen. |
 | Block beendet | Übersicht des abgeschlossenen Blocks und Einstieg in den nächsten Block. |
 
@@ -72,7 +72,18 @@ Außer beim Übergang endet jeder Block mit einer Entlastungswoche, und auf höc
 
 Der Status ist `active`, `completed` (Enddatum vorbei, berechnet) oder `abandoned`. Beginnt ein neuer Block, während ein anderer noch läuft oder bevorsteht, endet dieser am Vortag und gilt als `abandoned`; bereits geplante Wochen gehören weiter zu ihm und bleiben per **Woche anpassen** änderbar. Ein neuer Block darf keine bereits geplante Kalenderwoche überdecken.
 
-Ein früher gespeicherter Makroplan wird beim Lesen zu einem Block vom Typ `custom` („Eigener Block“, ohne Typregeln) mit der festen ID `custom-<Startdatum>` und bei der nächsten bestätigten Änderung im neuen Format gespeichert. `custom` kann für neue Blöcke nicht gewählt werden. Bis Blocktyp und Nebenschwerpunkt bei Vorschlägen gewählt werden können, entstehen neue Blöcke ebenfalls als `custom`.
+Ein früher gespeicherter Makroplan wird beim Lesen zu einem Block vom Typ `custom` („Eigener Block“, ohne Typregeln) mit der festen ID `custom-<Startdatum>` und bei der nächsten bestätigten Änderung im neuen Format gespeichert. `custom` kann für neue Blöcke nicht gewählt werden.
+
+### Zwei Wege in einen Block
+
+| Modus | Anfrage | Antwort und Prüfung |
+| --- | --- | --- |
+| `recommend` („Schlag mir was vor“) | `situation` (`nach_pause`, `mitten_im_training`, `saison_vorbei`) und `startDate` | 2–3 Optionen, genau eine mit `recommended: true`, jede mit kurzer deutscher Begründung (`rationale`). Verletzt eine Alternative die Regeln, wird sie verworfen und unter `rejectedOptions` mit Grund genannt; eine fehlerhafte Empfehlung lässt den ganzen Vorschlag scheitern. |
+| `choose` („Ich weiß, was ich will“) | `blockType`, `secondaryFocus` (oder `null`), `startDate`, `weeks` | Genau eine Option desselben Typs, Nebenschwerpunkts und derselben Länge. Die KI entscheidet nur Umfang, Verteilung, Entlastung und Fokus. Typ, Länge, Kraft-Verfügbarkeit und Zieldatum werden schon vor dem kostenpflichtigen Aufruf geprüft. |
+
+Der Blocktyp geht immer strukturiert an die KI. Ein Freitext (`instruction`) erreicht sie als `athleteWish` mit Herkunft `athlete` und präzisiert die Anfrage nur; er ist Datenmaterial, keine Anweisung. Jede Option durchläuft die Blockregeln, die Verfügbarkeit jeder Woche, das Wochenmaximum und die Platzierung neben bestehenden Blöcken.
+
+Block-, Wochen- und Patch-Antworten enthalten `hinweise[]`: kurze deutsche Bedenken der KI, zum Beispiel zu geringem Umfang in der letzten Woche. Sie werden angezeigt, blockieren aber nichts. Harte Grenzen prüft ausschließlich der Server. Beim Planen und Anpassen einer Woche gelten zusätzlich die Wochenregeln des Blocktyps aus der Tabelle oben.
 
 ## Athlete Snapshot und Datenherkunft
 
@@ -120,13 +131,13 @@ Vorhandene eigene Kalenderworkouts zählen als feste Verpflichtungen zur verfüg
 
 Ein Wochen-Patch enthält ausschließlich `add`, `replace` oder `remove` für einzelne Session-IDs sowie aktualisierte Zielstunden und Fokus. Unbekannte oder doppelte IDs, Änderungen fixierter oder vergangener Einheiten, falsche Kalenderwochen, Zeitüberschreitungen und unplausible Abweichungen zwischen Zielstunden und gerenderter Dauer werden abgelehnt. Bei den Wochenstunden zählen auch vorhandene Kalendereinheiten mit. Die zulässige Rundungsabweichung ist ungefähr 15 Minuten.
 
-Die API speichert zunächst einen Vorschlag mit `before`, `after` und der strukturierten Entscheidung. **Verwerfen** ändert den Plan nicht. Erst die ausdrückliche Übernahme mit `{"confirm":true}` schreibt den bestätigten Plan und die betroffenen Workouts in einer Transaktion. Ein veränderter Ausgangszustand (Profil, Planung, Trainings-/Kalenderstand oder Provider-Einstellungen) macht den Vorschlag ungültig. Vorschläge verfallen nach 24 Stunden; Wiederholung einer erfolgreichen Bestätigung erzeugt keine doppelten Workouts.
+Die API speichert zunächst einen Vorschlag mit `before`, `after`, `hinweise` und der strukturierten Entscheidung. **Verwerfen** ändert den Plan nicht. Erst die ausdrückliche Übernahme mit `{"confirm":true}` (bei Blockvorschlägen `{"confirm":true,"optionId":"…"}`) schreibt den bestätigten Plan und die betroffenen Workouts in einer Transaktion. Ein veränderter Ausgangszustand (Profil, Planung, Trainings-/Kalenderstand oder Provider-Einstellungen) macht den Vorschlag ungültig. Vorschläge verfallen nach 24 Stunden; Wiederholung einer erfolgreichen Bestätigung erzeugt keine doppelten Workouts.
 
 ## Provider, Übertragung und Schlüssel
 
 Der Provider bekommt kompaktes JSON ohne vollständige Sensorstreams, GPS-Tracks, Original-FIT-Dateien oder API-Key im Planungskontext. Die lokalen Caches können bei Bedarf aus vorhandenen Aufzeichnungen aufgebaut werden; diese Rohdaten verlassen dabei TrainHub nicht. Ziele, Notizen und subjektive Check-ins gehören zum Kontext und werden bei entsprechenden Planungsanfragen an den gewählten Provider übertragen.
 
-Ein Trainingsblock-Vorschlag erhält den Snapshot, Startdatum und Wochenzahl; ältere Check-ins und Overrides werden aus diesem Provider-Kontext gekürzt. Eine neue konkrete Woche erhält nur den zugehörigen Block (Typ, Nebenschwerpunkt, Woche X von N, Regeln) und dessen Blockwoche, aktuelle Verfügbarkeit, kompakte Plan-/Template-Informationen und jüngstes Training. Ein Patch verwendet den bestehenden kompakten Wochenplan und gegebenenfalls einen abgeschlossenen Wochenrückblick, ohne erneut die vollständige Historie zu schicken. Es wird kein fortlaufender Chatverlauf gespeichert oder übertragen.
+Ein Trainingsblock-Vorschlag erhält den Snapshot, Startdatum, Modus, Ausgangslage bzw. die eigene Wahl, den Blockkatalog mit Regeln und die letzten drei Blöcke; ältere Check-ins und Overrides werden aus diesem Provider-Kontext gekürzt. Eine neue konkrete Woche erhält nur den zugehörigen Block (Typ, Nebenschwerpunkt, Woche X von N, Regeln) und dessen Blockwoche, aktuelle Verfügbarkeit, kompakte Plan-/Template-Informationen und jüngstes Training. Ein Patch verwendet den bestehenden kompakten Wochenplan und gegebenenfalls einen abgeschlossenen Wochenrückblick, ohne erneut die vollständige Historie zu schicken. Es wird kein fortlaufender Chatverlauf gespeichert oder übertragen.
 
 Der OpenAI-Adapter verwendet `POST /v1/responses`, `store: false` und `text.format` mit `type: "json_schema"` und `strict: true`, entsprechend der [offiziellen Dokumentation zu Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs). Das Backend validiert jede Antwort zusätzlich lokal gegen das JSON-Schema und anschließend gegen die fachlichen Regeln. Unvollständige Antworten, Ablehnungen, unbekannte Felder und ungültige Zahlen verändern keinen Plan. Requests haben ein 60-Sekunden-Zeitlimit, Antworten eine Grenze von 1 MiB; es gibt keine automatischen kostenpflichtigen Wiederholungen. `store: false` ist die verwendete API-Einstellung und kein Versprechen, dass beim Provider keinerlei Daten verarbeitet oder aufbewahrt werden.
 
@@ -154,8 +165,8 @@ Alle schreibenden JSON-Anfragen verwenden `Content-Type: application/json`. Die 
 | GET | `/api/coach/templates` | Template-IDs, Defaults, Parametergrenzen und Dauerregeln. |
 | GET | `/api/coach/plan` | Bestätigte Trainingsblöcke (`blocks[]` mit berechnetem `status`, `typeName`, `secondaryName`), gespeicherte Wochen und Revision. |
 | GET | `/api/coach/block-types` | Wählbare Blocktypen mit Längen, Regeln auf Deutsch und vorgeschlagenem Rhythmus sowie mögliche Nebenschwerpunkte. |
-| POST | `/api/coach/proposals` | `kind: "macro"` (Trainingsblock), `"week"` oder `"patch"`; erzeugt einen Vorschlag. |
-| POST | `/api/coach/proposals/<id>/confirm` | Ausschließlich `{"confirm":true}`; geprüften Vorschlag übernehmen. |
+| POST | `/api/coach/proposals` | `kind: "block"` (mit `mode: "recommend"` oder `"choose"`), `"week"` oder `"patch"`; erzeugt einen Vorschlag. |
+| POST | `/api/coach/proposals/<id>/confirm` | `{"confirm":true}`, bei Blockvorschlägen zusätzlich `"optionId"`; geprüften Vorschlag übernehmen. |
 | POST | `/api/coach/proposals/<id>/discard` | `{}`; Vorschlag verwerfen. |
 | PUT | `/api/workouts/<id>/lock` | `{"locked":true}` bzw. `false`; Workout fixieren/lösen. |
 | GET | `/api/coach/feedback?week=2026-W39` | Geplante und tatsächlich aufgezeichnete Stunden/TSS einer abgeschlossenen Kalenderwoche, dazu passende Check-ins. |
@@ -163,7 +174,11 @@ Alle schreibenden JSON-Anfragen verwenden `Content-Type: application/json`. Die 
 Beispiele für Vorschlagsanfragen; die Datumswerte müssen zum tatsächlichen Planungszeitpunkt passen:
 
 ```json
-{"kind":"macro","startDate":"2026-09-28","weeks":6}
+{"kind":"block","mode":"recommend","situation":"nach_pause","startDate":"2026-09-28"}
+```
+
+```json
+{"kind":"block","mode":"choose","blockType":"vo2max","secondaryFocus":"kraft","startDate":"2026-09-28","weeks":4,"instruction":"Lieber kürzere Intervalle."}
 ```
 
 ```json

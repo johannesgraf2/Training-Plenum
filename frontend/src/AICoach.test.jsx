@@ -11,12 +11,17 @@ const profile = {
 const macro = { startDate: '2026-09-21', weeks: [{ week: 1, phase: 'base', targetHours: 8, focus: 'Ruhiger Aufbau' }] };
 const session = { id: 'session-1', day: 'tue', template: 'bike_z2_short', params: { durationMin: 60 }, locked: false, rendered: { name: 'Grundlage', date: '2026-09-22', durationMin: 60, estimatedTss: 40 } };
 const weekPlan = { week: '2026-W39', targetHours: 8, focus: 'Ausdauer', sessions: [session] };
+const blockProposal = { id: 'proposal-1', kind: 'block', before: null, hinweise: ['Zuletzt wenig Umfang.'], rejectedOptions: [], after: { mode: 'recommend', options: [
+  { id: 'ruhig', recommended: true, rationale: 'Sanft wieder einsteigen.', typeName: 'Wiedereinstieg', secondaryName: null, block: macro },
+  { id: 'mehr', recommended: false, rationale: 'Mehr Intensität.', typeName: 'Aufbau', secondaryName: 'Kraft', block: { ...macro, weeks: [...macro.weeks, { week: 2, phase: 'recovery', targetHours: 5, focus: 'Erholung' }] } },
+] } };
 let container, root, originalFetch, requests, responses, changed, initialPlan;
 const button = text => [...container.querySelectorAll('button')].find(b => b.textContent === text);
 const inputFor = label => [...container.querySelectorAll('label')].find(l => l.firstElementChild?.textContent === label)?.querySelector('input, textarea, select');
 const click = async element => { await act(async () => element.click()); };
 const change = async (element, value) => { await act(async () => Simulate.change(element, { target: { value } })); };
 const submit = async form => { await act(async () => Simulate.submit(form)); };
+const startBlock = async () => { await change(inputFor('Wo stehst du gerade?'), 'nach_pause'); await click(button('Vorschläge erstellen')); };
 const render = async (props = {}) => { await act(async () => root.render(<AICoach apiBase="http://coach.test" onWorkoutsChanged={changed} {...props} />)); };
 
 beforeEach(() => {
@@ -36,7 +41,7 @@ beforeEach(() => {
     else if (path === '/api/athlete-profile') data = method === 'PUT' ? { ...profile, ...body } : profile;
     else if (path === '/api/ai-provider') data = { provider: 'openai', model: body?.model || 'gpt-4.1-mini', configured: true, keyLast4: '1234', encryptionConfigured: true };
     else if (path === '/api/coach/plan') data = initialPlan;
-    else if (path === '/api/coach/proposals') data = { id: 'proposal-1', kind: body.kind, summary: 'Mehr Zeit für Erholung.', before: body.kind === 'macro' ? null : weekPlan, after: body.kind === 'macro' ? macro : { ...weekPlan, targetHours: 7, sessions: [{ ...session, params: { durationMin: 45 }, rendered: { ...session.rendered, durationMin: 45 } }] } };
+    else if (path === '/api/coach/proposals') data = body.kind === 'block' ? blockProposal : { id: 'proposal-1', kind: body.kind, hinweise: ['Kurze Woche.'], before: weekPlan, after: { ...weekPlan, targetHours: 7, sessions: [{ ...session, params: { durationMin: 45 }, rendered: { ...session.rendered, durationMin: 45 } }] } };
     else if (path.endsWith('/confirm')) data = { revision: 1, blocks: [macro], weeks: {} };
     else if (path.startsWith('/api/coach/weekly-overrides/')) data = body;
     else if (path.startsWith('/api/workouts/') && path.endsWith('/lock')) data = body;
@@ -61,23 +66,29 @@ test('a proposal is human-readable and only saves after explicit confirmation', 
   await render();
   expect(container.textContent).toContain('6,5 h');
   expect(container.textContent).toContain('Neuen Trainingsblock starten');
-  await click(button('Trainingsblock vorschlagen'));
-  expect(requests.find(r => r.path === '/api/coach/proposals').body).toEqual({ kind: 'macro', startDate: '2026-09-28', weeks: 6 });
-  expect(container.querySelector('[aria-label="Planvorschlag prüfen"]').textContent).toContain('Trainingsblock prüfen');
-  expect(container.querySelector('[aria-label="Planvorschlag prüfen"]').textContent).toContain('Grundlage');
+  expect(button('Vorschläge erstellen').disabled).toBe(true);
+  await startBlock();
+  expect(requests.find(r => r.path === '/api/coach/proposals').body).toEqual({ kind: 'block', mode: 'recommend', situation: 'nach_pause', startDate: '2026-09-28' });
+  const preview = container.querySelector('[aria-label="Planvorschlag prüfen"]');
+  expect(preview.textContent).toContain('Trainingsblock wählen');
+  expect(preview.textContent).toContain('Zuletzt wenig Umfang.');
+  expect(preview.textContent).toContain('Aufbau + Kraft');
+  expect(preview.querySelector('input[value="ruhig"]').checked).toBe(true);
   expect(requests.some(r => r.path.endsWith('/confirm'))).toBe(false);
   expect(changed).not.toHaveBeenCalled();
-  await click(button('Änderungen bestätigen und übernehmen'));
-  expect(requests.find(r => r.path.endsWith('/confirm')).body).toEqual({ confirm: true });
+  await click(preview.querySelector('input[value="mehr"]'));
+  await click(button('Diese Option übernehmen'));
+  expect(requests.find(r => r.path.endsWith('/confirm')).body).toEqual({ confirm: true, optionId: 'mehr' });
   expect(changed).toHaveBeenCalledTimes(1);
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
-  expect(container.textContent).toContain('Plan übernommen.');
+  expect(container.textContent).toContain('Trainingsblock übernommen.');
 });
 
 test('changing availability removes a preview and blocks AI planning until the override is saved', async () => {
   initialPlan = { revision: 2, blocks: [macro], weeks: { '2026-W39': weekPlan } };
   await render(); await click(button('Woche anpassen'));
   expect(container.textContent).toContain('Geändert: Grundlage');
+  expect(container.textContent).toContain('Kurze Woche.');
   await change(container.querySelector('[aria-label="Do Verfügbarkeit diese Woche"]'), 'no');
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
   expect(button('Woche anpassen').disabled).toBe(true);
@@ -126,16 +137,16 @@ test('late proposal responses are discarded when the workout context changes', a
   responses['POST /api/coach/proposals'] = () => new Promise(resolve => { resolveProposal = resolve; });
   const workouts = [];
   await render({ workouts });
-  await click(button('Trainingsblock vorschlagen'));
+  await startBlock();
   await render({ workouts: [{ id: 'added', date: '2026-09-24', name: 'Neue Einheit' }] });
-  await act(async () => resolveProposal({ ok: true, json: async () => ({ id: 'late', kind: 'macro', before: null, after: macro }) }));
+  await act(async () => resolveProposal({ ok: true, json: async () => ({ ...blockProposal, id: 'late' }) }));
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
 });
 
 test('a stale confirmation clears the preview and keeps the stored plan unchanged', async () => {
   responses['POST /api/coach/proposals/proposal-1/confirm'] = async () => ({ ok: false, json: async () => ({ error: 'Kontext geändert. Bitte neuen Vorschlag erstellen.' }) });
-  await render(); await click(button('Trainingsblock vorschlagen'));
-  await click(button('Änderungen bestätigen und übernehmen'));
+  await render(); await startBlock();
+  await click(button('Diese Option übernehmen'));
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
   expect(container.querySelector('[role="alert"]').textContent).toContain('Kontext geändert');
   expect(changed).not.toHaveBeenCalled();
@@ -148,7 +159,7 @@ test('an incomplete setup shows a checklist that jumps to the missing step inste
   const checklist = container.querySelector('[aria-label="Einrichtung"]');
   expect(checklist.textContent).toContain('Es fehlt: Wochenmaximum · Verfügbarkeit Fr');
   expect(checklist.textContent).toContain('Ersten Block planen');
-  expect(button('Trainingsblock vorschlagen')).toBeUndefined();
+  expect(button('Vorschläge erstellen')).toBeUndefined();
   expect(button('Woche planen')).toBeUndefined();
   await click(button('Zum Athletenprofil'));
   expect(button('Athletenprofil speichern')).toBeDefined();
@@ -183,14 +194,14 @@ test('a replaced block is history; the next block and its type are shown', async
   expect(container.textContent).toContain('Startet am');
   expect(container.querySelector('.coach-block-type').textContent).toBe('VO2max + Kraft');
   expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W40');
-  expect(button('Neuen Trainingsblock vorschlagen')).toBeDefined();
+  expect(button('Neue Vorschläge erstellen')).toBeDefined();
 });
 
 test('an ended block offers the next block instead of week planning', async () => {
   initialPlan = { revision: 3, blocks: [{ ...macro, startDate: '2026-09-07' }], weeks: {} };
   await render();
   expect(container.textContent).toContain('Block abgeschlossen');
-  expect(button('Nächsten Trainingsblock vorschlagen')).toBeDefined();
+  expect(button('Vorschläge für den nächsten Block')).toBeDefined();
   expect(button('Woche planen')).toBeUndefined();
   expect(button('Fixieren')).toBeUndefined();
 });
