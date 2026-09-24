@@ -425,15 +425,23 @@ class CoachAPITests(unittest.TestCase):
         self.client.put('/api/athlete-profile', json={'goal': {'type': 'cycling_event', 'name': 'Rennen', 'date': goal, 'target': None}})
         seg = lambda identity, weeks: {'blockType': identity, 'secondaryFocus': None, 'weeks': weeks, 'purpose': 'Zweck.'}
         plan_a = {'id': 'a', 'recommended': True, 'rationale': 'Erst Basis.', 'segments': [
-            seg('grundlage', 6), seg('aufbau', 4), seg('vo2max', 4), seg('wettkampfspezifisch', 4)]}
+            seg('grundlage', 6), seg('vo2max', 4), seg('schwelle', 4), seg('wettkampfspezifisch', 4)]}
+        plan_d = {'id': 'd', 'recommended': False, 'rationale': 'Aufbau zum Schluss.', 'segments': [
+            seg('grundlage', 6), seg('vo2max', 4), seg('aufbau', 4), seg('wettkampfspezifisch', 4)]}
         plan_b = {'id': 'b', 'recommended': False, 'rationale': 'Zu kurz.', 'segments': [seg('grundlage', 6), seg('wettkampfspezifisch', 4)]}
         plan_c = {'id': 'c', 'recommended': False, 'rationale': 'Schwelle.', 'segments': [
             seg('grundlage', 8), seg('schwelle', 6), seg('wettkampfspezifisch', 4)]}
         self.propose({'kind': 'season'}, {'options': [{**plan_a, 'segments': plan_a['segments'][:3]}, plan_c], 'hinweise': []}, expected=400)
+        # The AI keeps the build-up order; a recommendation against it fails, an alternative is dropped.
+        response, _ = self.propose({'kind': 'season'}, {'options': [{**plan_d, 'recommended': True}, plan_c], 'hinweise': []}, expected=400)
+        self.assertIn('gehört nicht in einen Saisonplan', response['error'])
+        rejected, _ = self.propose({'kind': 'season'}, {'options': [plan_a, plan_d], 'hinweise': []})
+        self.assertEqual(rejected['rejectedOptions'][0]['id'], 'd')
         proposal, provider = self.propose({'kind': 'season', 'instruction': 'Winter auf der Rolle'},
                                           {'options': [plan_a, plan_b, plan_c], 'hinweise': ['Lange Saison.']})
         context = provider.generate.call_args.args[3]
         self.assertEqual((context['startDate'], context['weeksToFill'], context['fixedBlocks']), (self.start.isoformat(), 18, []))
+        self.assertEqual([s['blockType'] for s in context['typicalSeason']], ['grundlage', 'vo2max', 'schwelle', 'wettkampfspezifisch'])
         self.assertEqual(context['athleteWish'], {'source': 'athlete', 'text': 'Winter auf der Rolle'})
         self.assertEqual([o['id'] for o in proposal['after']['options']], ['a', 'c'])
         self.assertIn('ergeben 10 Wochen', proposal['rejectedOptions'][0]['reason'])
@@ -461,14 +469,14 @@ class CoachAPITests(unittest.TestCase):
         self.client.put('/api/athlete-profile', json={'goal': {'type': 'cycling_event', 'name': 'Rennen', 'date': goal, 'target': None}})
         self.block()  # two weeks
         seg = lambda identity, weeks: {'blockType': identity, 'secondaryFocus': None, 'weeks': weeks, 'purpose': ''}
-        options = [{'id': 'a', 'recommended': True, 'rationale': '', 'segments': [seg('aufbau', 4), seg('wettkampfspezifisch', 4)]},
+        options = [{'id': 'a', 'recommended': True, 'rationale': '', 'segments': [seg('schwelle', 4), seg('wettkampfspezifisch', 4)]},
                    {'id': 'b', 'recommended': False, 'rationale': '', 'segments': [seg('vo2max', 4), seg('wettkampfspezifisch', 4)]}]
         proposal, provider = self.propose({'kind': 'season'}, {'options': options, 'hinweise': []})
         context = provider.generate.call_args.args[3]
         self.assertEqual((context['weeksToFill'], context['startDate']), (8, (self.start + timedelta(weeks=2)).isoformat()))
         self.assertEqual(context['fixedBlocks'][0]['blockType'], 'wiedereinstieg')
         season = self.confirm(proposal, option='a')['season']
-        self.assertEqual([s['blockType'] for s in season['segments']], ['wiedereinstieg', 'aufbau', 'wettkampfspezifisch'])
+        self.assertEqual([s['blockType'] for s in season['segments']], ['wiedereinstieg', 'schwelle', 'wettkampfspezifisch'])
         self.assertTrue(season['segments'][0]['blockId'])
 
     def test_overrides_are_separate_checkins_are_athlete_data(self):

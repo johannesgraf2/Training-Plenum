@@ -15,6 +15,10 @@ from coach_domain import HINWEISE_SCHEMA, CoachError, day_date, num, obj, text
 MAX_SEGMENTS = 20
 MAX_SEASON_WEEKS = 104
 FINAL_TYPE = 'wettkampfspezifisch'
+# Training philosophy for AI season plans: aerobic base, then raise the engine (VO2max) and lower VLamax
+# at threshold, then race-specific. VO2max and Schwelle may swap. Aufbau and Übergang are no season stages.
+SEASON_RANK = {'wiedereinstieg': 0, 'grundlage': 1, 'vo2max': 2, 'schwelle': 2, FINAL_TYPE: 3}
+TYPICAL_SHARE = {'grundlage': .35, 'vo2max': .2, 'schwelle': .25, FINAL_TYPE: .2}
 
 SEGMENT_SCHEMA = obj({
     'blockType': {'type': 'string', 'enum': SELECTABLE},
@@ -86,6 +90,55 @@ def check_season(segments, frame, profile):
         raise CoachError(f"Die Blöcke ergeben {total} Wochen, bis zur Zielwoche sind es {frame['totalWeeks']}.")
     if segments[-1]['blockType'] != FINAL_TYPE:
         raise CoachError('Der letzte Block vor dem Ziel ist wettkampfspezifisch.')
+
+
+def typical_season(weeks, after=None):
+    """Grundlage → VO2max → Schwelle → Wettkampfspezifisch with lengths filling exactly `weeks`.
+
+    `after` is the last fixed block: stages before it are skipped unless the rest cannot fill the season. Short
+    seasons drop stages from the front; seasons beyond every maximum get further base blocks."""
+    rank = SEASON_RANK.get(after, -1)
+    types = [t for t in TYPICAL_SHARE
+             if SEASON_RANK[t] > rank or (SEASON_RANK[t] == rank and (t != after or t == 'grundlage'))]
+    if not types or sum(BLOCK_TYPES[t]['maxWeeks'] for t in types) < weeks and 'grundlage' not in types:
+        types = list(TYPICAL_SHARE)
+    while len(types) > 1 and sum(BLOCK_TYPES[t]['minWeeks'] for t in types) > weeks:
+        types.pop(0)
+    share = sum(TYPICAL_SHARE[t] for t in types)
+    low, high = (lambda t: BLOCK_TYPES[t]['minWeeks']), (lambda t: BLOCK_TYPES[t]['maxWeeks'])
+    lengths = {t: min(max(round(weeks * TYPICAL_SHARE[t] / share), low(t)), high(t)) for t in types}
+    while (diff := weeks - sum(lengths.values())) != 0:
+        step = 1 if diff > 0 else -1
+        candidates = [t for t in types if low(t) <= lengths[t] + step <= high(t)]
+        if not candidates:
+            break
+        # Grow the stage furthest below its share, shrink the one furthest above.
+        pick = (min if step > 0 else max)(candidates, key=lambda t: lengths[t] / TYPICAL_SHARE[t])
+        lengths[pick] += step
+    segments = [{'blockType': t, 'weeks': lengths[t]} for t in types]
+    if diff > 0 and types[0] == 'grundlage':  # Every stage at its maximum: the base grows by further blocks.
+        base = lengths['grundlage'] + diff
+        count = -(-base // high('grundlage'))
+        segments[:1] = [{'blockType': 'grundlage', 'weeks': base // count + (1 if i < base % count else 0)} for i in range(count)]
+    return segments
+
+
+def check_order(segments):
+    """Order rules for the new blocks of AI season plans; the athlete may still arrange blocks freely."""
+    seen, rank, previous = set(), -1, None
+    for index, segment in enumerate(segments, start=1):
+        identity = segment['blockType']
+        name = BLOCK_TYPES[identity]['name']
+        if identity not in SEASON_RANK:
+            raise CoachError(f'Block {index}: „{name}“ gehört nicht in einen Saisonplan '
+                             '(Grundlage → VO2max/Schwelle → Wettkampfspezifisch).')
+        if SEASON_RANK[identity] < rank:
+            raise CoachError(f'Block {index}: „{name}“ nach „{BLOCK_TYPES[previous]["name"]}“ – die Reihenfolge ist '
+                             'Grundlage → VO2max/Schwelle → Wettkampfspezifisch.')
+        if identity in seen and identity != previous:
+            raise CoachError(f'Block {index}: „{name}“ kommt zweimal vor.')
+        seen.add(identity)
+        rank, previous = SEASON_RANK[identity], identity
 
 
 def with_fixed(segments, frame):
