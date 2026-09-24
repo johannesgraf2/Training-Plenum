@@ -20,6 +20,12 @@ const catalog = { blockTypes: [
   { id: 'vo2max', name: 'VO2max', summary: 'Kurze, harte Intervalle.', defaultWeeks: 4, minWeeks: 3, maxWeeks: 6, rules: ['Mindestens 2× VO2max-Einheit pro Belastungswoche'], rhythms: { 3: [false, false, true], 4: [false, false, false, true], 5: [false, false, true, false, true], 6: [false, false, true, false, false, true] } },
   { id: 'wettkampfspezifisch', name: 'Wettkampfspezifisch', summary: 'Frisch am Start.', defaultWeeks: 4, minWeeks: 2, maxWeeks: 6, rules: [], rhythms: {} },
 ], secondaryFocus: [{ id: 'kraft', name: 'Kraft' }, { id: 'laufen', name: 'Laufen' }] };
+const timeline = { blockId: 'block-1', weeks: [
+  { number: 1, week: '2026-W38', startDate: '2026-09-14', phase: 'build', focus: 'Aufbau', targetHours: 8, planned: true, plannedHours: 7.5, completedHours: 6.5, state: 'past' },
+  { number: 2, week: '2026-W39', startDate: '2026-09-21', phase: 'build', focus: 'Aufbau', targetHours: 9, planned: true, plannedHours: 8, completedHours: 2, state: 'current' },
+  { number: 3, week: '2026-W40', startDate: '2026-09-28', phase: 'recovery', focus: 'Entlastung', targetHours: 5, planned: false, plannedHours: null, completedHours: null, state: 'future' },
+] };
+const activeBlock = { id: 'block-1', startDate: '2026-09-14', weeks: [macro.weeks[0], { ...macro.weeks[0], week: 2 }, { ...macro.weeks[0], week: 3, phase: 'recovery', targetHours: 5 }] };
 let container, root, originalFetch, requests, responses, changed, initialPlan;
 const button = text => [...container.querySelectorAll('button')].find(b => b.textContent === text);
 const inputFor = label => [...container.querySelectorAll('label')].find(l => l.firstElementChild?.textContent === label)?.querySelector('input, textarea, select');
@@ -49,6 +55,8 @@ beforeEach(() => {
     else if (path === '/api/ai-provider') data = { provider: 'openai', model: body?.model || 'gpt-4.1-mini', configured: true, keyLast4: '1234', encryptionConfigured: true };
     else if (path === '/api/coach/plan') data = initialPlan;
     else if (path === '/api/coach/block-types') data = catalog;
+    else if (path === '/api/coach/blocks/block-1/timeline') data = timeline;
+    else if (path === '/api/coach/feedback') data = { week: new URL(url).searchParams.get('week'), partial: true, planned: { hours: 8 }, completed: { hours: 2 } };
     else if (path === '/api/coach/proposals') data = body.kind === 'block' ? blockProposal : { id: 'proposal-1', kind: body.kind, hinweise: ['Kurze Woche.'], before: weekPlan, after: { ...weekPlan, targetHours: 7, sessions: [{ ...session, params: { durationMin: 45 }, rendered: { ...session.rendered, durationMin: 45 } }] } };
     else if (path.endsWith('/confirm')) data = { revision: 1, blocks: [macro], weeks: {} };
     else if (path.startsWith('/api/coach/weekly-overrides/')) data = body;
@@ -170,7 +178,8 @@ test('new workout context invalidates an outstanding proposal and locking refres
   await render({ workouts: [workout] }); await click(button('Woche anpassen'));
   await render({ workouts: [{ ...workout, locked: true }] });
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
-  await click(button('Fixiert · lösen'));
+  expect(container.textContent).toContain('Eigene Einheit');
+  await click(container.querySelector('[aria-label="Gruppenausfahrt lösen"]'));
   expect(requests.find(r => r.path === '/api/workouts/own-workout/lock').body).toEqual({ locked: false });
   expect(changed).toHaveBeenCalledTimes(1);
 });
@@ -258,4 +267,63 @@ test('goal types and the season countdown are shown in German', async () => {
   const select = inputFor('Zieltyp');
   expect(select.value).toBe('endurance');
   expect(select.textContent).not.toContain('general_endurance');
+});
+
+test('the block timeline compares planned and completed hours and selects a week', async () => {
+  initialPlan = { revision: 1, blocks: [activeBlock], weeks: { '2026-W39': weekPlan } };
+  await render();
+  const chart = container.querySelector('[aria-label="Block-Zeitstrahl: geplant und absolviert"]');
+  const weeks = chart.querySelectorAll('li');
+  expect(weeks).toHaveLength(3);
+  expect(weeks[1].className).toBe('current');
+  expect(weeks[1].textContent).toContain('Jetzt');
+  expect(weeks[1].querySelector('button').getAttribute('aria-label')).toBe('Woche 2, Aufbau: geplant 8 h, absolviert 2 h');
+  expect(weeks[2].querySelector('button').getAttribute('aria-label')).toBe('Woche 3, Erholung: Blockziel 5 h, absolviert noch offen');
+  expect(weeks[2].querySelector('.target').className).toContain('open');
+  expect(container.querySelector('.coach-table').textContent).toContain('5 h (Blockziel)');
+  await click(weeks[0].querySelector('button'));
+  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W38');
+  expect(chart.querySelector('[aria-pressed="true"]').getAttribute('aria-label')).toContain('Woche 1');
+});
+
+test('coach sessions are locked at the session; daily change and check-in need a planned week', async () => {
+  const planned = { ...session, rendered: { ...session.rendered, workout: { id: 'session-1' } } };
+  initialPlan = { revision: 1, blocks: [activeBlock], weeks: {} };
+  await render({ workouts: [{ id: 'session-1', date: '2026-09-22', name: 'Grundlage', locked: false }] });
+  expect(container.textContent).not.toContain('Heute zählt auch');
+  expect(container.textContent).not.toContain('Einheiten fixieren');
+  initialPlan = { revision: 2, blocks: [activeBlock], weeks: { '2026-W39': { ...weekPlan, sessions: [planned] } } };
+  await act(async () => root.unmount()); root = createRoot(container);
+  await render({ workouts: [{ id: 'session-1', date: '2026-09-22', name: 'Grundlage', locked: false }] });
+  expect(container.textContent).toContain('Heute zählt auch');
+  expect(container.textContent).not.toContain('Eigene Einheit');
+  await click(container.querySelector('[aria-label="Grundlage fixieren"]'));
+  expect(requests.find(r => r.path === '/api/workouts/session-1/lock').body).toEqual({ locked: true });
+});
+
+test('from Friday the week is closed with review, check-in and planning the next week', async () => {
+  jest.setSystemTime(new Date('2026-09-25T12:00:00Z'));
+  initialPlan = { revision: 1, blocks: [activeBlock], weeks: { '2026-W39': weekPlan } };
+  await render();
+  const card = () => container.querySelector('[aria-label="Woche abschließen"]');
+  expect(card().textContent).toContain('2026-W39 → 2026-W40');
+  expect(requests.some(r => r.path === '/api/coach/feedback')).toBe(true);
+  expect(card().textContent).toContain('Absolviert (bis heute)');
+  await click([...card().querySelectorAll('label')].find(l => l.textContent.includes('Grundlage')).querySelector('input'));
+  expect(card().textContent).toContain('1 Einheit');
+  await click(button('Weiter zum Check-in'));
+  expect(card().textContent).toContain('Müdigkeit');
+  await click(button('Weiter'));
+  expect(card().textContent).toContain('Erholung · Ziel 5 h');
+  await click(button('Nächste Woche planen'));
+  expect(requests.filter(r => r.path === '/api/coach/proposals').pop().body).toEqual({ kind: 'week', week: '2026-W40', instruction: '', feedbackWeek: '2026-W39', missedSessions: ['session-1'] });
+  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W40');
+});
+
+test('an open current week after a planned one starts the rhythm right away', async () => {
+  jest.setSystemTime(new Date('2026-09-28T09:00:00Z'));
+  initialPlan = { revision: 1, blocks: [activeBlock], weeks: { '2026-W39': weekPlan } };
+  await render();
+  expect(container.querySelector('[aria-label="Woche abschließen"]').textContent).toContain('2026-W39 → 2026-W40');
+  jest.setSystemTime(new Date('2026-09-23T12:00:00Z'));
 });
