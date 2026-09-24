@@ -9,7 +9,7 @@ const profile = {
   preferences: {}, limitations: {}, currentState: {}, weeklyOverrides: [], dailyOverrides: [], checkIns: [],
 };
 const macro = { startDate: '2026-09-21', weeks: [{ week: 1, phase: 'base', targetHours: 8, focus: 'Ruhiger Aufbau' }] };
-const session = { id: 'session-1', day: 'tue', template: 'bike_z2_short', params: { durationMin: 60 }, locked: false, rendered: { name: 'Grundlage', date: '2026-09-22', durationMin: 60, estimatedTss: 40 } };
+const session = { id: 'session-1', day: 'tue', template: 'bike_z2_short', params: { durationMin: 60 }, locked: false, rendered: { name: 'Grundlage', date: '2026-09-22', durationMin: 60, estimatedTss: 40, notes: 'Verpflegung (LIT): Optional nur Wasser. Danach Protein.' } };
 const weekPlan = { week: '2026-W39', targetHours: 8, focus: 'Ausdauer', sessions: [session] };
 const blockProposal = { id: 'proposal-1', kind: 'block', before: null, hinweise: ['Zuletzt wenig Umfang.'], rejectedOptions: [], after: { mode: 'recommend', options: [
   { id: 'ruhig', recommended: true, rationale: 'Sanft wieder einsteigen.', typeName: 'Wiedereinstieg', secondaryName: null, block: macro },
@@ -29,6 +29,10 @@ const activeBlock = { id: 'block-1', startDate: '2026-09-14', weeks: [macro.week
 const blockReview = { blockId: 'old-block', typeName: 'Aufbau', complete: true, weeks: timeline.weeks.map(w => ({ ...w, state: 'past', planned: true, plannedHours: w.targetHours, completedHours: w.targetHours * 0.9 })),
   totals: { targetHours: 22, comparedWeeks: 3, plannedHours: 22, completedHours: 19.8, completion: 0.9, elapsedCompletedHours: 19.8, plannedSessions: 12, missedSessions: 2, weeksWithMissedReport: 2 },
   checkIns: { source: 'athlete', count: 2, averages: { fatigue: 3.5, motivation: 4, stress: 2, sleepQuality: 3, soreness: 2.5 } }, reflection: null };
+const seasonProfile = { ...profile, goal: { type: 'cycling_event', name: 'Rennen', date: '2027-01-31' } };
+const segment = (blockType, typeName, weeks, startDate, endDate) => ({ blockType, typeName, secondaryFocus: null, secondaryName: null, weeks, startDate, endDate, purpose: `${typeName}-Zweck.` });
+const seasonSegments = [segment('grundlage', 'Grundlage', 8, '2026-09-28', '2026-11-22'), segment('vo2max', 'VO2max', 6, '2026-11-23', '2027-01-03'), segment('wettkampfspezifisch', 'Wettkampfspezifisch', 4, '2027-01-04', '2027-01-31')];
+const season = { id: 'season', goalDate: '2027-01-31', startDate: '2026-09-28', source: 'aiRecommendation', rationale: 'Erst Basis, dann Intensität.', segments: seasonSegments, openFrom: '2026-09-28', remainingWeeks: 18, goalChanged: false, aligned: true };
 let container, root, originalFetch, requests, responses, changed, initialPlan;
 const button = text => [...container.querySelectorAll('button')].find(b => b.textContent === text);
 const inputFor = label => [...container.querySelectorAll('label')].find(l => l.firstElementChild?.textContent === label)?.querySelector('input, textarea, select');
@@ -226,6 +230,63 @@ test('an incomplete setup shows a checklist that jumps to the missing step inste
   expect(button('Athletenprofil speichern')).toBeDefined();
 });
 
+test('the profile stores training days, season and the minimum ride length', async () => {
+  await render(); await click(button('Athletenprofil'));
+  await change(inputFor('Trainingstage pro Woche'), '4');
+  await change(inputFor('Saison'), 'indoor');
+  await change(inputFor('Mindestdauer Rad auf der Rolle (min)'), '60');
+  await change(inputFor('Mindestdauer Rad draußen (min)'), '90');
+  await submit(button('Athletenprofil speichern').closest('form'));
+  const body = requests.find(r => r.path === '/api/athlete-profile' && r.method === 'PUT').body;
+  expect(body.availability).toMatchObject({ trainingDaysPerWeek: 4, minRideMinutes: { indoor: 60, outdoor: 90 } });
+  expect(body.preferences.trainingEnvironment).toBe('indoor');
+});
+
+test('a season plan is proposed, adjusted by swapping blocks and confirmed', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
+  const option = (id, recommended) => ({ id, recommended, rationale: `Plan ${id}.`, season: { ...season, segments: seasonSegments } });
+  responses['POST /api/coach/proposals'] = async () => ({ ok: true, json: async () => ({ id: 'season-1', kind: 'season', before: null, hinweise: ['Lange Saison.'], rejectedOptions: [],
+    after: { options: [option('a', true), option('b', false)], openFrom: '2026-09-28', remainingWeeks: 18, fixedCount: 0 } }) });
+  responses['POST /api/coach/proposals/season-1/confirm'] = async () => ({ ok: true, json: async () => ({ ...initialPlan, season: { ...season, source: 'athleteEdited' } }) });
+  await render();
+  await change(inputFor('Wunsch für den Saisonplan (optional)'), 'Winter auf der Rolle');
+  await click(button('Saisonplan vorschlagen lassen'));
+  expect(requests.find(r => r.path === '/api/coach/proposals').body).toEqual({ kind: 'season', instruction: 'Winter auf der Rolle' });
+  expect(container.textContent).toContain('Lange Saison.');
+  expect(container.querySelectorAll('.coach-season-strip')).toHaveLength(2);
+  await click(button('Anpassen'));
+  await click(container.querySelector('[aria-label="Block 2 nach vorne"]'));
+  expect(container.textContent).toContain('18 von 18 Wochen verplant');
+  await click(button('Angepassten Plan übernehmen'));
+  const confirm = requests.find(r => r.path === '/api/coach/proposals/season-1/confirm').body;
+  expect(confirm.optionId).toBe('a');
+  expect(confirm.segments.map(item => [item.blockType, item.weeks])).toEqual([['vo2max', 6], ['grundlage', 8], ['wettkampfspezifisch', 4]]);
+  expect(container.textContent).toContain('Dein Weg zum Ziel');
+  expect(container.textContent).toContain('Von dir angepasst');
+});
+
+test('a saved season plan is edited within the rules and prefills the next block', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
+  initialPlan = { ...initialPlan, season };
+  responses['PUT /api/coach/season'] = async () => ({ ok: true, json: async () => ({ ...initialPlan, season: { ...season, source: 'athleteEdited' } }) });
+  await render();
+  expect(container.querySelector('.coach-season-strip').getAttribute('aria-label')).toContain('VO2max, 6 Wochen');
+  await click(button('Saisonplan bearbeiten'));
+  await click(container.querySelector('[aria-label="Block 2 entfernen"]'));
+  expect(container.textContent).toContain('Die Blöcke ergeben 12 Wochen, bis zur Zielwoche sind es 18.');
+  expect(button('Saisonplan speichern').disabled).toBe(true);
+  await click(button('Block hinzufügen'));
+  await change(container.querySelector('[aria-label="Block 2 Typ"]'), 'vo2max');
+  await change(container.querySelector('[aria-label="Block 2 Wochen"]'), '6');
+  expect(button('Saisonplan speichern').disabled).toBe(false);
+  await click(button('Saisonplan speichern'));
+  expect(requests.find(r => r.path === '/api/coach/season' && r.method === 'PUT').body.segments.map(item => [item.blockType, item.weeks, item.purpose]))
+    .toEqual([['grundlage', 8, 'Grundlage-Zweck.'], ['vo2max', 6, ''], ['wettkampfspezifisch', 4, 'Wettkampfspezifisch-Zweck.']]);
+  await click(container.querySelector('.coach-season-next'));
+  await click(button('Block ausarbeiten lassen'));
+  expect(requests.find(r => r.path === '/api/coach/proposals').body).toMatchObject({ kind: 'block', mode: 'choose', blockType: 'grundlage', weeks: 8, startDate: '2026-09-28' });
+});
+
 test('an active block shows the current block week and German planning actions', async () => {
   initialPlan = { revision: 1, blocks: [{ startDate: '2026-09-14', weeks: [macro.weeks[0], { ...macro.weeks[0], week: 2 }, { ...macro.weeks[0], week: 3, phase: 'recovery' }] }], weeks: {} };
   await render();
@@ -301,11 +362,13 @@ test('coach sessions are locked at the session; daily change and check-in need a
   await render({ workouts: [{ id: 'session-1', date: '2026-09-22', name: 'Grundlage', locked: false }] });
   expect(container.textContent).not.toContain('Heute zählt auch');
   expect(container.textContent).not.toContain('Einheiten fixieren');
+  expect(container.querySelector('.coach-session-note')).toBeNull();
   initialPlan = { revision: 2, blocks: [activeBlock], weeks: { '2026-W39': { ...weekPlan, sessions: [planned] } } };
   await act(async () => root.unmount()); root = createRoot(container);
   await render({ workouts: [{ id: 'session-1', date: '2026-09-22', name: 'Grundlage', locked: false }] });
   expect(container.textContent).toContain('Heute zählt auch');
   expect(container.textContent).not.toContain('Eigene Einheit');
+  expect(container.querySelector('.coach-session-note').textContent).toBe('Verpflegung (LIT): Optional nur Wasser. Danach Protein.');
   await click(container.querySelector('[aria-label="Grundlage fixieren"]'));
   expect(requests.find(r => r.path === '/api/workouts/session-1/lock').body).toEqual({ locked: true });
 });

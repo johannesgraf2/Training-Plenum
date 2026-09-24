@@ -1,7 +1,7 @@
 .workout-backdrop { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; padding: 24px; background: #0f172a80; backdrop-filter: blur(3px); }
 .workout-dialog { width: 1240px; max-width: 100%; max-height: 94vh; display: flex; flex-direction: column; background: var(--bg-f8fafc); border-radius: 4px; overflow: hidden; box-shadow: 0 24px 90px #0f172a40; color: var(--fg-17243c); }
 .workout-dialog * { box-sizing: border-box; }
-.workout-dialog button, .workout-dialog input, .workout-dialog select { font: inherit; }
+.workout-dialog button, .workout-dialog input, .workout-dialog select, .workout-dialog textarea { font: inherit; }
 .workout-dialog button { cursor: pointer; border: 1px solid var(--bd-cbd5e1); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-334155); font-size: 12px; padding: 9px 12px; font-weight: 600; }
 .workout-dialog button:hover { background: var(--bg-eff6ff); border-color: var(--bd-93b4ed); }
 .workout-dialog button:disabled { opacity: .4; cursor: default; }
@@ -15,10 +15,14 @@
 .workout-edit-panel { margin: 0; padding: 24px 26px; border: 0; min-width: 0; }
 .workout-basics, .workout-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .workout-basics { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+.workout-notes { grid-column: 1 / -1; }
+.workout-notes textarea { resize: vertical; }
+.workout-notes small { color: var(--muted-2); font-size: 11px; font-weight: 400; }
+.workout-notes-preview { margin: 6px 0 10px; padding: 8px 10px; border-left: 3px solid var(--ochre); background: var(--bg-fffbeb); font-size: 12px; line-height: 1.5; }
 .workout-dialog label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; color: var(--fg-54647a); }
 .workout-dialog label span { color: var(--fg-8491a3); font-weight: 400; }
-.workout-dialog input, .workout-dialog select { width: 100%; min-width: 0; border: 1px solid var(--bd-d8e0eb); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-17243c); padding: 9px 10px; font-size: 13px; line-height: 1.25; }
-.workout-dialog input::placeholder { color: var(--muted-2); }
+.workout-dialog input, .workout-dialog select, .workout-dialog textarea { width: 100%; min-width: 0; border: 1px solid var(--bd-d8e0eb); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-17243c); padding: 9px 10px; font-size: 13px; line-height: 1.25; }
+.workout-dialog :is(input, textarea)::placeholder { color: var(--muted-2); }
 .workout-section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 16px; }
 .workout-section-title h3, .workout-preview h3 { font-size: 14px; margin: 0; }
 .workout-dialog .workout-text-button { border: none; background: transparent; color: var(--fg-1e40af); padding: 7px 0; font-size: 11px; }

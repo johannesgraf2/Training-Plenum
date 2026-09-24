@@ -103,7 +103,8 @@ export function toWorkout(draft) {
     target: step.target.type === 'none' ? { type: 'none' } : { type: step.target.type,
       low: step.target.type === 'pace' ? timeValue(step.target.low, 'Pace') : numeric(step.target.low),
       high: step.target.type === 'pace' ? timeValue(step.target.high, 'Pace') : numeric(step.target.high) },
-  })).map(step => step.kind === 'repeat' ? { ...step, count: repeatCount(step.count) } : step) };
+  })).map(step => step.kind === 'repeat' ? { ...step, count: repeatCount(step.count) } : step),
+  ...(draft.notes?.trim() ? { notes: draft.notes.trim() } : {}) };
 }
 
 export function workoutTotals(workout) {

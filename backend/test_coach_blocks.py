@@ -70,8 +70,9 @@ class BlockRuleTests(unittest.TestCase):
             check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=goal)
         race[-1]['targetHours'] = 4.2
         check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=goal)
-        with self.assertRaisesRegex(CoachError, 'spätestens am Zieldatum'):
-            check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=profile(goal={'date': '2026-10-24'}))
+        check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=profile(goal={'date': '2026-10-24'}))  # Saturday race
+        with self.assertRaisesRegex(CoachError, 'spätestens in der Woche des Zieldatums'):
+            check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=profile(goal={'date': '2026-10-18'}))
         with self.assertRaisesRegex(CoachError, '60 % des Wunschumfangs'):
             check_block('uebergang', None, weeks('recovery', 'recovery', hours=5), start=MONDAY, profile=profile())
         check_block('uebergang', None, weeks('recovery', 'recovery', hours=4.8), start=MONDAY, profile=profile())
@@ -108,6 +109,28 @@ class WeekRuleTests(unittest.TestCase):
         check_week_rules(running, {'phase': 'recovery'}, [session('bike_z2')])
         with self.assertRaisesRegex(CoachError, 'keine Qualitätseinheit'):
             check_week_rules({'blockType': 'uebergang'}, {'phase': 'recovery'}, [session('bike_tempo')])
+
+
+class NewTemplateRuleTests(unittest.TestCase):
+    def test_micro_intervals_count_as_vo2_sit_as_quality_sprint_rides_as_easy(self):
+        from coach_templates import render_session
+        rendered = lambda template, **params: {'template': template, 'rendered': render_session(template, params, '2026-10-06', 250)}
+        vo2 = {'blockType': 'vo2max', 'secondaryFocus': None}
+        check_week_rules(vo2, {'phase': 'build'}, [rendered('bike_vo2'), rendered('bike_vo2_micro'), rendered('bike_z2_long')])
+        base = {'blockType': 'grundlage', 'secondaryFocus': None}
+        with self.assertRaisesRegex(CoachError, 'keine VO2max'):
+            check_week_rules(base, {'phase': 'base'}, [rendered('bike_vo2_micro')])
+        with self.assertRaisesRegex(CoachError, 'höchstens 1× Qualitätseinheit'):
+            check_week_rules(base, {'phase': 'base'}, [rendered('bike_sit'), rendered('bike_sweetspot'), rendered('bike_z2_long', durationMin=360)])
+        # Only the sprints themselves are hard: a sprint ride keeps the easy share.
+        check_week_rules(base, {'phase': 'base'}, [rendered('bike_z2_sprints'), rendered('bike_sit')])
+        with self.assertRaisesRegex(CoachError, 'keine Sprintintervall'):
+            check_week_rules({'blockType': 'wiedereinstieg'}, {'phase': 'base'}, [rendered('bike_sit')])
+
+    def test_guidance_names_progression_chains(self):
+        from coach_blocks import BLOCK_TYPES
+        self.assertIn('3x9x30/15 -> 3x11x30/15 -> 3x13x30/15', BLOCK_TYPES['vo2max']['guidance'])
+        self.assertIn('1:30 -> 2:00 -> 2:30 -> 3:00 h', BLOCK_TYPES['grundlage']['guidance'])
 
 
 class StoredBlockTests(unittest.TestCase):

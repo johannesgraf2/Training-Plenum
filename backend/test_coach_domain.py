@@ -4,7 +4,7 @@ from datetime import date
 
 from coach_domain import (CHECK_IN_SCHEMA, DAILY_SCHEMA, DEFAULT_PROFILE, DAYS, BLOCK_WEEKS_SCHEMA,
                           WEEK_OVERRIDE_SCHEMA, CoachError, apply_patch, day_date,
-                          effective_availability, iso_week, response_schemas, update_profile,
+                          effective_availability, iso_week, min_ride_minutes, response_schemas, update_profile,
                           validate, week_start)
 from coach_templates import PARAM_NAMES, SESSION_SCHEMA
 
@@ -26,6 +26,22 @@ def changes(operations):
 
 
 class ProfileTests(unittest.TestCase):
+    def test_minimum_ride_follows_the_season_and_older_profiles_get_defaults(self):
+        stored = profile()
+        del stored['preferences']['trainingEnvironment']
+        after = update_profile(stored, {'availability': {'minRideMinutes': {'indoor': 60, 'outdoor': 90}, 'trainingDaysPerWeek': 4}})
+        self.assertEqual(after['availability']['defaultAvailability'], stored['availability']['defaultAvailability'])
+        self.assertEqual(after['availability']['trainingDaysPerWeek'], 4)
+        self.assertEqual(min_ride_minutes(after), 60)  # mixed allows the shorter one
+        after['preferences']['trainingEnvironment'] = 'outdoor'
+        self.assertEqual(min_ride_minutes(after), 90)
+        after['preferences']['trainingEnvironment'] = 'indoor'
+        self.assertEqual(min_ride_minutes(after), 60)
+        after['availability']['minRideMinutes']['indoor'] = None
+        self.assertIsNone(min_ride_minutes(after))
+        with self.assertRaises(CoachError):
+            update_profile(after, {'availability': {'trainingDaysPerWeek': 8}})
+
     def test_updates_preserve_overrides_checkins_and_do_not_mutate_old_profile(self):
         before = profile()
         before['weeklyOverrides'] = [{'week': '2026-W40', 'overrides': {'thu': {'available': False}}, 'note': ''}]

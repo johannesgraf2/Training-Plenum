@@ -42,7 +42,7 @@
 .coach-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
 .coach-field { display: flex; flex-direction: column; gap: 7px; font-size: 11px; font-weight: 600; margin-bottom: 14px; min-width: 0; }
 .coach-field small { font-size: 11px; color: var(--fg-64748b); font-weight: 400; line-height: 1.5; }
-.coach-field :is(input, select, textarea), .coach-availability-day :is(select, input[type="number"]) { font: inherit; font-size: 12px; font-weight: 400; width: 100%; border-radius: 2px; border: 1px solid var(--bd-d4dce7); background: var(--bg-ffffff); color: var(--fg-1e293b); padding: 10px 11px; min-height: 37px; }
+.coach-field :is(input, select, textarea), .coach-availability-day :is(select, input[type="number"]), .coach-season-editor li > :is(select, input) { font: inherit; font-size: 12px; font-weight: 400; width: 100%; border-radius: 2px; border: 1px solid var(--bd-d4dce7); background: var(--bg-ffffff); color: var(--fg-1e293b); padding: 10px 11px; min-height: 37px; }
 .coach-field textarea { min-height: 74px; resize: vertical; }
 .coach-form-grid .coach-field { margin-bottom: 0; }
 .coach-inline-form { display: flex; align-items: end; flex-wrap: wrap; gap: 14px; margin-top: 20px; }
@@ -205,5 +205,38 @@
 .coach-quality { display: flex; gap: 18px; flex-wrap: wrap; color: var(--fg-64748b); font-size: 11px; }
 .coach-quality strong { color: var(--fg-334155); }
 @media (max-width: 1000px) { .coach-week-availability { grid-template-columns: repeat(4, minmax(0, 1fr)); } .coach-secondary-grid { grid-template-columns: 1fr; gap: 0; } }
+.coach-session-note { display: block; margin-top: 4px; padding-left: 8px; border-left: 2px solid var(--ochre); color: var(--fg-475569); line-height: 1.45; }
+
+/* Season plan: one bar to the goal, block colors shared by strip and list */
+.coach-season-strip { position: relative; display: flex; gap: 3px; height: 46px; margin: 14px 0 6px; }
+.coach-season-segment { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 7px; border-radius: 3px; background: var(--muted-2); color: var(--btn-fg); overflow: hidden; white-space: nowrap; }
+.coach-season-segment strong { font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.coach-season-segment small { font-size: 10px; opacity: .85; font-variant-numeric: tabular-nums; }
+.coach-season-today { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+.coach-season-segment.grundlage, .coach-season-dot.grundlage { background: var(--green); }
+.coach-season-segment.aufbau, .coach-season-dot.aufbau { background: var(--blue); }
+.coach-season-segment.schwelle, .coach-season-dot.schwelle { background: var(--ochre); }
+.coach-season-segment.vo2max, .coach-season-dot.vo2max { background: var(--accent); }
+.coach-season-segment.wettkampfspezifisch, .coach-season-dot.wettkampfspezifisch { background: var(--teal); }
+.coach-season-segment.uebergang, .coach-season-segment.custom, .coach-season-dot.uebergang, .coach-season-dot.custom { background: var(--line-strong); color: var(--ink); }
+.coach-season-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.coach-season-list li { display: flex; gap: 10px; align-items: flex-start; }
+.coach-season-list li.done { opacity: .6; }
+.coach-season-list li > div { display: grid; gap: 2px; font-size: 13px; }
+.coach-season-list small { color: var(--fg-64748b); font-size: 12px; font-variant-numeric: tabular-nums; }
+.coach-season-list span { color: var(--fg-475569); font-size: 12px; }
+.coach-season-list li.current strong { color: var(--accent-text); }
+.coach-season-dot { flex: none; width: 12px; height: 12px; margin-top: 3px; border-radius: 2px; background: var(--muted-2); }
+.coach-season-editor ol { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
+.coach-season-editor li { display: grid; grid-template-columns: 28px minmax(140px, 1.4fr) 76px minmax(140px, 1.2fr) auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--bd-e2e8f0); border-radius: 4px; }
+.coach-season-editor li > small { grid-column: 2 / -1; color: var(--fg-64748b); font-size: 12px; }
+.coach-season-move { display: flex; gap: 4px; }
+.coach-season-move button { width: 32px; padding: 6px 0; }
+.coach-season-sum { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--warning); }
+.coach-season-sum.ok { color: var(--success); }
+.coach-season-problems li { color: var(--warning); }
+.ai-coach .coach-season-next { width: 100%; margin-bottom: 14px; border-color: var(--accent); }
+@media (max-width: 650px) { .coach-season-editor li { grid-template-columns: 28px 1fr 76px; } .coach-season-editor li > select:nth-of-type(2), .coach-season-move { grid-column: 2 / -1; } .coach-season-segment { padding: 0 4px; } .coach-season-segment small { display: none; } }
+
 @media (max-width: 650px) { .ai-coach { padding: 20px 12px; } .coach-heading { align-items: start; flex-direction: column; gap: 12px; } .coach-stats { grid-template-columns: repeat(2, 1fr); row-gap: 20px; } .coach-stats > div:nth-child(2) { border-right: 0; } .coach-card { padding: 18px 14px; } .coach-tabs button { padding: 11px; font-size: 11px; } .coach-form-grid, .coach-sessions, .coach-compare { grid-template-columns: 1fr; } .coach-compare > div:last-child { border-left: 0; padding-left: 0; border-top: 1px solid var(--bd-e2e8f0); } .coach-day-inputs, .coach-week-availability { grid-template-columns: repeat(3, minmax(0, 1fr)); } .coach-section-heading { align-items: start; flex-wrap: wrap; } .coach-message { flex-wrap: wrap; } .coach-feedback { grid-template-columns: 1fr; } .coach-checklist li { flex-wrap: wrap; } .coach-choice-grid, .coach-choice-grid.two { grid-template-columns: 1fr; } .coach-checklist li > button { margin-left: 42px; } }
 @media (prefers-reduced-motion: reduce) { .coach-spinner { animation: none; } .ai-coach button { transition: none; } }

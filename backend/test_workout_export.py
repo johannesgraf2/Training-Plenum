@@ -40,6 +40,17 @@ class WorkoutExportTests(unittest.TestCase):
         self.assertEqual(next(FitFile(content).get_messages('file_id')).get_value('type'), 'workout')
         return messages
 
+    def test_notes_become_the_workout_description_on_the_device(self):
+        notes = 'Verpflegung: Während der Einheit Kohlenhydrate zuführen (ca. 40–60 g/h).'
+        workout = validate_workout({**example(), 'notes': f'  {notes} '})
+        self.assertEqual(workout['notes'], notes)
+        self.assertEqual(self.decode(workout)['workout_mesgs'][0]['wkt_description'], notes)
+        self.assertNotIn('notes', validate_workout({**example(), 'notes': ''}))
+        self.assertNotIn('wkt_description', self.decode(example())['workout_mesgs'][0])
+        for invalid in ('ä' * 126, 'Zeile\nzwei', 42):
+            with self.assertRaises(WorkoutError):
+                validate_workout({**example(), 'notes': invalid})
+
     def test_running_example_round_trips_real_repeat_and_reversed_pace_range(self):
         messages = self.decode(example())
         self.assertEqual(messages['workout_mesgs'][0]['num_valid_steps'], 5)
