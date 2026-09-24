@@ -882,7 +882,7 @@ export default function App() {
       }}>
       <header className="app-header">
         <div className="app-header-start">
-          <span className="app-wordmark">Training Plēnum</span>
+          <span className="app-wordmark">Training <em>Plēnum</em></span>
           <nav aria-label="Hauptnavigation" className="app-nav">
             {[['home', 'Startseite'], ['calendar', 'Kalender'], ['dashboard', 'Dashboard'], ['coach', 'AI Coach']].map(([id, label]) => (
               <button key={id} type="button" aria-current={page === id && !selected ? 'page' : undefined}

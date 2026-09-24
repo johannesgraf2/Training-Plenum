@@ -15,6 +15,13 @@
 .user-menu-theme > div { display: flex; padding: 2px; border-radius: 4px; background: var(--bg-f1f5f9); }
 .user-menu-theme button { border: 0; border-radius: 2px; background: transparent; color: var(--fg-64748b); font-size: 12px; font-weight: 600; padding: 6px 10px; }
 .user-menu-theme button[aria-checked="true"] { background: var(--bg-ffffff); color: var(--fg-1e293b); box-shadow: 0 1px 2px rgba(15, 23, 42, .12); }
+.user-menu-background { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--bd-e2e8f0); }
+.user-menu-background .user-menu-theme { padding-bottom: 10px; margin-bottom: 0; border-bottom: 0; }
+.user-menu-theme button:disabled { opacity: .6; cursor: progress; }
+.user-menu-background-actions { display: flex; gap: 8px; }
+.user-menu-background-actions button { flex: 1; font-size: 12px; font-weight: 600; padding: 8px 10px; border: 1px solid var(--bd-dbe1e9); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-334155); }
+.user-menu-background-actions button:hover:not(:disabled) { background: var(--bg-f1f5f9); }
+.user-menu-background .user-menu-note { margin-top: 10px; }
 .user-menu fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .user-menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .user-menu-field { display: flex; flex-direction: column; gap: 5px; font-size: 11px; font-weight: 600; color: var(--fg-475569); }

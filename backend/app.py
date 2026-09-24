@@ -622,6 +622,27 @@ def list_activities():
     return jsonify([a.to_dict() for a in activities])
 
 
+def heart_rate_sparkline(series, points=48):
+    """Average heart rate in equal slices of the recording; slices without readings are skipped."""
+    values = [p.get('hr') for p in series if isinstance(p, dict)]
+    if not values:
+        return []
+    size = max(1, len(values) / points)
+    result = []
+    for index in range(min(points, len(values))):
+        chunk = [v for v in values[int(index * size):int((index + 1) * size)] if valid(v) and v > 0]
+        if chunk:
+            result.append(round(sum(chunk) / len(chunk)))
+    return result if len(result) >= 2 else []
+
+
+@app.route('/api/activities/sparklines', methods=['GET'])
+def activity_sparklines():
+    ids = [value for value in request.args.get('ids', '').split(',') if value][:20]
+    rows = Activity.query.filter(Activity.user_id == DEMO_USER_ID, Activity.id.in_(ids)).options(load_only(Activity.id, Activity.time_series)).all() if ids else []
+    return jsonify({a.id: heart_rate_sparkline(json.loads(a.time_series or '[]')) for a in rows})
+
+
 @app.route('/api/activities/<activity_id>', methods=['GET'])
 def get_activity(activity_id):
     a = Activity.query.get_or_404(activity_id)
@@ -918,7 +939,9 @@ def load_effort_rows():
 
 
 from coach_api import register_coach
+from appearance import register_appearance
 register_coach(app, db, User, Activity, PlannedWorkout, DEMO_USER_ID, load_analytics_rows, load_effort_rows)
+register_appearance(app)
 
 
 if __name__ == '__main__':
