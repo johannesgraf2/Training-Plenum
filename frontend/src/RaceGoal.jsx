@@ -105,13 +105,14 @@ export default function RaceGoal({ apiBase, onEdit, photo }) {
           onChange={event => { const file = event.target.files[0]; event.target.value = ''; if (file) changePhoto(() => uploadImage(apiBase, 'race-goal', file)); }} />
       </div>
       {photoError && <p className="home-error" role="alert">{photoError}</p>}
-      {count && <div className="race-goal-count"><strong>{count.value}</strong><span>{count.label}</span></div>}
-      {days > 0 && <Timeline date={goal.date} />}
-      <dl>
-        {goal.date && <div><dt>Datum</dt><dd>{noon(goal.date).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</dd></div>}
-        {goal.target && <div><dt>Ziel</dt><dd>{goal.target}</dd></div>}
-      </dl>
-      {!goal.date && <button type="button" className="home-link" onClick={onEdit}>Datum eintragen</button>}
+      <div className="race-goal-details">
+        {count && <div className="race-goal-count"><strong>{count.value}</strong><span>{count.label}</span></div>}
+        {days > 0 && <Timeline date={goal.date} />}
+        <dl>
+          {goal.date && <div><dt>Datum</dt><dd>{noon(goal.date).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</dd></div>}
+        </dl>
+        {!goal.date && <button type="button" className="home-link" onClick={onEdit}>Datum eintragen</button>}
+      </div>
     </div> : <div className="race-goal-empty">
       <p>Wofür trainierst du? Trag deinen Wettkampf ein, dann zählt die Startseite die Tage bis zum Start herunter.</p>
       <button type="button" className="home-button" onClick={onEdit}>Wettkampfziel eintragen</button>
