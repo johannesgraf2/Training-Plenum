@@ -9,7 +9,7 @@ import copy
 import uuid
 from datetime import timedelta
 
-from coach_domain import BLOCK_WEEKS_SCHEMA, HINWEISE_SCHEMA, CoachError, day_date, iso_week, obj, text
+from coach_domain import BLOCK_WEEKS_SCHEMA, HINWEISE_SCHEMA, CoachError, day_date, iso_week, obj, text, week_start
 from coach_templates import TEMPLATES, flat_steps
 
 DELOAD_PHASES = {'recovery', 'taper'}
@@ -297,7 +297,9 @@ def block_for_week(blocks, monday):
 
 
 def place_block(blocks, planned_weeks, start, length):
-    """Returns blocks with the new range cleared; overlapping blocks end early as abandoned."""
+    """Returns blocks with the new range cleared; overlapping blocks end early as abandoned.
+
+    Blocks that begin after the new range stay as they are, so a season can be laid out block by block."""
     end = start + timedelta(weeks=length) - timedelta(days=1)
     for week in sorted(planned_weeks):
         if iso_week(start) <= week <= iso_week(end):
@@ -305,10 +307,15 @@ def place_block(blocks, planned_weeks, start, length):
     result = copy.deepcopy(blocks)
     replaced = []
     for block in result:
-        if block['status'] != 'abandoned' and day_date(block['endDate']) >= start:
-            block['status'] = 'abandoned'
-            block['endDate'] = (start - timedelta(days=1)).isoformat()
-            replaced.append(block['id'])
+        first, last = day_date(block['startDate']), day_date(block['endDate'])
+        if block['status'] == 'abandoned' or last < start or first > end:
+            continue
+        if any(end < week_start(week) <= last for week in planned_weeks):
+            raise CoachError(f"Der Block überschneidet sich mit „{block_type(block['blockType'])['name']}“ "
+                             f"ab {block['startDate']}, dort sind bereits Wochen geplant. Bitte diesen Block zuerst löschen.")
+        block['status'] = 'abandoned'
+        block['endDate'] = (start - timedelta(days=1)).isoformat()
+        replaced.append(block['id'])
     return result, replaced
 
 
