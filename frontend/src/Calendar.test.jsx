@@ -81,3 +81,59 @@ test('existing calendar plans reopen for editing, move when their date changes a
   expect(day('2026-02-02').querySelector('.calendar-planned-workout')).toBeNull();
   expect(saved).toEqual([]);
 });
+
+const dataTransfer = () => {
+  const data = {};
+  return { data, get types() { return Object.keys(data); }, setData: (type, value) => { data[type] = value; }, getData: type => data[type] ?? '', effectAllowed: '', dropEffect: '' };
+};
+const dragPlan = async (from, to) => {
+  const transfer = dataTransfer();
+  const plan = day(from).querySelector('.calendar-planned-workout');
+  act(() => Simulate.dragStart(plan, { dataTransfer: transfer }));
+  act(() => Simulate.dragOver(day(to), { dataTransfer: transfer }));
+  expect(day(to).classList.contains('calendar-drop-target')).toBe(true);
+  await act(async () => Simulate.drop(day(to), { dataTransfer: transfer }));
+  act(() => Simulate.dragEnd(plan, { dataTransfer: transfer }));
+};
+
+test('a planned workout can be dragged onto another day and stays there after reload', async () => {
+  saved = [{ ...newWorkout('2026-01-31'), id: 'drag-me', name: 'Verschieben', locked: false }];
+  await renderCalendar();
+  expect(day('2026-01-31').querySelector('.calendar-planned-workout').getAttribute('draggable')).toBe('true');
+  await dragPlan('2026-01-31', '2026-01-27');
+  const put = global.fetch.mock.calls.find(([, options = {}]) => options.method === 'PUT');
+  expect(put[0]).toBe('http://localhost:5000/api/workouts/drag-me');
+  const body = JSON.parse(put[1].body);
+  expect(body).toMatchObject({ date: '2026-01-27', name: 'Verschieben', sport: 'ride' });
+  expect(body).not.toHaveProperty('id');
+  expect(body).not.toHaveProperty('locked');
+  expect(day('2026-01-31').querySelector('.calendar-planned-workout')).toBeNull();
+  expect(day('2026-01-27').querySelector('.calendar-planned-workout').textContent).toContain('Verschieben');
+  expect(container.querySelector('.calendar-drop-target')).toBeNull();
+  act(() => root.unmount()); root = createRoot(container);
+  await renderCalendar();
+  expect(day('2026-01-27').querySelector('.calendar-planned-workout').textContent).toContain('Verschieben');
+});
+
+test('dropping on the same day does nothing and a refused move is reverted with an error', async () => {
+  saved = [{ ...newWorkout('2026-01-31'), id: 'drag-me', name: 'Verschieben', locked: false }];
+  await renderCalendar();
+  await dragPlan('2026-01-31', '2026-01-31');
+  expect(global.fetch.mock.calls.some(([, options = {}]) => options.method === 'PUT')).toBe(false);
+  const serve = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => options.method === 'PUT'
+    ? { ok: false, status: 500, json: async () => ({ error: 'Datenbank nicht erreichbar.' }) }
+    : serve(url, options));
+  await dragPlan('2026-01-31', '2026-01-20');
+  expect(day('2026-01-20').querySelector('.calendar-planned-workout')).toBeNull();
+  expect(day('2026-01-31').querySelector('.calendar-planned-workout').textContent).toContain('Verschieben');
+  expect(container.querySelector('[role="alert"]').textContent).toContain('„Verschieben“ konnte nicht verschoben werden. Datenbank nicht erreichbar.');
+});
+
+test('a fixed (locked) plan is not draggable', async () => {
+  saved = [{ ...newWorkout('2026-01-31'), id: 'fixed', name: 'Fixiert', locked: true }];
+  await renderCalendar();
+  const plan = day('2026-01-31').querySelector('.calendar-planned-workout');
+  expect(plan.getAttribute('draggable')).toBe('false');
+  expect(plan.title).toContain('Fixiert');
+});

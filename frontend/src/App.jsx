@@ -15,6 +15,8 @@ import './App.css';
 
 // ─── API HELPER ───
 const API = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+// Drag payload for moving a planned workout between calendar days (distinct from file drops).
+const WORKOUT_DRAG_TYPE = 'application/x-training-plenum-workout';
 
 async function api(path, opts = {}) {
   try {
@@ -718,6 +720,9 @@ export default function App() {
   const [workoutEditor, setWorkoutEditor] = useState(null);
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [workoutLoadError, setWorkoutLoadError] = useState('');
+  const [draggedWorkout, setDraggedWorkout] = useState(null);
+  const [dropDate, setDropDate] = useState(null);
+  const [moveError, setMoveError] = useState('');
   const [legacyUpload, setLegacyUpload] = useState(false);
   const [incomingDrop, setIncomingDrop] = useState(null);
   const [toast, setToast] = useState(null);
@@ -799,6 +804,22 @@ export default function App() {
 
   const reloadWorkouts = () => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })
     .catch(error => setWorkoutLoadError(error.message));
+  // Moves a planned workout to another day: shown immediately, reverted if the server refuses.
+  const moveWorkout = async (id, date) => {
+    const workout = plannedWorkouts.find(w => w.id === id);
+    setDropDate(null); setDraggedWorkout(null);
+    if (!workout || workout.locked || workout.date === date) return;
+    setMoveError('');
+    setPlannedWorkouts(current => current.map(w => w.id === id ? { ...w, date } : w));
+    const { id: _id, locked: _locked, ...definition } = workout;
+    try {
+      const saved = await api(`/api/workouts/${id}`, { method: 'PUT', body: JSON.stringify({ ...definition, date }) });
+      setPlannedWorkouts(current => current.map(w => w.id === id ? saved : w));
+    } catch (error) {
+      setPlannedWorkouts(current => current.map(w => w.id === id ? workout : w));
+      setMoveError(`„${workout.name}“ konnte nicht verschoben werden. ${error.message}`);
+    }
+  };
   const openCoachProfile = () => { setCoachTab(t => ({ tab: 'profile', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
 
   const todayStr = new Date().toDateString();
@@ -909,6 +930,7 @@ export default function App() {
             </div>
 
             {workoutLoadError && <p role="alert" className="calendar-error">{workoutLoadError} <button type="button" onClick={reloadWorkouts}>Erneut laden</button></p>}
+            {moveError && <p role="alert" className="calendar-error">{moveError} <button type="button" onClick={() => setMoveError('')}>Schließen</button></p>}
 
             <div className="calendar-head">
               {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(d => <div key={d}>{d}</div>)}
@@ -920,8 +942,22 @@ export default function App() {
                 {week.cells.map((cell, ci) => {
                   if (!cell) return <div key={`e${wi}-${ci}`} className="calendar-day-empty" />;
                   const isToday = cell.date.toDateString() === todayStr;
+                  const cellDate = localDate(cell.date);
+                  const carriesWorkout = event => Array.from(event.dataTransfer.types || []).includes(WORKOUT_DRAG_TYPE);
                   return (
-                    <div key={`${wi}-${ci}`} className={`calendar-day${isToday ? ' today' : ''}`} data-date={localDate(cell.date)} role="group" aria-label={`Kalendertag ${fmt.dateFull(cell.date)}`}>
+                    <div key={`${wi}-${ci}`} className={`calendar-day${isToday ? ' today' : ''}${dropDate === cellDate ? ' calendar-drop-target' : ''}`}
+                      data-date={cellDate} role="group" aria-label={`Kalendertag ${fmt.dateFull(cell.date)}`}
+                      onDragOver={event => {
+                        if (!carriesWorkout(event)) return;
+                        event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+                        if (dropDate !== cellDate) setDropDate(cellDate);
+                      }}
+                      onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDropDate(d => d === cellDate ? null : d); }}
+                      onDrop={event => {
+                        if (!carriesWorkout(event)) return;
+                        event.preventDefault(); event.stopPropagation();
+                        moveWorkout(event.dataTransfer.getData(WORKOUT_DRAG_TYPE), cellDate);
+                      }}>
                       <div className="calendar-day-header">
                         <span className="calendar-day-number">{isToday ? `Heute ${cell.day}` : cell.day === 1 ? `1. ${calMonth.toLocaleDateString('de-DE', { month: 'short' })}` : cell.day}</span>
                         <button type="button" className="calendar-add-workout"
@@ -930,9 +966,18 @@ export default function App() {
                           onClick={() => setWorkoutEditor({ date: localDate(cell.date) })}>+</button>
                       </div>
 
-                      {cell.plans.map(workout => <button type="button" className="calendar-planned-workout" key={workout.id}
+                      {cell.plans.map(workout => <button type="button" key={workout.id}
+                        className={`calendar-planned-workout${draggedWorkout === workout.id ? ' dragging' : ''}`}
                         style={{ '--calendar-sport-color': sportColor(workout.sport) }}
                         aria-label={`${workout.name} am ${cell.date.toLocaleDateString('de-DE')} bearbeiten`}
+                        draggable={!workout.locked}
+                        title={workout.locked ? 'Fixiert – im AI Coach lösen, um die Einheit zu verschieben' : 'Zum Verschieben auf einen anderen Tag ziehen'}
+                        onDragStart={event => {
+                          event.dataTransfer.setData(WORKOUT_DRAG_TYPE, workout.id);
+                          event.dataTransfer.effectAllowed = 'move';
+                          setDraggedWorkout(workout.id);
+                        }}
+                        onDragEnd={() => { setDraggedWorkout(null); setDropDate(null); }}
                         onClick={() => setWorkoutEditor(workout)}>
                         <span className="calendar-plan-heading">{sportLabels[workout.sport] || 'Training'} · <span className="calendar-plan-status">Geplant</span></span>
                         <strong>{workout.name}</strong><small>{workoutSummary(workout)}</small>
