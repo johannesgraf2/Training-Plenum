@@ -714,7 +714,7 @@ export default function App() {
   const [activities, setActivities] = useState([]);
   const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState('dashboard');
+  const [page, setPage] = useState('home');
   const [selected, setSelected] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
   const [workoutEditor, setWorkoutEditor] = useState(null);

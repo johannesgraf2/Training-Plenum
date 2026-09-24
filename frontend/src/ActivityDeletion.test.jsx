@@ -14,7 +14,7 @@ const plan = { ...newWorkout('2026-01-31'), id: 'plan-to-keep', name: 'Geplante 
 const button = text => [...container.querySelectorAll('button')].find(b => b.textContent === text);
 const click = async element => act(async () => element.click());
 const deleteCalls = () => global.fetch.mock.calls.filter(([, opts]) => opts?.method === 'DELETE');
-const openActivity = async () => click([...container.querySelectorAll('span')].find(el => el.textContent === activity.title));
+const openActivity = async () => click([...container.querySelectorAll('span, strong')].find(el => el.textContent === activity.title));
 beforeEach(() => {
   jest.useFakeTimers();
   jest.setSystemTime(new Date('2026-01-31T12:00:00'));
