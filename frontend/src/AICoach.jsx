@@ -200,10 +200,13 @@ function BlockTimeline({ timeline, selected, onSelect }) {
 
 const sessionName = session => session.rendered?.name || session.name || session.template;
 const sessionDuration = session => session.rendered?.durationMin ?? session.params?.durationMin;
+const dayIndex = session => DAYS.findIndex(([d]) => d === session.day);
+// Chronological: by date where rendered, otherwise by weekday; new sessions are often appended at the end.
+const byDay = (a, b) => (a.rendered?.date || '').localeCompare(b.rendered?.date || '') || dayIndex(a) - dayIndex(b);
 function SessionList({ value }) {
   if (!value) return <p className="coach-muted">Noch keine Woche geplant.</p>;
   return <><p className="coach-week-focus"><strong>{hours(value.targetHours)}</strong> · {value.focus || 'Trainingswoche'}</p>
-    <div className="coach-sessions">{(value.sessions || []).map((session, i) => <div className="coach-session" key={session.id || i}>
+    <div className="coach-sessions">{[...(value.sessions || [])].sort(byDay).map((session, i) => <div className="coach-session" key={session.id || i}>
       <strong className="coach-day">{DAYS.find(([d]) => d === session.day)?.[1] || session.day}</strong>
       <div><strong>{sessionName(session)}</strong><small>{session.rendered?.date && `${dateLabel(session.rendered.date)} · `}{sessionDuration(session) == null ? 'Dauer offen' : `${fmt(sessionDuration(session))} min`}{session.rendered?.estimatedTss != null && ` · ${fmt(session.rendered.estimatedTss)} TSS`}</small>{session.rendered?.notes && <small className="coach-session-note">{session.rendered.notes}</small>}</div>
       {session.locked && <span className="coach-badge">Fixiert</span>}
