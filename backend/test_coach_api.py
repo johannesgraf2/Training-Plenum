@@ -125,14 +125,62 @@ class CoachAPITests(unittest.TestCase):
     def test_macro_is_staged_explicit_confirm_and_idempotent(self):
         decision = {'weeks': [{'week': 1, 'phase': 'base', 'targetHours': 5, 'focus': 'Grundlage'}]}
         proposal, provider = self.propose({'kind': 'macro', 'startDate': self.start.isoformat(), 'weeks': 1}, decision)
-        self.assertIsNone(self.client.get('/api/coach/plan').json['macroPlan'])
+        self.assertEqual(self.client.get('/api/coach/plan').json['blocks'], [])
         for bad in ({}, {'confirm': 1}, {'confirm': 'true'}, {'confirm': True, 'after': {}}):
             self.assertEqual(self.client.post('/api/coach/proposals/' + proposal['id'] + '/confirm', json=bad).status_code, 400)
         result = self.confirm(proposal)
         self.assertEqual(self.confirm(proposal)['revision'], result['revision'])
+        block = result['blocks'][0]
+        self.assertEqual((block['blockType'], block['typeName'], block['status'], block['startDate']),
+                         ('custom', 'Eigener Block', 'active', self.start.isoformat()))
+        self.assertEqual(block['endDate'], (self.start + timedelta(days=6)).isoformat())
         context = provider.generate.call_args.args[3]
         self.assertIn('snapshot', context)
         self.assertNotIn('timeSeries', json.dumps(context))
+
+    def test_saved_macro_plan_becomes_a_custom_block_for_week_planning(self):
+        legacy = {'macroPlan': {'source': 'aiRecommendation', 'startDate': self.start.isoformat(),
+                                'weeks': [{'week': 1, 'phase': 'base', 'targetHours': 5, 'focus': 'Grundlage'}]}, 'weeks': {}}
+        with self.backend.app.app_context():
+            state = self.backend.db.session.get(self.State, self.backend.DEMO_USER_ID)
+            state.plan = json.dumps(legacy)
+            self.backend.db.session.commit()
+        plan = self.client.get('/api/coach/plan').json
+        self.assertNotIn('macroPlan', plan)
+        self.assertEqual(plan['blocks'][0]['id'], 'custom-' + self.start.isoformat())
+        proposal, provider = self.propose({'kind': 'week', 'week': self.week},
+                                          {'week': self.week, 'targetHours': 1, 'focus': 'Locker', 'sessions': [self.session()]})
+        context = provider.generate.call_args.args[3]
+        self.assertEqual((context['block']['name'], context['block']['weekNumber']), ('Eigener Block', 1))
+        self.assertEqual(context['blockWeek']['focus'], 'Grundlage')
+        saved = self.confirm(proposal)
+        self.assertEqual(saved['blocks'][0]['id'], 'custom-' + self.start.isoformat())
+        with self.backend.app.app_context():
+            stored = json.loads(self.backend.db.session.get(self.State, self.backend.DEMO_USER_ID).plan)
+        self.assertNotIn('macroPlan', stored)
+        self.assertEqual(len(stored['blocks']), 1)
+
+    def test_next_block_may_follow_planned_weeks_but_never_overwrite_them(self):
+        self.week_plan()
+        later = self.start + timedelta(weeks=1)
+        decision = {'weeks': [{'week': 1, 'phase': 'recovery', 'targetHours': 4, 'focus': 'Locker'}]}
+        response, _ = self.propose({'kind': 'macro', 'startDate': self.start.isoformat(), 'weeks': 1}, decision, expected=400)
+        self.assertIn('bereits eine Woche geplant', response['error'])
+        proposal, _ = self.propose({'kind': 'macro', 'startDate': later.isoformat(), 'weeks': 1}, decision)
+        self.assertEqual(proposal['before']['startDate'], self.start.isoformat())
+        blocks = self.confirm(proposal)['blocks']
+        self.assertEqual([(b['status'], b['startDate'], b['endDate']) for b in blocks],
+                         [('abandoned', self.start.isoformat(), (later - timedelta(days=1)).isoformat()),
+                          ('active', later.isoformat(), (later + timedelta(days=6)).isoformat())])
+        patch, _ = self.propose({'kind': 'patch', 'week': self.week}, {'week': self.week, 'targetHours': 1, 'focus': 'Rest', 'operations': []})
+        self.confirm(patch)
+        outside = iso_week(self.start + timedelta(weeks=5))
+        self.propose({'kind': 'week', 'week': outside}, {'week': outside, 'targetHours': 1, 'focus': 'x', 'sessions': []}, expected=400)
+
+    def test_block_types_catalog_is_public_to_the_coach(self):
+        result = self.client.get('/api/coach/block-types').json
+        self.assertEqual(len(result['blockTypes']), 7)
+        self.assertNotIn('custom', [item['id'] for item in result['blockTypes']])
 
     def test_week_workouts_enter_existing_calendar_only_on_confirm(self):
         self.macro()

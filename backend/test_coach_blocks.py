@@ -1,0 +1,140 @@
+import copy
+import unittest
+from datetime import date
+
+from coach_blocks import (block_for_week, block_status, catalog, check_block, check_week_rules,
+                          migrate_plan, place_block, suggested_rhythm)
+from coach_domain import DEFAULT_PROFILE, CoachError
+
+MONDAY = date(2026, 10, 5)
+
+
+def weeks(*phases, hours=6):
+    return [{'week': i + 1, 'phase': phase, 'targetHours': hours, 'focus': ''} for i, phase in enumerate(phases)]
+
+
+def session(template, minutes=60):
+    return {'template': template, 'rendered': {'durationMin': minutes}}
+
+
+def profile(**changes):
+    value = copy.deepcopy(DEFAULT_PROFILE)
+    value['availability']['preferredWeeklyHours'] = 8
+    for key, item in changes.items():
+        value[key] = {**value[key], **item}
+    return value
+
+
+class CatalogTests(unittest.TestCase):
+    def test_catalog_offers_selectable_types_with_german_rules(self):
+        result = catalog()
+        ids = [item['id'] for item in result['blockTypes']]
+        self.assertEqual(ids, ['wiedereinstieg', 'grundlage', 'aufbau', 'schwelle', 'vo2max', 'wettkampfspezifisch', 'uebergang'])
+        vo2 = next(item for item in result['blockTypes'] if item['id'] == 'vo2max')
+        self.assertEqual((vo2['minWeeks'], vo2['defaultWeeks'], vo2['maxWeeks']), (3, 4, 6))
+        self.assertIn('Mindestens 2× VO2max-Einheit pro Belastungswoche', vo2['rules'])
+        self.assertEqual([item['id'] for item in result['secondaryFocus']], ['kraft', 'laufen', 'radfahren'])
+
+    def test_rhythm_is_three_to_one_with_shorter_cycles_for_short_blocks(self):
+        pattern = lambda n: ''.join('D' if d else 'L' for d in suggested_rhythm(n, 'grundlage'))
+        self.assertEqual(pattern(3), 'LLD')
+        self.assertEqual(pattern(4), 'LLLD')
+        self.assertEqual(pattern(5), 'LLDLD')
+        self.assertEqual(pattern(8), 'LLLDLLLD')
+        self.assertEqual(pattern(10), 'LLLDLLDLLD')
+        self.assertEqual(suggested_rhythm(2, 'uebergang'), [False, False])
+        for length in range(4, 9):  # Every suggested rhythm passes the block rules.
+            check_block('aufbau', None, weeks(*['recovery' if d else 'build' for d in suggested_rhythm(length, 'aufbau')]),
+                        start=MONDAY, profile=profile())
+
+
+class BlockRuleTests(unittest.TestCase):
+    def test_length_last_deload_and_load_streak(self):
+        with self.assertRaisesRegex(CoachError, '3–6 Wochen'):
+            check_block('vo2max', None, weeks('build', 'recovery'), start=MONDAY, profile=profile())
+        with self.assertRaisesRegex(CoachError, 'Entlastungswoche'):
+            check_block('vo2max', None, weeks('build', 'build', 'build'), start=MONDAY, profile=profile())
+        with self.assertRaisesRegex(CoachError, 'Belastungswochen'):
+            check_block('grundlage', None, weeks('base', 'base', 'base', 'base', 'base', 'recovery'), start=MONDAY, profile=profile())
+        check_block('grundlage', None, weeks('base', 'base', 'recovery', 'base', 'base', 'recovery'), start=MONDAY, profile=profile())
+
+    def test_taper_transition_cap_goal_date_and_strength(self):
+        race = weeks('build', 'peak', 'taper')
+        race[-1]['targetHours'] = 5
+        with self.assertRaisesRegex(CoachError, 'Zieldatum im Profil'):
+            check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=profile())
+        goal = profile(goal={'date': '2026-10-25'})
+        with self.assertRaisesRegex(CoachError, '30 % weniger'):
+            check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=goal)
+        race[-1]['targetHours'] = 4.2
+        check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=goal)
+        with self.assertRaisesRegex(CoachError, 'spätestens am Zieldatum'):
+            check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=profile(goal={'date': '2026-10-24'}))
+        with self.assertRaisesRegex(CoachError, '60 % des Wunschumfangs'):
+            check_block('uebergang', None, weeks('recovery', 'recovery', hours=5), start=MONDAY, profile=profile())
+        check_block('uebergang', None, weeks('recovery', 'recovery', hours=4.8), start=MONDAY, profile=profile())
+        with self.assertRaisesRegex(CoachError, 'Krafttraining-Verfügbarkeit'):
+            check_block('aufbau', 'kraft', weeks('build', 'build', 'build', 'recovery'), start=MONDAY, profile=profile())
+        check_block('aufbau', 'kraft', weeks('build', 'build', 'build', 'recovery'), start=MONDAY,
+                    profile=profile(preferences={'gymAvailability': True}))
+        with self.assertRaisesRegex(CoachError, 'Blocktyp'):
+            check_block('sprint', None, weeks('build'), start=MONDAY, profile=profile())
+
+
+class WeekRuleTests(unittest.TestCase):
+    def test_vo2_block_needs_two_vo2_sessions_in_load_weeks_only(self):
+        block = {'blockType': 'vo2max', 'secondaryFocus': None}
+        with self.assertRaisesRegex(CoachError, 'mindestens 2× VO2max'):
+            check_week_rules(block, {'phase': 'build'}, [session('bike_vo2'), session('bike_z2')])
+        check_week_rules(block, {'phase': 'build'}, [session('bike_vo2'), session('bike_vo2'), session('bike_z2')])
+        check_week_rules(block, {'phase': 'recovery'}, [session('bike_z2')])
+        with self.assertRaisesRegex(CoachError, 'höchstens 1×'):
+            check_week_rules(block, {'phase': 'build'}, [session('bike_vo2'), session('bike_vo2'),
+                                                         session('bike_sweetspot'), session('bike_threshold')])
+
+    def test_forbidden_templates_easy_share_and_secondary_focus(self):
+        with self.assertRaisesRegex(CoachError, 'keine VO2max'):
+            check_week_rules({'blockType': 'grundlage'}, {'phase': 'recovery'}, [session('bike_vo2')])
+        base = {'blockType': 'grundlage', 'secondaryFocus': None}
+        with self.assertRaisesRegex(CoachError, '80 %'):
+            check_week_rules(base, {'phase': 'base'}, [session('bike_sweetspot', 60), session('bike_z2', 180)])
+        check_week_rules(base, {'phase': 'base'}, [session('bike_sweetspot', 60), session('bike_z2', 240), session('strength_general', 300)])
+        running = {'blockType': 'grundlage', 'secondaryFocus': 'laufen'}
+        with self.assertRaisesRegex(CoachError, 'Nebenschwerpunkt Laufen'):
+            check_week_rules(running, {'phase': 'base'}, [session('bike_z2')])
+        check_week_rules(running, {'phase': 'base'}, [session('bike_z2'), session('run_easy')])
+        check_week_rules(running, {'phase': 'recovery'}, [session('bike_z2')])
+        with self.assertRaisesRegex(CoachError, 'keine Qualitätseinheit'):
+            check_week_rules({'blockType': 'uebergang'}, {'phase': 'recovery'}, [session('bike_tempo')])
+
+
+class StoredBlockTests(unittest.TestCase):
+    def test_macro_plan_migrates_to_a_stable_custom_block(self):
+        legacy = {'macroPlan': {'source': 'aiRecommendation', 'startDate': '2026-09-21', 'weeks': weeks('base', 'recovery')},
+                  'weeks': {'2026-W39': {'week': '2026-W39'}}}
+        first, second = migrate_plan(legacy), migrate_plan(legacy)
+        self.assertEqual(first, second)
+        self.assertNotIn('macroPlan', first)
+        self.assertEqual(first['weeks'], legacy['weeks'])
+        block = first['blocks'][0]
+        self.assertEqual((block['id'], block['blockType'], block['status'], block['endDate']), ('custom-2026-09-21', 'custom', 'active', '2026-10-04'))
+        self.assertEqual(migrate_plan(first), first)
+        self.assertEqual(migrate_plan({'macroPlan': None, 'weeks': {}}), {'blocks': [], 'weeks': {}})
+        self.assertEqual(block_status(block, date(2026, 10, 4)), 'active')
+        self.assertEqual(block_status(block, date(2026, 10, 5)), 'completed')
+
+    def test_new_block_ends_overlapping_blocks_but_never_planned_weeks(self):
+        blocks = migrate_plan({'macroPlan': {'startDate': '2026-09-21', 'weeks': weeks('base', 'base', 'recovery')}, 'weeks': {}})['blocks']
+        with self.assertRaisesRegex(CoachError, '2026-W40 ist bereits'):
+            place_block(blocks, {'2026-W40': {}}, date(2026, 9, 28), 4)
+        placed, replaced = place_block(blocks, {'2026-W39': {}}, date(2026, 9, 28), 4)
+        self.assertEqual(replaced, ['custom-2026-09-21'])
+        self.assertEqual((placed[0]['status'], placed[0]['endDate']), ('abandoned', '2026-09-27'))
+        self.assertEqual(blocks[0]['status'], 'active')
+        self.assertEqual(block_for_week(placed, date(2026, 9, 21))[1], 1)
+        self.assertEqual(block_for_week(placed, date(2026, 9, 28)), (None, None))
+        self.assertEqual(place_block(blocks, {}, date(2026, 10, 12), 4), (blocks, []))
+
+
+if __name__ == '__main__':
+    unittest.main()

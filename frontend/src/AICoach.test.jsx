@@ -23,7 +23,7 @@ beforeEach(() => {
   jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-23T12:00:00Z'));
   global.IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-  originalFetch = global.fetch; requests = []; responses = {}; changed = jest.fn(); initialPlan = { revision: 0, macroPlan: null, weeks: {} };
+  originalFetch = global.fetch; requests = []; responses = {}; changed = jest.fn(); initialPlan = { revision: 0, blocks: [], weeks: {} };
   global.fetch = jest.fn(async (url, options = {}) => {
     const path = new URL(url).pathname;
     const method = options.method || 'GET';
@@ -36,8 +36,8 @@ beforeEach(() => {
     else if (path === '/api/athlete-profile') data = method === 'PUT' ? { ...profile, ...body } : profile;
     else if (path === '/api/ai-provider') data = { provider: 'openai', model: body?.model || 'gpt-4.1-mini', configured: true, keyLast4: '1234', encryptionConfigured: true };
     else if (path === '/api/coach/plan') data = initialPlan;
-    else if (path === '/api/coach/proposals') data = { id: 'proposal-1', kind: body.kind, summary: 'Mehr Zeit für Erholung.', before: body.kind === 'macro' ? initialPlan.macroPlan : weekPlan, after: body.kind === 'macro' ? macro : { ...weekPlan, targetHours: 7, sessions: [{ ...session, params: { durationMin: 45 }, rendered: { ...session.rendered, durationMin: 45 } }] } };
-    else if (path.endsWith('/confirm')) data = { revision: 1, macroPlan: macro, weeks: {} };
+    else if (path === '/api/coach/proposals') data = { id: 'proposal-1', kind: body.kind, summary: 'Mehr Zeit für Erholung.', before: body.kind === 'macro' ? null : weekPlan, after: body.kind === 'macro' ? macro : { ...weekPlan, targetHours: 7, sessions: [{ ...session, params: { durationMin: 45 }, rendered: { ...session.rendered, durationMin: 45 } }] } };
+    else if (path.endsWith('/confirm')) data = { revision: 1, blocks: [macro], weeks: {} };
     else if (path.startsWith('/api/coach/weekly-overrides/')) data = body;
     else if (path.startsWith('/api/workouts/') && path.endsWith('/lock')) data = body;
     else if (path.endsWith('/discard')) data = {};
@@ -75,7 +75,7 @@ test('a proposal is human-readable and only saves after explicit confirmation', 
 });
 
 test('changing availability removes a preview and blocks AI planning until the override is saved', async () => {
-  initialPlan = { revision: 2, macroPlan: macro, weeks: { '2026-W39': weekPlan } };
+  initialPlan = { revision: 2, blocks: [macro], weeks: { '2026-W39': weekPlan } };
   await render(); await click(button('Woche anpassen'));
   expect(container.textContent).toContain('Geändert: Grundlage');
   await change(container.querySelector('[aria-label="Do Verfügbarkeit diese Woche"]'), 'no');
@@ -112,7 +112,7 @@ test('a rejected provider save clears the secret and exposes a useful error', as
 
 test('new workout context invalidates an outstanding proposal and locking refreshes the calendar', async () => {
   const workout = { id: 'own-workout', date: '2026-09-26', name: 'Gruppenausfahrt', locked: false };
-  initialPlan = { revision: 2, macroPlan: macro, weeks: { '2026-W39': weekPlan } };
+  initialPlan = { revision: 2, blocks: [macro], weeks: { '2026-W39': weekPlan } };
   await render({ workouts: [workout] }); await click(button('Woche anpassen'));
   await render({ workouts: [{ ...workout, locked: true }] });
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
@@ -155,7 +155,7 @@ test('an incomplete setup shows a checklist that jumps to the missing step inste
 });
 
 test('an active block shows the current block week and German planning actions', async () => {
-  initialPlan = { revision: 1, macroPlan: { startDate: '2026-09-14', weeks: [macro.weeks[0], { ...macro.weeks[0], week: 2 }, { ...macro.weeks[0], week: 3, phase: 'recovery' }] }, weeks: {} };
+  initialPlan = { revision: 1, blocks: [{ startDate: '2026-09-14', weeks: [macro.weeks[0], { ...macro.weeks[0], week: 2 }, { ...macro.weeks[0], week: 3, phase: 'recovery' }] }], weeks: {} };
   await render();
   expect(container.textContent).toContain('Woche 2 von 3');
   expect(container.textContent).toContain('Erholung');
@@ -168,14 +168,26 @@ test('an active block shows the current block week and German planning actions',
 });
 
 test('an upcoming block opens on its first week', async () => {
-  initialPlan = { revision: 1, macroPlan: { ...macro, startDate: '2026-10-05' }, weeks: {} };
+  initialPlan = { revision: 1, blocks: [{ ...macro, startDate: '2026-10-05' }], weeks: {} };
   await render();
   expect(container.textContent).toContain('Startet am');
   expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W41');
 });
 
+test('a replaced block is history; the next block and its type are shown', async () => {
+  initialPlan = { revision: 4, weeks: {}, blocks: [
+    { ...macro, id: 'old', status: 'abandoned', endDate: '2026-09-27', typeName: 'Eigener Block' },
+    { ...macro, id: 'next', status: 'active', startDate: '2026-09-28', endDate: '2026-10-04', typeName: 'VO2max', secondaryName: 'Kraft' },
+  ] };
+  await render();
+  expect(container.textContent).toContain('Startet am');
+  expect(container.querySelector('.coach-block-type').textContent).toBe('VO2max + Kraft');
+  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W40');
+  expect(button('Neuen Trainingsblock vorschlagen')).toBeDefined();
+});
+
 test('an ended block offers the next block instead of week planning', async () => {
-  initialPlan = { revision: 3, macroPlan: { ...macro, startDate: '2026-09-07' }, weeks: {} };
+  initialPlan = { revision: 3, blocks: [{ ...macro, startDate: '2026-09-07' }], weeks: {} };
   await render();
   expect(container.textContent).toContain('Block abgeschlossen');
   expect(button('Nächsten Trainingsblock vorschlagen')).toBeDefined();

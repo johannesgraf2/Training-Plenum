@@ -14,6 +14,8 @@ from sqlalchemy.orm import load_only
 
 from ai_provider import DEFAULT_MODEL, ProviderError, decrypt_key, encrypt_key, get_provider, validate_model
 from athlete_context import build_snapshot, summarize_period
+from coach_blocks import (block_for_week, catalog as block_catalog, migrate_plan, new_block, place_block,
+                          public_blocks, rule_texts, BLOCK_TYPES)
 from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
                           CHECK_IN_SCHEMA, apply_patch, day_date, effective_availability, iso_week,
                           num, obj, response_schemas, text, update_profile, validate, week_start)
@@ -39,7 +41,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         __tablename__ = 'athlete_coach_state'
         user_id = db.Column(db.String(36), db.ForeignKey('user.id'), primary_key=True)
         profile = db.Column(db.Text, nullable=False, default=lambda: packed(DEFAULT_PROFILE))
-        plan = db.Column(db.Text, nullable=False, default=lambda: packed({'macroPlan': None, 'weeks': {}}))
+        plan = db.Column(db.Text, nullable=False, default=lambda: packed({'blocks': [], 'weeks': {}}))
         revision = db.Column(db.Integer, nullable=False, default=0)
 
     class AIProviderSettings(db.Model):
@@ -129,7 +131,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
     def current_plan():
         value = state()
-        plan = json.loads(value.plan)
+        plan = migrate_plan(json.loads(value.plan))  # Saved in the new shape on the next confirmed change.
         saved = workouts()
         for week in plan['weeks'].values():
             updated = []
@@ -263,9 +265,17 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
     def templates():
         return jsonify(template_catalog())
 
+    def public_plan():
+        plan = current_plan()
+        return {**plan, 'blocks': public_blocks(plan['blocks'], datetime.now(zone()).date())}
+
+    @app.route('/api/coach/block-types')
+    def block_types():
+        return jsonify(block_catalog())
+
     @app.route('/api/coach/plan')
     def get_plan():
-        return jsonify(current_plan())
+        return jsonify(public_plan())
 
     @app.route('/api/workouts/<identity>/lock', methods=['PUT'])
     def lock_workout(identity):
@@ -365,7 +375,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'Choose only supplied templates and supported params; use null for unused params. Follow exact duration rules including warmup/cooldown. '
         'targetHours must equal total duration including fixed sessions, within 15 minutes. Never change fixed or locked sessions. '
         'Use unique short session ids. A patch contains only changed sessions, with matching sessionId/id; remove uses session:null. '
-        'All human-facing focus text should be German. For week output use requested ISO week; macro weeks are consecutive from 1.'
+        'All human-facing focus text should be German. For week output use requested ISO week; block weeks are consecutive from 1. '
+        'Plan each week within its training block and follow the block rules.'
     )
 
     @app.route('/api/coach/proposals', methods=['POST'])
@@ -383,12 +394,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         if kind == 'macro':
             start = day_date(data.get('startDate'))
             if start.weekday() != 0 or start < datetime.now(zone()).date():
-                raise CoachError('Der Makroplan muss an einem zukünftigen oder heutigen Montag beginnen.')
+                raise CoachError('Der Trainingsblock muss an einem zukünftigen oder heutigen Montag beginnen.')
             if not data.get('weeks'):
                 raise CoachError('Bitte die Anzahl der Wochen angeben.')
-            before = plan['macroPlan']
-            if plan['weeks']:
-                raise CoachError('Es existieren bereits geplante Wochen. Den bestehenden Plan über Wochen-Patches anpassen.')
+            _, replaced = place_block(plan['blocks'], plan['weeks'], start, data['weeks'])
+            before = next((b for b in plan['blocks'] if b['id'] in replaced), None)
             context.update(snapshot=snapshot(), startDate=start.isoformat(), weeks=data['weeks'])
             # A macro decision does not need years of subjective check-in/override records.
             context['snapshot']['selfReported']['checkIns'] = current_profile['checkIns'][-7:]
@@ -399,17 +409,20 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             monday = week_start(week)
             if monday + timedelta(days=6) < datetime.now(zone()).date():
                 raise CoachError('Abgeschlossene Wochen dürfen nicht rückwirkend durch die AI geplant werden.')
-            macro = plan['macroPlan']
-            if not macro:
-                raise CoachError('Bitte zuerst einen Makroplan erstellen und bestätigen.')
-            number = (monday - day_date(macro['startDate'])).days // 7 + 1
-            macro_week = next((w for w in macro['weeks'] if w['week'] == number), None)
-            if macro_week is None:
-                raise CoachError('Diese Kalenderwoche liegt außerhalb des Makroplans.')
+            if not plan['blocks']:
+                raise CoachError('Bitte zuerst einen Trainingsblock erstellen und bestätigen.')
+            block, number = block_for_week(plan['blocks'], monday)
+            block_week = next((w for w in block['weeks'] if w['week'] == number), None) if block else None
+            if block_week is None:
+                raise CoachError('Diese Kalenderwoche liegt außerhalb eines Trainingsblocks.')
             before = plan['weeks'].get(week)
             if (kind == 'week' and before) or (kind == 'patch' and not before):
                 raise CoachError('Eine bestehende Woche per Patch anpassen; eine neue Woche zuerst planen.')
-            context.update(week=week, macroWeek=macro_week, currentPlan=compact_week(before),
+            spec = BLOCK_TYPES[block['blockType']]
+            context.update(week=week, block={'type': block['blockType'], 'name': spec['name'], 'secondaryFocus': block.get('secondaryFocus'),
+                                             'weekNumber': number, 'totalWeeks': len(block['weeks']), 'guidance': spec['guidance'],
+                                             'rules': rule_texts(block['blockType'])},
+                           blockWeek=block_week, currentPlan=compact_week(before),
                            availability=effective_availability(current_profile, week), fixedSessions=fixed_sessions(week, before),
                            templates=template_catalog(), thresholds={'source': 'athlete', 'ftp': user().ftp, 'maxHr': user().max_hr},
                            selfReported={key: current_profile[key] for key in ('goal', 'preferences', 'limitations', 'currentState')},
@@ -438,7 +451,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         validate(decision, response_schema)  # Also enforce schema for alternate provider adapters.
         if kind == 'macro':
             if [w['week'] for w in decision['weeks']] != list(range(1, data['weeks'] + 1)):
-                raise CoachError('Der Makroplan muss alle angefragten Wochen lückenlos enthalten.')
+                raise CoachError('Der Trainingsblock muss alle angefragten Wochen lückenlos enthalten.')
             maximum = current_profile['availability']['absoluteMaxWeeklyHours']
             for w in decision['weeks']:
                 available = effective_availability(current_profile, iso_week(start + timedelta(weeks=w['week'] - 1)))
@@ -446,8 +459,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                 if maximum is None or None in limits:
                     raise CoachError('Bitte Standardverfügbarkeit und absolutes Wochenmaximum vollständig speichern.')
                 if w['targetHours'] > min(maximum, sum(limits) / 60):
-                    raise CoachError('Der Makroplan überschreitet die verfügbare Zeit.')
-            after = {'source': 'aiRecommendation', 'startDate': start.isoformat(), **decision}
+                    raise CoachError('Der Trainingsblock überschreitet die verfügbare Zeit.')
+            after = new_block('custom', None, start.isoformat(), decision['weeks'])
         else:
             if decision['week'] != data['week']:
                 raise CoachError('Die AI-Antwort gehört nicht zur angefragten Woche.')
@@ -461,7 +474,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                 if day_date(old['rendered']['date']) < today and old not in after['sessions']:
                     raise CoachError('Vergangene Einheiten dürfen nicht gelöscht werden.')
             after = check_week(after, before, current_profile)
-        definition = {'kind': kind, 'summary': {'macro': 'Makroplan prüfen', 'week': 'Wochenplan prüfen', 'patch': 'Wochenänderungen prüfen'}[kind],
+        definition = {'kind': kind, 'summary': {'macro': 'Trainingsblock prüfen', 'week': 'Wochenplan prüfen', 'patch': 'Wochenänderungen prüfen'}[kind],
                       'before': before, 'after': after, 'timezone': request.args.get('timezone', 'Europe/Berlin'), 'decision': decision}
         proposal = CoachProposal(user_id=user_id, kind=kind, fingerprint=base, definition=packed(definition))
         db.session.add(proposal)
@@ -486,7 +499,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             db.session.execute(sql_text('BEGIN IMMEDIATE'))
         proposal = CoachProposal.query.filter_by(id=identity, user_id=user_id).first_or_404()
         if proposal.status == 'confirmed':
-            return jsonify(current_plan())
+            return jsonify(public_plan())
         if proposal.status != 'pending' or datetime.utcnow() - proposal.created_at > timedelta(hours=24):
             return jsonify(error='Der Vorschlag ist nicht mehr gültig.'), 409
         if fingerprint() != proposal.fingerprint:
@@ -497,9 +510,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         after, before = definition['after'], definition['before']
         today = datetime.now(gettz(definition['timezone'])).date()
         if proposal.kind == 'macro':
-            if day_date(after['startDate']) < today:
+            start = day_date(after['startDate'])
+            if start < today:
                 return jsonify(error='Der Planbeginn liegt inzwischen in der Vergangenheit. Bitte neu planen.'), 409
-            plan['macroPlan'] = after
+            blocks, _ = place_block(plan['blocks'], plan['weeks'], start, len(after['weeks']))
+            plan['blocks'] = blocks + [after]
         else:
             previous = {s['id']: s for s in (before or {}).get('sessions', [])}
             for session in after['sessions']:
@@ -532,4 +547,4 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         value.revision += 1
         proposal.status = 'confirmed'
         db.session.commit()
-        return jsonify(current_plan())
+        return jsonify(public_plan())
