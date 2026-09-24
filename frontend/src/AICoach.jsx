@@ -89,6 +89,35 @@ function Field({ label, children, hint }) {
   return <label className="coach-field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
 
+// Live sum of the normal week, plus a note when the wish is far from what was trained recently.
+function WeekSummary({ availability, recentWeeklyHours }) {
+  const days = DAYS.map(([day, label]) => [label, availability.defaultAvailability[day]]);
+  const open = days.filter(([, minutes]) => minutes == null).map(([label]) => label);
+  const available = days.reduce((sum, [, minutes]) => sum + (minutes || 0), 0) / 60;
+  const { preferredWeeklyHours: preferred, absoluteMaxWeeklyHours: maximum } = availability;
+  const notes = [];
+  if (!open.length && preferred != null && preferred > available + 1e-9) notes.push('Dein Wunschumfang liegt über der Zeit, die du an den einzelnen Tagen angegeben hast. Der Coach plant höchstens die verfügbare Zeit.');
+  if (recentWeeklyHours != null && preferred) {
+    const difference = recentWeeklyHours - preferred;
+    if (Math.abs(difference) >= Math.max(1.5, preferred * 0.3)) notes.push(`In den letzten 4 Wochen hast du im Schnitt ${hours(recentWeeklyHours)} pro Woche trainiert. Dein Wunsch von ${hours(preferred)} liegt deutlich ${difference < 0 ? 'darüber. Plane einen schrittweisen Aufbau ein; der Coach berücksichtigt deinen zuletzt trainierten Umfang.' : 'darunter. Das passt, wenn du bewusst kürzertreten willst.'}`);
+  }
+  return <div className="coach-week-summary" aria-live="polite">
+    <strong>{hours(available)} verfügbar{open.length ? ` (${open.join(', ')} offen)` : ''} · Wunsch {preferred == null ? 'offen' : hours(preferred)} · Obergrenze {maximum == null ? 'offen' : hours(maximum)}</strong>
+    {notes.map(note => <p key={note}>{note}</p>)}
+  </div>;
+}
+
+function KeyNotice({ provider }) {
+  const { encryptionKeySource: source, encryptionKeyFile: file } = provider;
+  if (!provider.encryptionConfigured) {
+    const reason = source === 'invalid' ? `Die Schlüsseldatei ${file} enthält keinen gültigen Schlüssel. TrainHub überschreibt sie nicht, damit kein vorhandener Schlüssel verloren geht.`
+      : source === 'unavailable' ? `TrainHub konnte die Schlüsseldatei ${file} nicht anlegen oder lesen.` : 'Dem Server fehlt der Schlüssel, mit dem API-Keys verschlüsselt werden.';
+    return <div className="coach-message" role="note"><div><strong>API-Keys lassen sich gerade nicht speichern.</strong> {reason} Normalerweise legt TrainHub diesen Schlüssel beim ersten Start selbst an. Wie du das behebst, steht in AI-COACH.md unter „Einrichtung und erster Plan“.</div></div>;
+  }
+  return <p className="coach-muted coach-key-note">Dein API-Key wird verschlüsselt gespeichert. {source === 'environment' ? 'Den Schlüssel dafür liefert die Umgebungsvariable TRAINHUB_AI_ENCRYPTION_KEY.'
+    : <>Der Schlüssel dafür liegt in <code>{file}</code>{source === 'created' ? ' und wurde beim letzten Start angelegt' : ''}. Sichere diese Datei getrennt von der Datenbank. Geht sie verloren, gibst du den API-Key einfach neu ein; deine Trainingsdaten brauchen sie nicht.</>}</p>;
+}
+
 function SeasonGoal({ goal }) {
   if (!goal?.date) return null;
   const days = daysBetween(localDate(), goal.date);
@@ -564,6 +593,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
           <Field label="Gewünschter Umfang (h/Woche)"><input type="number" min="0" max="60" step="0.5" value={profile.availability.preferredWeeklyHours ?? ''} onChange={e => editProfile('availability', 'preferredWeeklyHours', number(e.target.value))} /></Field>
           <Field label="Absolutes Zeitmaximum (h/Woche)" hint="Dein zeitliches Limit für Ausnahmefälle."><input type="number" min={profile.availability.preferredWeeklyHours || 0} max="60" step="0.5" value={profile.availability.absoluteMaxWeeklyHours ?? ''} onChange={e => editProfile('availability', 'absoluteMaxWeeklyHours', number(e.target.value))} /></Field></div>
         <h3>Deine normale Woche</h3><p className="coach-muted">Minuten pro Tag. 0 = keine Zeit, leer = noch offen.</p>
+        <WeekSummary availability={profile.availability} recentWeeklyHours={sourceValue(snapshot?.observed?.currentTraining?.last28Days?.trainingHours) == null ? null : sourceValue(snapshot.observed.currentTraining.last28Days.trainingHours) / 4} />
         <div className="coach-day-inputs">{DAYS.map(([day, label]) => <Field key={day} label={label}><input aria-label={`${label} Standardverfügbarkeit in Minuten`} type="number" min="0" max="1440" step="5" value={profile.availability.defaultAvailability[day] ?? ''} onChange={e => editProfile('availability', 'defaultAvailability', { ...profile.availability.defaultAvailability, [day]: number(e.target.value) })} /></Field>)}</div>
         <div className="coach-form-grid">{[['preferredRestDay', 'Bevorzugter Ruhetag'], ['preferredLongSessionDay', 'Tag für lange Einheiten']].map(([key, label]) => <Field key={key} label={label}><select value={profile.preferences[key] || ''} onChange={e => editProfile('preferences', key, e.target.value || null)}><option value="">Keine Präferenz</option>{DAYS.map(([day, name]) => <option value={day} key={day}>{name}</option>)}</select></Field>)}
           {[['indoorPreference', 'Indoor'], ['outdoorPreference', 'Outdoor']].map(([key, label]) => <Field label={label} key={key}><select value={profile.preferences[key]} onChange={e => editProfile('preferences', key, e.target.value)}><option value="neutral">Neutral</option><option value="prefer">Bevorzugt</option><option value="avoid">Vermeiden</option></select></Field>)}
@@ -576,10 +606,10 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
 
     {!loading && provider && tab === 'provider' && <section className="coach-card coach-provider">
       <span className="coach-eyebrow">Bring your own key</span><h2>Dein AI Provider</h2><p className="coach-muted">Training Plēnum sendet verdichteten Trainingskontext und Workout-Templates an deinen Provider. Modellanfragen werden über deinen API-Zugang abgerechnet.</p>
-      {!provider.encryptionConfigured && <div className="coach-message">Vor dem Speichern muss die serverseitige Schlüsselverschlüsselung eingerichtet werden. Details findest du in der Backend-Konfiguration.</div>}
+      <KeyNotice provider={provider} />
       <form onSubmit={event => { event.preventDefault(); const key = apiKey.trim(); setApiKey(''); run('Provider wird gespeichert …', async () => { const saved = await request('/api/ai-provider', 'PUT', { provider: 'openai', model: model.trim(), ...(key ? { apiKey: key } : {}) }); setProvider(saved); setModel(saved.model || model); setDirty(d => ({ ...d, provider: false })); invalidate(); setNotice('Provider-Einstellungen gespeichert.'); }); }}>
         <fieldset disabled={!!busy}><div className="coach-form-grid"><Field label="Provider"><select value="openai" disabled><option value="openai">OpenAI</option></select></Field><Field label="Modell"><input required list="coach-models" value={model} onChange={e => { invalidate('provider'); setModel(e.target.value); }} /><datalist id="coach-models"><option value="gpt-4.1-mini" /><option value="gpt-4.1" /><option value="gpt-4o-mini" /></datalist></Field></div>
-          <Field label={provider.configured ? `API Key ersetzen (gespeichert: ••••${provider.keyLast4 || ''})` : 'API Key'} hint="Der Key wird verschlüsselt im Backend gespeichert. Das Browserfeld wird nach dem Absenden geleert."><input type="password" autoComplete="new-password" spellCheck="false" value={apiKey} placeholder={provider.configured ? 'Leer lassen, um den vorhandenen Key zu behalten' : 'API Key eingeben'} onChange={e => { invalidate('provider'); setApiKey(e.target.value); }} /></Field>
+          <Field label={provider.configured ? `API Key ersetzen (gespeichert: ••••${provider.keyLast4 || ''})` : 'API Key'} hint="Das Feld wird nach dem Absenden geleert. Der Key bleibt nur verschlüsselt im Backend."><input type="password" autoComplete="new-password" spellCheck="false" value={apiKey} placeholder={provider.configured ? 'Leer lassen, um den vorhandenen Key zu behalten' : 'API Key eingeben'} onChange={e => { invalidate('provider'); setApiKey(e.target.value); }} /></Field>
           <div className="coach-actions"><button className="coach-primary" type="submit" disabled={!provider.encryptionConfigured}>Provider speichern</button><button type="button" disabled={!provider.configured || dirty.provider} onClick={() => run('Verbindung wird geprüft …', async () => { await request('/api/ai-provider/test', 'POST', {}); setNotice('Verbindung zum Provider erfolgreich.'); })}>Verbindung testen</button>{provider.configured && <button type="button" className="coach-danger" onClick={() => run('Key wird entfernt …', async () => { const saved = await request('/api/ai-provider', 'DELETE'); setProvider({ ...provider, ...saved, configured: false, keyLast4: null }); setApiKey(''); setDirty(d => ({ ...d, provider: false })); invalidate(); setNotice('API Key entfernt.'); })}>Gespeicherten Key entfernen</button>}</div>
         </fieldset>
       </form>

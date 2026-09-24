@@ -1,14 +1,16 @@
 import io
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
 
 from cryptography.fernet import Fernet
 
 from ai_provider import (DEFAULT_MODEL, MAX_RESPONSE_BYTES, OpenAIProvider, ProviderError,
-                         _NoRedirect, decrypt_key, encrypt_key, get_provider, validate_response)
+                         _NoRedirect, decrypt_key, encrypt_key, ensure_server_key, get_provider, validate_response)
 
 
 SCHEMA = {'type': 'object', 'properties': {'hours': {'type': 'number', 'minimum': 0, 'maximum': 20}},
@@ -145,6 +147,42 @@ class ProviderTests(unittest.TestCase):
         self.assertIsInstance(get_provider('openai'), OpenAIProvider)
         with self.assertRaises(ProviderError):
             get_provider('secret-api-key')
+
+
+
+class ServerKeyTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.path = Path(self.folder.name) / 'run' / 'ai-encryption-key.txt'
+        self.environment = patch.dict(os.environ, {'TRAINHUB_AI_ENCRYPTION_KEY_FILE': str(self.path)})
+        self.environment.start()
+        os.environ.pop('TRAINHUB_AI_ENCRYPTION_KEY', None)
+
+    def tearDown(self):
+        self.environment.stop()
+        self.folder.cleanup()
+
+    def test_key_file_is_created_once_and_reused(self):
+        self.assertEqual(ensure_server_key(), 'created')
+        created = self.path.read_text(encoding='ascii').strip()
+        Fernet(created.encode())
+        self.assertEqual(os.environ['TRAINHUB_AI_ENCRYPTION_KEY'], created)
+        os.environ.pop('TRAINHUB_AI_ENCRYPTION_KEY')
+        self.assertEqual(ensure_server_key(), 'file')
+        self.assertEqual(os.environ['TRAINHUB_AI_ENCRYPTION_KEY'], created)
+        self.assertEqual(self.path.read_text(encoding='ascii').strip(), created)
+        self.assertEqual(decrypt_key(encrypt_key('sk-test-local-key-1234')), 'sk-test-local-key-1234')
+
+    def test_environment_wins_and_invalid_files_are_never_replaced(self):
+        os.environ['TRAINHUB_AI_ENCRYPTION_KEY'] = Fernet.generate_key().decode()
+        self.assertEqual(ensure_server_key(), 'environment')
+        self.assertFalse(self.path.exists())
+        os.environ.pop('TRAINHUB_AI_ENCRYPTION_KEY')
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text('kein-schluessel', encoding='ascii')
+        self.assertEqual(ensure_server_key(), 'invalid')
+        self.assertNotIn('TRAINHUB_AI_ENCRYPTION_KEY', os.environ)
+        self.assertEqual(self.path.read_text(encoding='ascii'), 'kein-schluessel')
 
 
 if __name__ == '__main__':

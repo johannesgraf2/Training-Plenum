@@ -1,12 +1,14 @@
 """Provider boundary: encrypted BYOK secrets and bounded, schema-checked requests.
 
-No keys, provider error bodies, or generated content are included in errors. The
-deployment owns TRAINHUB_AI_ENCRYPTION_KEY; this module never generates a key.
+No keys, provider error bodies, or generated content are included in errors. A
+deployment-provided TRAINHUB_AI_ENCRYPTION_KEY always wins; otherwise the server
+key lives in a local key file that is created once and never overwritten.
 """
 import json
 import os
 import re
 from abc import ABC, abstractmethod
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -15,6 +17,9 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 
 DEFAULT_MODEL = 'gpt-4.1-mini'
+KEY_ENV = 'TRAINHUB_AI_ENCRYPTION_KEY'
+KEY_FILE_ENV = 'TRAINHUB_AI_ENCRYPTION_KEY_FILE'
+DEFAULT_KEY_FILE = Path(__file__).resolve().parent.parent / '.run' / 'ai-encryption-key.txt'
 MAX_RESPONSE_BYTES = 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 60
 
@@ -43,6 +48,43 @@ def _cipher():
         return Fernet(configured.encode('ascii'))
     except (ValueError, UnicodeError, TypeError):
         raise ProviderError('TRAINHUB_AI_ENCRYPTION_KEY ist ungültig; bitte die Server-Konfiguration prüfen.') from None
+
+
+def key_file():
+    return Path(os.environ.get(KEY_FILE_ENV) or DEFAULT_KEY_FILE)
+
+
+def ensure_server_key():
+    """Provide the Fernet server key for this process; returns where it came from.
+
+    'environment' and 'file' reuse an existing key, 'created' wrote a new key file,
+    'invalid' found an unusable file (left untouched) and 'unavailable' could not
+    read or write it. Without a key, saving a provider key stays disabled.
+    """
+    if os.environ.get(KEY_ENV):
+        return 'environment'
+    path = key_file()
+    source = 'file'
+    try:
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                # Exclusive creation: a second starting process never replaces an existing key.
+                handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                pass
+            else:
+                with os.fdopen(handle, 'w', encoding='ascii') as output:
+                    output.write(Fernet.generate_key().decode('ascii') + '\n')
+                source = 'created'
+        key = path.read_text(encoding='ascii').strip()
+        Fernet(key.encode('ascii'))
+    except (ValueError, UnicodeError, TypeError):
+        return 'invalid'
+    except OSError:
+        return 'unavailable'
+    os.environ[KEY_ENV] = key
+    return source
 
 
 def encrypt_key(key):

@@ -63,6 +63,9 @@
 .coach-checklist li.current .coach-step { border-color: var(--accent); color: var(--fg-1e40af); }
 .coach-checklist li.done .coach-step { background: var(--bg-ecfdf5); border-color: var(--bd-a7f3d0); color: var(--fg-047857); }
 .coach-checklist li.done strong { color: var(--fg-64748b); }
+.coach-week-summary { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--bd-e2e8f0); border-radius: 2px; background: var(--bg-f8fafc); font-size: 12px; font-variant-numeric: tabular-nums; }
+.coach-week-summary p { margin: 6px 0 0; font-size: 12px; color: var(--fg-475569); }
+.coach-key-note code { font-size: 11px; word-break: break-all; }
 .coach-provider { max-width: 800px; }
 .coach-provider > p { max-width: 610px; }
 .coach-macro { display: flex; align-items: stretch; gap: 7px; overflow-x: auto; padding: 6px 0 10px; }

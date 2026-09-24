@@ -349,3 +349,30 @@ test('an ended block shows its review and saves the athlete verdict before the n
   expect(container.textContent).toContain('Einschätzung gespeichert.');
   expect(container.textContent).toContain('Nächsten Trainingsblock starten');
 });
+
+test('the normal week shows a live sum and flags a wish far from recent training', async () => {
+  await render(); await click(button('Athletenprofil'));
+  const summary = () => container.querySelector('.coach-week-summary').textContent;
+  expect(summary()).toBe('10 h verfügbar · Wunsch 8 h · Obergrenze 12 h');
+  await change(inputFor('Gewünschter Umfang (h/Woche)'), '12');
+  expect(summary()).toContain('Wunsch 12 h');
+  expect(summary()).toContain('über der Zeit, die du an den einzelnen Tagen angegeben hast');
+  expect(summary()).toContain('im Schnitt 6,8 h pro Woche trainiert. Dein Wunsch von 12 h liegt deutlich darüber.');
+  await change(container.querySelector('[aria-label="Fr Standardverfügbarkeit in Minuten"]'), '');
+  expect(summary()).toContain('10 h verfügbar (Fr offen)');
+  expect(summary()).not.toContain('über der Zeit');
+});
+
+test('the provider tab explains where the encryption key lives and what to do when it is missing', async () => {
+  const status = extra => async () => ({ ok: true, json: async () => ({ provider: 'openai', model: 'gpt-4.1-mini', configured: false, keyLast4: null, ...extra }) });
+  responses['GET /api/ai-provider'] = status({ encryptionConfigured: true, encryptionKeySource: 'created', encryptionKeyFile: 'C:/TrainHub/.run/ai-encryption-key.txt' });
+  await render(); await click(button('AI Provider'));
+  expect(container.querySelector('.coach-key-note').textContent).toContain('C:/TrainHub/.run/ai-encryption-key.txt und wurde beim letzten Start angelegt');
+  expect(button('Provider speichern').disabled).toBe(false);
+  await act(async () => root.unmount()); root = createRoot(container);
+  responses['GET /api/ai-provider'] = status({ encryptionConfigured: false, encryptionKeySource: 'invalid', encryptionKeyFile: 'C:/TrainHub/.run/ai-encryption-key.txt' });
+  await render(); await click(button('AI Provider'));
+  expect(container.querySelector('[role="note"]').textContent).toContain('enthält keinen gültigen Schlüssel');
+  expect(container.textContent).not.toContain('Backend-Konfiguration');
+  expect(button('Provider speichern').disabled).toBe(true);
+});
