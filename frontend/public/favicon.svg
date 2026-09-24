@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Two peaks under the macron of "Plēnum", in the app's ink, paper and accent colours. -->
+  <rect width="64" height="64" rx="14" fill="#1b1a17"/>
+  <rect x="17" y="12" width="30" height="7" rx="3.5" fill="#e2743f"/>
+  <path d="M6 52 L23 27 L31 38 L42 22 L58 52 Z" fill="#f3efe6"/></svg>
