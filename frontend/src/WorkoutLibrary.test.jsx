@@ -2,8 +2,8 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Simulate } from 'react-dom/test-utils';
 import WorkoutEditor from './WorkoutEditor';
-import { toDraft, toWorkout, workoutOverview, workoutTotals } from './workoutModel';
-import { createLibraryWorkout, libraryPhases, libraryTags, searchLibrary, workoutLibrary } from './workoutLibraryData';
+import { intensityZone, toDraft, toWorkout, workoutOverview, workoutTotals } from './workoutModel';
+import { createLibraryWorkout, libraryPhases, libraryProfile, libraryTags, searchLibrary, workoutLibrary } from './workoutLibraryData';
 
 let container, root;
 beforeEach(() => {
@@ -83,6 +83,25 @@ test('threshold progressions fill each interval with their pattern', () => {
   expect(attack.steps.slice(1, 3).map(s => [s.duration.value, s.target.low, s.target.high])).toEqual([[15, 390, 450], [1185, 285, 300]]);
   const finish = createLibraryWorkout(entry('ride-threshold-finish-start'), '2026-09-24', { ftp: 300 });
   expect(finish.steps.slice(1, 3).map(s => [s.duration.value, s.target.low])).toEqual([[840, 290], [60, 345]]);
+});
+
+test('work steps are coloured below, at and above the threshold', () => {
+  expect([0.65, 0.82, 0.9, 0.95, 1, 1.05, 1.08, 1.2].map(f => intensityZone(f))).toEqual(['endurance', 'sweetspot', 'sweetspot', 'threshold', 'threshold', 'threshold', 'vo2', 'vo2']);
+  expect([0.75, 0.845, 0.88, 0.925].map(f => intensityZone(f, 'heart_rate'))).toEqual(['endurance', 'sweetspot', 'threshold', 'vo2']);
+  const zones = id => [...new Set(libraryProfile(workoutLibrary.find(e => e.id === id)).map(s => s.zone).filter(Boolean))];
+  expect(zones('ride-sweetspot-start')).toEqual(['sweetspot']);
+  expect(zones('ride-threshold-20-mid')).toEqual(['threshold']);
+  expect(zones('ride-vo2-4-start')).toEqual(['vo2']);
+  expect(zones('ride-threshold-attack-start')).toEqual(['vo2', 'threshold']);
+  expect(zones('run-threshold-start')).toEqual(['threshold']);
+  render({ ftp: 300 });
+  act(() => button('Beispiel-Einheiten durchsuchen').click());
+  act(() => button('Sweetspot').click());
+  expect(container.querySelectorAll('.library-profile rect.zone-sweetspot').length).toBeGreaterThan(0);
+  expect(container.querySelector('.library-profile rect.zone-vo2')).toBeNull();
+  act(() => container.querySelector('[aria-label="Vorlage 3 × 12 min Sweetspot übernehmen"]').click());
+  expect(container.querySelector('.workout-chart-legend').textContent).toContain('Unter der Schwelle');
+  expect(container.querySelector('.workout-chart-legend').textContent).not.toContain('Belastung');
 });
 
 test('targets scale with FTP and maximum heart rate', () => {

@@ -1,7 +1,7 @@
 // Example sessions for the workout builder. Cycling targets are fractions of FTP,
 // running targets fractions of maximum heart rate; `create` turns them into a
 // normal editable workout with watts / bpm for the current athlete.
-import { summary } from './workoutModel';
+import { intensityZone, summary } from './workoutModel';
 
 export const DEFAULT_FTP = 250;
 
@@ -372,7 +372,7 @@ export function createLibraryWorkout(entry, date, athlete) {
       : modelStep(item, entry.sport, values)) };
 }
 
-// Profile for the card preview: time-proportional segments with a 0–1 height.
+// Profile for the card preview: time-proportional segments with a 0–1 height and the colour zone of work steps.
 // Distance steps assume ~4:10 min/km; open targets fall back to the step type.
 export function libraryProfile(entry) {
   const fallback = { warmup: 0.6, cooldown: 0.5, recovery: 0.45, active: 0.7, interval: 1.2 };
@@ -382,7 +382,8 @@ export function libraryProfile(entry) {
     const seconds = typeof item.duration === 'number' ? item.duration : item.duration.m / 4;
     const [low, high] = item.target == null ? [fallback[item.intensity], fallback[item.intensity]] : bounds(item.target);
     const level = entry.sport === 'ride' || item.target == null ? (low + high) / 2 / 1.6 : ((low + high) / 2 - 0.5) / 0.46;
-    segments.push({ start: total, seconds, intensity: item.intensity, level: Math.min(1, Math.max(0.12, level)) });
+    const zone = item.target != null && ['active', 'interval'].includes(item.intensity) ? intensityZone((low + high) / 2, entry.sport === 'ride' ? 'power' : 'heart_rate') : null;
+    segments.push({ start: total, seconds, intensity: item.intensity, zone, level: Math.min(1, Math.max(0.12, level)) });
     total += seconds;
   });
   return segments.map(s => ({ ...s, x: s.start / total, width: s.seconds / total }));

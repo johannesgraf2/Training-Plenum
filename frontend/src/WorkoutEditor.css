@@ -178,5 +178,9 @@
 .library-profile rect.recovery { fill: var(--line); }
 .library-profile rect.active { fill: var(--blue); }
 .library-profile rect.interval { fill: var(--accent); }
+.library-profile rect.zone-endurance { fill: var(--blue); }
+.library-profile rect.zone-sweetspot { fill: var(--zone-sweetspot); }
+.library-profile rect.zone-threshold { fill: var(--zone-threshold); }
+.library-profile rect.zone-vo2 { fill: var(--zone-vo2); }
 @media (max-width: 820px) { .library { padding: 18px; } .library-family { grid-template-columns: 1fr; gap: 8px; } }
 @media (max-width: 600px) { .library-header { flex-direction: column; } .library-controls { grid-template-columns: 1fr 1fr; } .library-search { grid-column: 1 / -1; } .library-cards { grid-template-columns: 1fr; } }

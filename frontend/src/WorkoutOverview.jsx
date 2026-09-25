@@ -1,11 +1,20 @@
 import React, { useState } from 'react';
-import { clock, intensityLabels, stepDescription, summary, workoutOverview } from './workoutModel';
+import { clock, intensityLabels, intensityZone, stepDescription, summary, workoutOverview, zoneLabels } from './workoutModel';
 
 const colors = { warmup: 'var(--line-strong)', active: 'var(--blue)', interval: 'var(--accent)', recovery: 'var(--line)', cooldown: 'var(--line-strong)' };
+const zoneColors = { endurance: 'var(--blue)', sweetspot: 'var(--zone-sweetspot)', threshold: 'var(--zone-threshold)', vo2: 'var(--zone-vo2)' };
 const minutes = seconds => `${+(seconds / 60).toFixed(1)} min`;
 const kilometres = metres => `${(metres / 1000).toLocaleString('de-DE', { maximumFractionDigits: 2 })} km`;
 
-export default function WorkoutOverview({ workout, selectedPath, onSelect, disabled }) {
+// Work steps are coloured by zone once FTP (power) or maximum heart rate is known.
+function stepZone(step, ftp, maxHr) {
+  if (!['active', 'interval'].includes(step.intensity)) return null;
+  if (step.target.type === 'power' && ftp > 0) return intensityZone(step.power / ftp, 'power');
+  if (step.target.type === 'heart_rate' && maxHr > 0) return intensityZone((step.target.low + step.target.high) / 2 / maxHr, 'heart_rate');
+  return null;
+}
+
+export default function WorkoutOverview({ workout, selectedPath, onSelect, disabled, ftp, maxHr }) {
   const [hovered, setHovered] = useState(null);
   let overview;
   try { if (workout) overview = workoutOverview(workout); } catch (_) { /* Editing may temporarily leave a field incomplete. */ }
@@ -14,6 +23,9 @@ export default function WorkoutOverview({ workout, selectedPath, onSelect, disab
   </section>;
   const { segments, allTimed, allDistance, allPower, time, distance, workTime, recoveryTime, workDistance, recoveryDistance, averagePower } = overview;
   const hasPower = segments.some(step => step.power !== null);
+  const zones = segments.map(step => stepZone(step, Number(ftp), Number(maxHr)));
+  const legendZones = Object.keys(zoneColors).filter(zone => zones.includes(zone));
+  const unzonedWork = segments.some((step, index) => step.intensity === 'interval' && !zones[index]);
   const workSegments = segments.filter(step => ['active', 'interval'].includes(step.intensity));
   const paceRanges = workSegments.map(step => step.target.type === 'pace' ? `${clock(step.target.low)}${step.target.high !== step.target.low ? `–${clock(step.target.high)}` : ''} /km` : null);
   const runningPace = paceRanges.length && paceRanges.every(Boolean) ? (new Set(paceRanges).size === 1 ? paceRanges[0] : 'Variabel') : '—';
@@ -49,13 +61,13 @@ export default function WorkoutOverview({ workout, selectedPath, onSelect, disab
           <title>{label}</title>
           <rect x={x} y={top} width={blockWidth} height={height} fill="transparent" />
           <rect className="workout-profile-bar" x={x + Math.min(1, blockWidth / 10)} y={y} width={Math.max(.1, blockWidth - Math.min(2, blockWidth / 5))} height={blockHeight} rx="2"
-            style={{ fill: step.power === null && hasPower ? 'var(--bg-e2e8f0)' : colors[step.intensity] || colors.active }} stroke={selected ? 'var(--ink)' : step.power === null && hasPower ? 'var(--muted-2)' : 'none'} strokeWidth={selected ? 2 : 1} strokeDasharray={step.power === null && hasPower ? '3 3' : undefined} />
-          {blockWidth > 49 && <text x={x + blockWidth / 2} y={step.power === null && hasPower ? y - 6 : y + 18} className={step.power !== null && step.power / ceiling > .5 ? 'workout-bar-light' : 'workout-bar-dark'} textAnchor="middle" pointerEvents="none">{step.power === null ? (hasPower ? '—' : step.seconds !== null ? minutes(step.seconds) : step.duration.type === 'open' ? 'Lap' : `${step.duration.value} m`) : `${Math.round(step.power)} W`}</text>}
+            style={{ fill: step.power === null && hasPower ? 'var(--bg-e2e8f0)' : zoneColors[zones[index]] || colors[step.intensity] || colors.active }} stroke={selected ? 'var(--ink)' : step.power === null && hasPower ? 'var(--muted-2)' : 'none'} strokeWidth={selected ? 2 : 1} strokeDasharray={step.power === null && hasPower ? '3 3' : undefined} />
+          {blockWidth > 49 && <text x={x + blockWidth / 2} y={step.power === null && hasPower ? y - 6 : y + 18} className={step.power !== null && step.power / ceiling > .5 && zones[index] !== 'sweetspot' ? 'workout-bar-light' : 'workout-bar-dark'} textAnchor="middle" pointerEvents="none">{step.power === null ? (hasPower ? '—' : step.seconds !== null ? minutes(step.seconds) : step.duration.type === 'open' ? 'Lap' : `${step.duration.value} m`) : `${Math.round(step.power)} W`}</text>}
         </g>;
       })}
       {[0, .25, .5, .75, 1].map((fraction, i) => <text key={i} x={left + width * fraction} y="190" textAnchor={i === 0 ? 'start' : i === 4 ? 'end' : 'middle'} aria-hidden="true">{allTimed ? clock(Math.round(time * fraction)) : allDistance ? kilometres(distance * fraction) : fraction === 0 ? 'Start' : fraction === 1 ? 'Ende' : ''}</text>)}
     </svg></div>
-    <div className="workout-chart-caption"><div className="workout-chart-legend"><span><i style={{ background: colors.warmup }} />Auf-/Abwärmen</span><span><i style={{ background: colors.interval }} />Belastung</span><span><i style={{ background: colors.recovery }} />Erholung</span>{hasPower && !allPower && <span><i style={{ background: 'var(--bg-e2e8f0)' }} />Ohne Wattziel</span>}</div><span>{allTimed ? 'Zeitachse · min:ss' : allDistance ? 'Distanzachse · km' : 'Schrittfolge · gleiche Breite je Abschnitt'}</span></div>
+    <div className="workout-chart-caption"><div className="workout-chart-legend"><span><i style={{ background: colors.warmup }} />Auf-/Abwärmen</span>{legendZones.map(zone => <span key={zone}><i style={{ background: zoneColors[zone] }} />{zoneLabels[zone]}</span>)}{(unzonedWork || !legendZones.length) && <span><i style={{ background: colors.interval }} />Belastung</span>}<span><i style={{ background: colors.recovery }} />Erholung</span>{hasPower && !allPower && <span><i style={{ background: 'var(--bg-e2e8f0)' }} />Ohne Wattziel</span>}</div><span>{allTimed ? 'Zeitachse · min:ss' : allDistance ? 'Distanzachse · km' : 'Schrittfolge · gleiche Breite je Abschnitt'}</span></div>
     <div className="workout-chart-detail" aria-live="polite">{current ? <><strong>{current.name || intensityLabels[current.intensity]}{current.repetition ? ` · Wiederholung ${current.repetition}` : ''}</strong><span>{stepDescription(current)}</span></> : <span>Mit Maus oder Tastatur einen Abschnitt auswählen, um Dauer und Ziel zu sehen.</span>}</div>
     {!allTimed && <p className="workout-hint">{allDistance ? 'Die Balkenbreite entspricht der Distanz. Die Gesamtdauer hängt von deinem Tempo ab.' : 'Für Distanz- und offene Schritte ist die Dauer noch unbekannt. Die Breite zeigt hier die Reihenfolge, keine geschätzte Zeit.'}</p>}
     {hasPower && <p className="workout-chart-note">Balkenhöhe: Wattziel, bei Bereichen deren Mittelwert. Ø Zielleistung wird nur bei durchgehend zeitbasierten Wattvorgaben berechnet.</p>}
