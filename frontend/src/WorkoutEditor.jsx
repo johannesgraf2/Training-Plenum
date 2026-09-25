@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { fitFileName, garminWorkoutName, intensityLabels, intervalBlock, newStep, newWorkout, powerStep, stepDescription, summary, targetLabels, toDraft, toWorkout, workoutTemplates, workoutTotals } from './workoutModel';
 import WorkoutOverview from './WorkoutOverview';
+import WorkoutLibrary from './WorkoutLibrary';
+import { workoutLibrary } from './workoutLibraryData';
 import './WorkoutEditor.css';
 
 const targetDefaults = { none: {}, pace: { low: '4:00', high: '4:10', mode: 'range' }, speed: { low: '25', high: '30', mode: 'range' }, heart_rate: { low: '130', high: '150', mode: 'range' }, power: { low: '180', high: '180', mode: 'single' }, cadence: { low: '80', high: '95', mode: 'range' } };
@@ -41,7 +43,7 @@ function Controls({ index, length, label, onMove, onRemove }) {
   </div>;
 }
 
-export default function WorkoutEditor({ apiBase, initial, date, onClose, onSaved, onDeleted, onImport }) {
+export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onClose, onSaved, onDeleted, onImport }) {
   const [draft, setDraft] = useState(() => toDraft(initial || newWorkout(date)));
   const [recordId, setRecordId] = useState(initial?.id);
   const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(toDraft(initial || newWorkout(date))));
@@ -50,6 +52,10 @@ export default function WorkoutEditor({ apiBase, initial, date, onClose, onSaved
   const [status, setStatus] = useState('');
   const [confirm, setConfirm] = useState('');
   const [selectedPath, setSelectedPath] = useState(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const libraryButtonRef = useRef(null);
+  const libraryOpenRef = useRef(false);
+  libraryOpenRef.current = libraryOpen;
   const dialogRef = useRef(null);
   const nameRef = useRef(null);
   const stepRefs = useRef({});
@@ -57,13 +63,16 @@ export default function WorkoutEditor({ apiBase, initial, date, onClose, onSaved
   const close = () => { if (!busy) dirty ? setConfirm('close') : onClose(); };
   const closeRef = useRef(close);
   closeRef.current = close;
+  const closeLibrary = () => { setLibraryOpen(false); setTimeout(() => libraryButtonRef.current?.focus()); };
+  const closeLibraryRef = useRef(closeLibrary);
+  closeLibraryRef.current = closeLibrary;
   useEffect(() => {
     const previousFocus = document.activeElement;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     nameRef.current?.focus();
     const keydown = event => {
-      if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); }
+      if (event.key === 'Escape') { event.preventDefault(); libraryOpenRef.current ? closeLibraryRef.current() : closeRef.current(); }
       if (event.key !== 'Tab') return;
       const elements = Array.from(dialogRef.current.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]')).filter(e => e.getClientRects().length);
       if (!elements.length) return;
@@ -129,14 +138,15 @@ export default function WorkoutEditor({ apiBase, initial, date, onClose, onSaved
   return <div className="workout-backdrop">
     <section className="workout-dialog" role="dialog" aria-modal="true" aria-labelledby="workout-editor-title" ref={dialogRef}>
       <header className="workout-header"><div><span className="workout-eyebrow">Workout-Builder</span><h2 id="workout-editor-title">{recordId ? 'Workout bearbeiten' : 'Workout hinzufügen'}</h2><p>Überblick behalten. Belastung und Erholung gezielt planen.</p></div><button type="button" className="workout-close" onClick={close} disabled={!!busy} aria-label="Workout-Editor schließen">✕</button></header>
-      <div className="workout-body">
+      {libraryOpen ? <div className="workout-body workout-library-body"><WorkoutLibrary sport={draft.sport} date={draft.date} ftp={ftp} maxHr={maxHr} onClose={closeLibrary}
+        onApply={workout => { setSelectedPath(null); change(toDraft(workout)); closeLibrary(); }} /></div> : <div className="workout-body">
         <fieldset className="workout-setup" disabled={!!busy}><div className="workout-basics"><label className="workout-name">Workout-Name<input ref={nameRef} value={draft.name} placeholder="z. B. Intervalle am Dienstag" maxLength={80} onChange={e => change({ ...draft, name: e.target.value })} /></label>
             <label>Sportart<select aria-label="Workout-Sportart" value={draft.sport} onChange={e => change({ ...draft, sport: e.target.value })}><option value="run">Laufen</option><option value="ride">Radfahren</option></select></label>
             <label>Trainingsdatum<input type="date" value={draft.date} onChange={e => change({ ...draft, date: e.target.value })} /></label>
             <label className="workout-notes">Hinweis (optional)<textarea aria-label="Workout-Hinweis" value={draft.notes || ''} maxLength={250} rows={2} placeholder="z. B. Verpflegung: 60 g Kohlenhydrate pro Stunde" onChange={e => change({ ...draft, notes: e.target.value })} /><small>Erscheint auf der Garmin als Beschreibung des Workouts.</small></label>
           </div><div className="workout-template-heading"><strong>{draft.sport === 'run' ? 'Lauf-Vorlagen' : 'Rad-Vorlagen'}</strong><span>Ersetzt den Ablauf · alle Werte sind anpassbar</span></div><div className="workout-templates">{workoutTemplates.filter(template => template.sport === draft.sport).map(template => <button type="button" className="workout-template" key={template.id} onClick={() => { setSelectedPath(null); change(toDraft(template.create(draft.date))); }}>
             <span className="workout-template-bars" aria-hidden="true">{template.bars.map((height, index) => <i key={index} style={{ height: height * 4 }} />)}</span><strong>{template.title}</strong><small>{template.subtitle}</small>
-          </button>)}</div><p className="workout-template-note">{draft.sport === 'run' ? 'Lauf-Vorlagen: 2 km Einlaufen + Distanzintervalle + 1 km Auslaufen. Pace und Trabpausen lassen sich frei anpassen.' : 'Intervall-Vorlagen: je 10 min Auf- und Abwärmen. Bei 40/20: drei Serien à sieben Wiederholungen, dazwischen je 5 min Serienpause.'}</p></fieldset>
+          </button>)}</div><button type="button" ref={libraryButtonRef} className="workout-library-open" onClick={() => setLibraryOpen(true)}><span>Vorlagen-Bibliothek</span><strong>Alle {workoutLibrary.length} Beispiel-Einheiten durchsuchen</strong><small>Tags wie VO2max, Schwelle, Grundlage · Progressionen für Block-Start, -Mitte und -Ende</small></button><p className="workout-template-note">{draft.sport === 'run' ? 'Lauf-Vorlagen: 2 km Einlaufen + Distanzintervalle + 1 km Auslaufen. Pace und Trabpausen lassen sich frei anpassen.' : 'Intervall-Vorlagen: je 10 min Auf- und Abwärmen. Bei 40/20: drei Serien à sieben Wiederholungen, dazwischen je 5 min Serienpause.'}</p></fieldset>
         <WorkoutOverview workout={preview} selectedPath={selectedPath} onSelect={selectStep} disabled={!!busy} />
         <fieldset className="workout-edit-panel" disabled={!!busy}>
           <div className="workout-section-title"><h3>Trainingsschritte bearbeiten</h3><span className="workout-hint">Änderungen erscheinen direkt im Profil</span></div>
@@ -180,8 +190,8 @@ export default function WorkoutEditor({ apiBase, initial, date, onClose, onSaved
           <p>Erfordert ein Gerät mit Unterstützung für strukturierte Workouts. Speicherzugriff und unterstützte Ziele hängen vom Modell ab.</p><a href="https://support.garmin.com/en-GB/?faq=AXV7LuWgc73v21nq6nbDa6" target="_blank" rel="noreferrer">Garmin-Anleitung ↗</a></div>
         {onImport && !recordId && <div className="workout-import"><p>Training bereits absolviert?</p><button type="button" disabled={!!busy} onClick={() => dirty ? setConfirm('import') : onImport()}>Aktivitätsdatei importieren</button></div>}
         </aside>
-      </div>
-      <footer className="workout-footer">
+      </div>}
+      {!libraryOpen && <footer className="workout-footer">
         {error && <p className="workout-error" role="alert">{error}</p>}
         {status && <p className="workout-success" role="status">✓ {status}</p>}
         {confirm && <div className="workout-confirm" role="alert"><span>{confirm === 'delete' ? 'Dieses geplante Workout löschen?' : 'Ungespeicherte Änderungen verwerfen?'}</span><button disabled={!!busy} onClick={() => setConfirm('')}>Weiter bearbeiten</button><button disabled={!!busy} onClick={() => confirm === 'delete' ? remove() : confirm === 'import' ? onImport() : onClose()}>{confirm === 'delete' ? 'Workout löschen' : 'Verwerfen'}</button></div>}
@@ -189,7 +199,7 @@ export default function WorkoutEditor({ apiBase, initial, date, onClose, onSaved
           {recordId && <button className="workout-delete" disabled={!!busy} onClick={() => setConfirm('delete')}>Löschen</button>}
           <button disabled={!!busy} onClick={() => request('save')}>Workout speichern</button><button className="workout-primary" disabled={!!busy} onClick={() => request('export')}>↓ Garmin FIT herunterladen</button>
         </div>
-      </footer>
+      </footer>}
     </section>
   </div>;
 }

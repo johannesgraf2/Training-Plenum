@@ -1063,7 +1063,7 @@ export default function App() {
           </div>
         ) : page === 'coach' ? null : page === 'dashboard' ? (
           <div className="dashboard-page">
-            <Dashboard key={profileVersion} apiBase={API} activities={activities} loading={loading} onOpenActivity={openActivity} />
+            <Dashboard key={profileVersion} apiBase={API} activities={activities} loading={loading} onOpenActivity={openActivity} onSettingsSaved={setUser} />
 
             <section className="activity-list" aria-labelledby="all-activities">
               <div className="activity-list-head">
@@ -1095,7 +1095,7 @@ export default function App() {
       </main>
 
       {/* Upload Modal */}
-      {workoutEditor && <WorkoutEditor apiBase={API} initial={workoutEditor.id ? workoutEditor : null} date={workoutEditor.date}
+      {workoutEditor && <WorkoutEditor apiBase={API} initial={workoutEditor.id ? workoutEditor : null} date={workoutEditor.date} ftp={user?.ftp} maxHr={user?.maxHr}
         onClose={() => setWorkoutEditor(null)}
         onSaved={workout => setPlannedWorkouts(current => [workout, ...current.filter(w => w.id !== workout.id)])}
         onDeleted={id => setPlannedWorkouts(current => current.filter(w => w.id !== id))}
