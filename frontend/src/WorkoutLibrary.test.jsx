@@ -90,6 +90,8 @@ test('work steps are coloured below, at and above the threshold', () => {
   expect([0.75, 0.845, 0.88, 0.925].map(f => intensityZone(f, 'heart_rate'))).toEqual(['endurance', 'sweetspot', 'threshold', 'vo2']);
   const zones = id => [...new Set(libraryProfile(workoutLibrary.find(e => e.id === id)).map(s => s.zone).filter(Boolean))];
   expect(zones('ride-sweetspot-start')).toEqual(['sweetspot']);
+  expect(zones('ride-sweetspot-overunder-start')).toEqual(['sweetspot', 'threshold']);
+  expect(zones('ride-sweetspot-longride-end')).toEqual(['endurance', 'sweetspot']);
   expect(zones('ride-threshold-20-mid')).toEqual(['threshold']);
   expect(zones('ride-vo2-4-start')).toEqual(['vo2']);
   expect(zones('ride-threshold-attack-start')).toEqual(['vo2', 'threshold']);
@@ -98,7 +100,8 @@ test('work steps are coloured below, at and above the threshold', () => {
   act(() => button('Beispiel-Einheiten durchsuchen').click());
   act(() => button('Sweetspot').click());
   expect(container.querySelectorAll('.library-profile rect.zone-sweetspot').length).toBeGreaterThan(0);
-  expect(container.querySelector('.library-profile rect.zone-vo2')).toBeNull();
+  expect(titles()).toContain('3 × 12 min Sweetspot progressiv');
+  expect(titles()).not.toContain('3 × 4 min VO2max');
   act(() => container.querySelector('[aria-label="Vorlage 3 × 12 min Sweetspot übernehmen"]').click());
   expect(container.querySelector('.workout-chart-legend').textContent).toContain('Unter der Schwelle');
   expect(container.querySelector('.workout-chart-legend').textContent).not.toContain('Belastung');
