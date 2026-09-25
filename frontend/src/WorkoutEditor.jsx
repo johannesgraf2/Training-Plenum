@@ -101,7 +101,7 @@ export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onCl
     setBusy(action); setError(''); setStatus(''); setConfirm('');
     try {
       const payload = toWorkout(draft);
-      const url = action === 'export' ? '/api/workouts/export' : `/api/workouts${recordId ? `/${recordId}` : ''}`;
+      const url = action === 'export' ? '/api/workouts/export' : action === 'template' ? '/api/workout-templates' : `/api/workouts${recordId ? `/${recordId}` : ''}`;
       const response = await fetch(`${apiBase}${url}`, { method: action === 'save' && recordId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -111,6 +111,8 @@ export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onCl
         const saved = await response.json();
         setRecordId(saved.id); setSavedSnapshot(JSON.stringify(draft)); onSaved(saved);
         setStatus('Workout gespeichert. Du kannst es auf der Startseite wieder öffnen.');
+      } else if (action === 'template') {
+        setStatus('Als eigene Vorlage gespeichert. Du findest sie in der Vorlagen-Bibliothek unter „Meine Vorlagen“.');
       } else {
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -138,7 +140,7 @@ export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onCl
   return <div className="workout-backdrop">
     <section className="workout-dialog" role="dialog" aria-modal="true" aria-labelledby="workout-editor-title" ref={dialogRef}>
       <header className="workout-header"><div><span className="workout-eyebrow">Workout-Builder</span><h2 id="workout-editor-title">{recordId ? 'Workout bearbeiten' : 'Workout hinzufügen'}</h2><p>Überblick behalten. Belastung und Erholung gezielt planen.</p></div><button type="button" className="workout-close" onClick={close} disabled={!!busy} aria-label="Workout-Editor schließen">✕</button></header>
-      {libraryOpen ? <div className="workout-body workout-library-body"><WorkoutLibrary sport={draft.sport} date={draft.date} ftp={ftp} maxHr={maxHr} onClose={closeLibrary}
+      {libraryOpen ? <div className="workout-body workout-library-body"><WorkoutLibrary apiBase={apiBase} sport={draft.sport} date={draft.date} ftp={ftp} maxHr={maxHr} onClose={closeLibrary}
         onApply={workout => { setSelectedPath(null); change(toDraft(workout)); closeLibrary(); }} /></div> : <div className="workout-body">
         <fieldset className="workout-setup" disabled={!!busy}><div className="workout-basics"><label className="workout-name">Workout-Name<input ref={nameRef} value={draft.name} placeholder="z. B. Intervalle am Dienstag" maxLength={80} onChange={e => change({ ...draft, name: e.target.value })} /></label>
             <label>Sportart<select aria-label="Workout-Sportart" value={draft.sport} onChange={e => change({ ...draft, sport: e.target.value })}><option value="run">Laufen</option><option value="ride">Radfahren</option><option value="swim">Schwimmen</option></select></label>
@@ -146,7 +148,7 @@ export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onCl
             <label className="workout-notes">Hinweis (optional)<textarea aria-label="Workout-Hinweis" value={draft.notes || ''} maxLength={250} rows={2} placeholder="z. B. Verpflegung: 60 g Kohlenhydrate pro Stunde" onChange={e => change({ ...draft, notes: e.target.value })} /><small>Erscheint auf der Garmin als Beschreibung des Workouts.</small></label>
           </div><div className="workout-template-heading"><strong>{{ run: 'Lauf-Vorlagen', ride: 'Rad-Vorlagen', swim: 'Schwimm-Vorlagen' }[draft.sport]}</strong><span>Ersetzt den Ablauf · alle Werte sind anpassbar</span></div><div className="workout-templates">{workoutTemplates.filter(template => template.sport === draft.sport).map(template => <button type="button" className="workout-template" key={template.id} onClick={() => { setSelectedPath(null); change(toDraft(template.create(draft.date))); }}>
             <span className="workout-template-bars" aria-hidden="true">{template.bars.map((height, index) => <i key={index} style={{ height: height * 4 }} />)}</span><strong>{template.title}</strong><small>{template.subtitle}</small>
-          </button>)}</div><button type="button" ref={libraryButtonRef} className="workout-library-open" onClick={() => setLibraryOpen(true)}><span>Vorlagen-Bibliothek</span><strong>Alle {workoutLibrary.length} Beispiel-Einheiten durchsuchen</strong><small>Tags wie VO2max, Schwelle, Grundlage · Progressionen für Block-Start, -Mitte und -Ende</small></button><p className="workout-template-note">{draft.sport === 'swim' ? 'Schwimm-Vorlagen: 400 m Einschwimmen, Strecken in Metern, Pausen nach Zeit. Auf der Uhr als Beckenschwimmen mit 25-m-Bahn.' : draft.sport === 'run' ? 'Lauf-Vorlagen: 2 km Einlaufen + Distanzintervalle + 1 km Auslaufen. Pace und Trabpausen lassen sich frei anpassen.' : 'Intervall-Vorlagen: je 10 min Auf- und Abwärmen. Bei 40/20: drei Serien à sieben Wiederholungen, dazwischen je 5 min Serienpause.'}</p></fieldset>
+          </button>)}</div><button type="button" ref={libraryButtonRef} className="workout-library-open" onClick={() => setLibraryOpen(true)}><span>Vorlagen-Bibliothek</span><strong>Alle {workoutLibrary.length} Beispiel-Einheiten durchsuchen</strong><small>Tags wie VO2max, Schwelle, Grundlage · Progressionen für Block-Start, -Mitte und -Ende · Meine Vorlagen</small></button><p className="workout-template-note">{draft.sport === 'swim' ? 'Schwimm-Vorlagen: 400 m Einschwimmen, Strecken in Metern, Pausen nach Zeit. Auf der Uhr als Beckenschwimmen mit 25-m-Bahn.' : draft.sport === 'run' ? 'Lauf-Vorlagen: 2 km Einlaufen + Distanzintervalle + 1 km Auslaufen. Pace und Trabpausen lassen sich frei anpassen.' : 'Intervall-Vorlagen: je 10 min Auf- und Abwärmen. Bei 40/20: drei Serien à sieben Wiederholungen, dazwischen je 5 min Serienpause.'}</p></fieldset>
         <WorkoutOverview workout={preview} selectedPath={selectedPath} onSelect={selectStep} disabled={!!busy} ftp={ftp} maxHr={maxHr} />
         <fieldset className="workout-edit-panel" disabled={!!busy}>
           <div className="workout-section-title"><h3>Trainingsschritte bearbeiten</h3><span className="workout-hint">Änderungen erscheinen direkt im Profil</span></div>
@@ -195,8 +197,9 @@ export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onCl
         {error && <p className="workout-error" role="alert">{error}</p>}
         {status && <p className="workout-success" role="status">✓ {status}</p>}
         {confirm && <div className="workout-confirm" role="alert"><span>{confirm === 'delete' ? 'Dieses geplante Workout löschen?' : 'Ungespeicherte Änderungen verwerfen?'}</span><button disabled={!!busy} onClick={() => setConfirm('')}>Weiter bearbeiten</button><button disabled={!!busy} onClick={() => confirm === 'delete' ? remove() : confirm === 'import' ? onImport() : onClose()}>{confirm === 'delete' ? 'Workout löschen' : 'Verwerfen'}</button></div>}
-        <div className="workout-footer-actions"><span className="workout-save-state">{busy ? busy === 'export' ? 'FIT-Datei wird erstellt und geprüft …' : 'Wird gespeichert …' : dirty ? 'Ungespeicherte Änderungen' : recordId ? 'Gespeichertes Workout' : 'Neues Workout'}</span>
+        <div className="workout-footer-actions"><span className="workout-save-state">{busy ? busy === 'export' ? 'FIT-Datei wird erstellt und geprüft …' : busy === 'template' ? 'Vorlage wird gespeichert …' : 'Wird gespeichert …' : dirty ? 'Ungespeicherte Änderungen' : recordId ? 'Gespeichertes Workout' : 'Neues Workout'}</span>
           {recordId && <button className="workout-delete" disabled={!!busy} onClick={() => setConfirm('delete')}>Löschen</button>}
+          <button disabled={!!busy} onClick={() => request('template')} title="Speichert den Ablauf ohne Datum unter „Meine Vorlagen“ in der Vorlagen-Bibliothek">Als Vorlage speichern</button>
           <button disabled={!!busy} onClick={() => request('save')}>Workout speichern</button><button className="workout-primary" disabled={!!busy} onClick={() => request('export')}>↓ Garmin FIT herunterladen</button>
         </div>
       </footer>}

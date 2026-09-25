@@ -173,6 +173,13 @@
 .library-phase.mid, .library-phase-chip.mid::before { background: var(--warning-bg); color: var(--warning); }
 .library-phase.end, .library-phase-chip.end::before { background: var(--danger-bg); color: var(--danger); }
 .library-phase-chip::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: currentColor !important; vertical-align: 1px; }
+.library-custom-delete, .library-custom-confirm button { align-self: flex-start; }
+.workout-dialog .library-custom-delete { padding: 2px 8px; font-size: 10px; background: transparent; border-color: transparent; color: var(--muted); }
+.workout-dialog .library-custom-delete:hover { color: var(--danger); border-color: var(--line); }
+.library-custom-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.workout-dialog .library-custom-confirm button { padding: 2px 8px; font-size: 10px; }
+.library-custom-hint { margin: 10px 0 0; font-size: 11px; color: var(--muted-2); }
+.library-custom-error { margin: 10px 0 0; font-size: 11px; color: var(--danger); }
 .library-profile { display: block; width: 100%; height: 24px; }
 .library-profile rect { fill: var(--line-strong); }
 .library-profile rect.recovery { fill: var(--line); }
