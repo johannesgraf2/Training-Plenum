@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { clock, intensityLabels, intensityZone, stepDescription, summary, workoutOverview, zoneLabels } from './workoutModel';
 
 const colors = { warmup: 'var(--line-strong)', active: 'var(--blue)', interval: 'var(--accent)', recovery: 'var(--line)', cooldown: 'var(--line-strong)' };
-const zoneColors = { endurance: 'var(--blue)', sweetspot: 'var(--zone-sweetspot)', threshold: 'var(--zone-threshold)', vo2: 'var(--zone-vo2)' };
+const zoneColors = { endurance: 'var(--blue)', tempo: 'var(--zone-tempo)', sweetspot: 'var(--zone-sweetspot)', threshold: 'var(--zone-threshold)', vo2: 'var(--zone-vo2)' };
 const minutes = seconds => `${+(seconds / 60).toFixed(1)} min`;
 const kilometres = metres => `${(metres / 1000).toLocaleString('de-DE', { maximumFractionDigits: 2 })} km`;
 

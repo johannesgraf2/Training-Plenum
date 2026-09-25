@@ -1,13 +1,14 @@
 export const intensityLabels = { warmup: 'Aufwärmen', active: 'Aktiv', interval: 'Intervall', recovery: 'Erholung', cooldown: 'Abwärmen' };
 export const targetLabels = { none: 'Kein Ziel', pace: 'Pace', speed: 'Geschwindigkeit', heart_rate: 'Herzfrequenz', power: 'Leistung', cadence: 'Kadenz' };
 // Colour zones for work steps: target as a fraction of FTP (power) or maximum heart rate.
-// Below the threshold (tempo/sweetspot), at the threshold (~94–105 % FTP) and clearly above it (VO2max and harder).
-const ZONE_LIMITS = { power: [0.76, 0.94, 1.05], heart_rate: [0.8, 0.87, 0.9] };
-export const zoneLabels = { endurance: 'Grundlage', sweetspot: 'Unter der Schwelle', threshold: 'Schwelle', vo2: 'Über der Schwelle' };
+// Tempo, sweetspot just below the threshold, at the threshold (~94–105 % FTP) and clearly above it (VO2max and harder).
+// Running has no separate sweetspot band: tempo runs straight into the threshold.
+const ZONE_LIMITS = { power: [0.76, 0.88, 0.94, 1.05], heart_rate: [0.8, 0.87, 0.87, 0.9] };
+export const zoneLabels = { endurance: 'Grundlage', tempo: 'Tempo', sweetspot: 'Sweetspot', threshold: 'Schwelle', vo2: 'Über der Schwelle' };
 export function intensityZone(fraction, type = 'power') {
-  const [tempo, threshold, above] = ZONE_LIMITS[type];
+  const [tempo, sweetspot, threshold, above] = ZONE_LIMITS[type];
   const value = Math.round(fraction * 1000) / 1000;
-  return value < tempo ? 'endurance' : value < threshold ? 'sweetspot' : value <= above ? 'threshold' : 'vo2';
+  return value < tempo ? 'endurance' : value < sweetspot ? 'tempo' : value < threshold ? 'sweetspot' : value <= above ? 'threshold' : 'vo2';
 }
 export const localDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 // Format the selected calendar day directly, without timezone conversion.
