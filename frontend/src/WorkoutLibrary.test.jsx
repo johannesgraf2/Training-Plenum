@@ -47,6 +47,19 @@ test('progressions offer start, middle and end of a block with increasing work',
   expect(vo2.map(e => e.spec[1].repeat)).toEqual([3, 4, 6]);
 });
 
+test('3-series micro interval progressions and multi-part VO2max intervals keep their structure', () => {
+  const titles = key => ['start', 'mid', 'end'].map(p => workoutLibrary.find(e => e.id === `${key}-${p}`).title);
+  expect(titles('ride-vo2-3015-3')).toEqual(['3 × 6 × 30/15 s', '3 × 8 × 30/15 s', '3 × 11 × 30/15 s']);
+  expect(titles('ride-vo2-4020-3')).toEqual(['3 × 6 × 40/20 s', '3 × 8 × 40/20 s', '3 × 11 × 40/20 s']);
+  const micro = createLibraryWorkout(workoutLibrary.find(e => e.id === 'ride-vo2-3015-3-end'), '2026-09-24', { ftp: 300 });
+  expect(micro.steps.filter(s => s.kind === 'repeat').map(b => [b.count, b.steps.map(s => [s.duration.value, s.target.low])])).toEqual(Array(3).fill([11, [[30, 375], [15, 150]]]));
+  expect(micro.steps.filter(s => s.name === 'Serienpause')).toHaveLength(2);
+  const waves = workoutOverview(createLibraryWorkout(workoutLibrary.find(e => e.id === 'ride-vo2-waves-end'), '2026-09-24', { ftp: 300 }));
+  expect(waves.workTime).toBe(4 * 7 * 60);
+  const hardStart = createLibraryWorkout(workoutLibrary.find(e => e.id === 'ride-hardstart-4-start'), '2026-09-24', { ftp: 300 });
+  expect(hardStart.steps[1]).toMatchObject({ count: 4, steps: [{ duration: { value: 30 }, target: { low: 405 } }, { duration: { value: 210 }, target: { low: 335 } }, { intensity: 'recovery' }] });
+});
+
 test('targets scale with FTP and maximum heart rate', () => {
   const entry = workoutLibrary.find(e => e.id === 'ride-vo2-4-start');
   expect(createLibraryWorkout(entry, '2026-09-24', { ftp: 300 }).steps[1].steps[0].target).toEqual({ type: 'power', low: 345, high: 345 });
@@ -62,7 +75,10 @@ test('search matches German tags, English synonyms, block phases and compact int
   expect(ids('base')).toEqual(expect.arrayContaining(['ride-base-start', 'run-long-mid']));
   expect(ids('vo2max block-ende')).toEqual(expect.arrayContaining(['ride-vo2-4-end', 'run-vo2-1000-end']));
   expect(ids('vo2max block-ende')).not.toContain('ride-vo2-4-start');
-  expect(ids('4x4')).toEqual(['ride-vo2-4-mid']);
+  expect(ids('4x4')).toEqual(expect.arrayContaining(['ride-vo2-4-mid', 'ride-hardstart-4-start', 'ride-vo2-attack-start']));
+  expect(ids('4x4')).not.toContain('ride-vo2-4-start');
+  expect(ids('hard start block-ende')).toEqual(['ride-hardstart-4-end', 'ride-hardstart-5-end']);
+  expect(ids('vo₂ 45/15')).toHaveLength(3);
   expect(ids('ronnestad').length).toBeGreaterThan(0);
   expect(searchLibrary({ sport: 'run', tag: 'vo2max', phase: 'start' }).every(e => e.sport === 'run' && e.phase === 'start')).toBe(true);
 });

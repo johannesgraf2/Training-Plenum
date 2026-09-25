@@ -15,7 +15,8 @@ export const libraryTags = {
   base: { label: 'Grundlage', terms: ['base', 'endurance', 'ga1', 'z2', 'zone 2', 'grundlagenausdauer', 'lit', 'locker'] },
   long: { label: 'Lang', terms: ['long', 'langer lauf', 'lange ausfahrt'] },
   recovery: { label: 'Regeneration', terms: ['recovery', 'reko', 'easy', 'erholung'] },
-  micro: { label: 'Mikrointervalle', terms: ['micro', '30/15', '40/20', '30/30', 'ronnestad', 'rønnestad'] },
+  micro: { label: 'Mikrointervalle', terms: ['micro', 'microbursts', 'ronnestad', 'rønnestad'] },
+  variable: { label: 'Variable Intervalle', terms: ['variabel', 'variable', 'wechselnd'] },
   sprint: { label: 'Sprint', terms: ['neuromuskulär', 'strides', 'steigerungen', 'steigerungsläufe'] },
   anaerobic: { label: 'Anaerob', terms: ['anaerobic', 'sit', 'z6', 'laktat'] },
   strength: { label: 'Kraftausdauer', terms: ['k3', 'low cadence', 'kraft', 'berg', 'hill', 'hügel'] },
@@ -33,9 +34,12 @@ const min = minutes => minutes * 60;
 // duration: seconds, or { m: metres }; target: fraction, [low, high] or null (no target).
 const step = (intensity, duration, target, name = '') => ({ intensity, duration, target, name });
 const reps = (count, ...steps) => ({ repeat: count, steps });
+const rename = (item, prefix) => item.repeat
+  ? { ...item, steps: item.steps.map(s => rename(s, prefix)) } : { ...item, name: `${prefix} · ${item.name}` };
 // Series of short repeats: one repeat block per series, so the FIT file needs no nested repeats.
-const series = (count, block, rest) => Array.from({ length: count }, (_, index) => [
-  { ...block, steps: block.steps.map(s => ({ ...s, name: `Serie ${index + 1} · ${s.name}` })) },
+// `items` is a repeat block or a list of steps/blocks forming one series; rests only between series.
+const series = (count, items, rest, label = 'Serie') => Array.from({ length: count }, (_, index) => [
+  ...[].concat(items).map(item => rename(item, `${label} ${index + 1}`)),
   ...(index < count - 1 ? [rest] : []),
 ]).flat();
 
@@ -49,6 +53,24 @@ const jog = (duration, name = 'Trabpause') => step('recovery', duration, null, n
 const family = (key, sport, familyTitle, tags, note, variants) => variants.map(([phase, title, spec, description]) =>
   ({ id: `${key}-${phase}`, family: key, familyTitle, note, sport, phase, title, tags, description, spec }));
 const single = (id, sport, title, tags, spec, description) => ({ id, sport, title, tags, description, spec });
+
+const PHASES = ['start', 'mid', 'end'];
+const PYRAMID = { 1: 1.25, 2: 1.2, 3: 1.15, 4: 1.1, 5: 1.1 };
+const percent = fraction => `${Math.round(fraction * 100)} %`;
+const clockText = seconds => seconds % 60 ? `${seconds} s` : `${seconds / 60} min`;
+
+// Short work/rest repeats in series with 5 min series rest, e.g. 3 × 8 × 30/15 s.
+const microFamily = (key, familyTitle, work, rest, target, variants) => family(key, 'ride', familyTitle, ['vo2max', 'micro'],
+  `Serien aus ${work} s hart (~${percent(target)} FTP) / ${rest} s locker, 5 min Serienpause.`,
+  variants.map(([phase, sets, count]) => [phase, `${sets} × ${count} × ${work}/${rest} s`,
+    [warm(), ...series(sets, reps(count, step('interval', work, target, 'Belastung'), step('recovery', rest, 0.5, 'Pause')), spin(min(5), 'Serienpause')), cool()],
+    `${libraryPhases[phase].label} ${work}/${rest}: ${sets} Serien à ${count} × ${work} s bei ~${percent(target)} FTP / ${rest} s locker, 5 min Serienpause.`]));
+
+// Classic intervals with a fixed easy recovery; the number of repetitions rises over the block.
+const classicFamily = (key, familyTitle, work, rest, target, counts, title = (n, name) => `${n} × ${clockText(work)} ${name}`) =>
+  family(key, 'ride', familyTitle, ['vo2max'], `${clockText(work)} bei ~${percent(target)} FTP, ${clockText(rest)} locker. Anzahl steigt über den Block.`,
+    counts.map((n, i) => [PHASES[i], title(n, 'VO2max'), [warm(), reps(n, step('interval', work, target, 'VO2max'), spin(rest)), cool()],
+      `${libraryPhases[PHASES[i]].label} ${familyTitle}: ${n} × ${clockText(work)} bei ~${percent(target)} FTP, ${clockText(rest)} locker.`]));
 
 const rideLibrary = [
   ...family('ride-vo2-4', 'ride', 'VO2max 4 min', ['vo2max'], '4-min-Intervalle bei ~115 % FTP, 4 min locker. Umfang steigt über den Block.', [
@@ -75,6 +97,45 @@ const rideLibrary = [
     ['end', '3 × 10 × 40/20 s', [warm(), ...series(3, reps(10, step('interval', 40, 1.2, 'Belastung'), step('recovery', 20, 0.5, 'Pause')), spin(min(5), 'Serienpause')), cool()],
       'Block-Ende 40/20: 3 Serien à 10 × 40 s bei ~120 % FTP / 20 s locker.'],
   ]),
+  ...microFamily('ride-vo2-3015-3', 'VO2max 30/15 · 3 Serien', 30, 15, 1.25, [['start', 3, 6], ['mid', 3, 8], ['end', 3, 11]]),
+  ...microFamily('ride-vo2-4020-3', 'VO2max 40/20 · 3 Serien', 40, 20, 1.2, [['start', 3, 6], ['mid', 3, 8], ['end', 3, 11]]),
+  ...microFamily('ride-vo2-4515', 'VO2max 45/15', 45, 15, 1.24, [['start', 2, 8], ['mid', 3, 8], ['end', 3, 10]]),
+  ...microFamily('ride-vo2-2010', 'VO2max 20/10', 20, 10, 1.4, [['start', 2, 10], ['mid', 3, 10], ['end', 3, 15]]),
+  ...microFamily('ride-vo2-1515', 'VO2max 15/15', 15, 15, 1.4, [['start', 2, 15], ['mid', 3, 15], ['end', 3, 20]]),
+  ...classicFamily('ride-vo2-3', 'VO2max 3 min', min(3), min(3), 1.2, [4, 5, 6]),
+  ...classicFamily('ride-vo2-5', 'VO2max 5 min', min(5), min(5), 1.12, [3, 4, 5]),
+  ...classicFamily('ride-vo2-6', 'VO2max 6 min', min(6), min(5), 1.08, [3, 4, 5]),
+  ...classicFamily('ride-vo2-11', 'VO2max 1/1', min(1), min(1), 1.3, [10, 12, 15], (n, name) => `${n} × 1 min / 1 min ${name}`),
+  ...classicFamily('ride-vo2-9090', 'VO2max 90/90', 90, 90, 1.24, [6, 8, 10], (n, name) => `${n} × 90 s / 90 s ${name}`),
+  ...family('ride-hardstart-4', 'ride', 'Hard Start 4 min', ['vo2max', 'variable'], 'Die ersten 30 s deutlich überziehen (~135 % FTP), dann 3:30 min bei ~112 % FTP halten. 4 min locker.',
+    [4, 5, 6].map((n, i) => [PHASES[i], `${n} × 4 min Hard Start`,
+      [warm(), reps(n, step('interval', 30, 1.35, 'Hard Start'), step('interval', 210, 1.12, 'VO2max halten'), spin(min(4))), cool()],
+      `${libraryPhases[PHASES[i]].label} Hard Start: ${n} × 4 min, davon 30 s bei ~135 % und 3:30 min bei ~112 % FTP, 4 min locker.`])),
+  ...family('ride-hardstart-5', 'ride', 'Hard Start 5 min', ['vo2max', 'variable'], 'Längere Variante für Fortgeschrittene: 45 s sehr hart, dann 4:15 min kontrolliert hart. 5 min locker.',
+    [3, 4, 5].map((n, i) => [PHASES[i], `${n} × 5 min Hard Start`,
+      [warm(), reps(n, step('interval', 45, 1.35, 'Hard Start'), step('interval', 255, 1.1, 'Kontrolliert hart'), spin(min(5))), cool()],
+      `${libraryPhases[PHASES[i]].label} Hard Start: ${n} × 5 min, davon 45 s bei ~135 % und 4:15 min bei ~110 % FTP, 5 min locker.`])),
+  ...family('ride-vo2-overunder', 'ride', 'Over/Under VO2max', ['vo2max', 'variable', 'overunder'], 'Im Intervall 30 s bei ~125 % und 30 s bei ~110 % FTP im Wechsel, 4 min locker.',
+    [[3, 5], [3, 6], [4, 6]].map(([n, minutes], i) => [PHASES[i], `${n} × ${minutes} min Over/Under VO2max`,
+      [warm(), ...series(n, reps(minutes, step('interval', 30, 1.25, 'Over'), step('interval', 30, 1.1, 'Under')), spin(min(4)), 'Intervall'), cool()],
+      `${libraryPhases[PHASES[i]].label} Over/Under VO2max: ${n} × ${minutes} min im Wechsel 30 s ~125 % / 30 s ~110 % FTP, 4 min locker.`])),
+  ...family('ride-vo2-waves', 'ride', 'VO2max Waves', ['vo2max', 'variable'], 'Lange Intervalle in Wellen: 1 min ~120 % / 1 min ~110 % FTP im Wechsel, 4 min locker.',
+    [[3, 6], [4, 6], [4, 7]].map(([n, minutes], i) => [PHASES[i], `${n} × ${minutes} min Waves`,
+      [warm(), ...series(n, [reps(Math.floor(minutes / 2), step('interval', min(1), 1.2, 'Welle hoch'), step('interval', min(1), 1.1, 'Welle tief')),
+        ...(minutes % 2 ? [step('interval', min(1), 1.2, 'Welle hoch')] : [])], spin(min(4)), 'Intervall'), cool()],
+      `${libraryPhases[PHASES[i]].label} Waves: ${n} × ${minutes} min, 1 min ~120 % / 1 min ~110 % FTP im Wechsel, 4 min locker.`])),
+  ...family('ride-vo2-pyramid', 'ride', 'VO2max-Pyramide', ['vo2max', 'variable'], 'Stufen von 1 bis 5 min, kurze Stufen härter (bis ~125 % FTP). Pause so lang wie die Stufe davor.',
+    [[1, 2, 3, 2, 1], [1, 2, 3, 4, 3, 2, 1], [2, 3, 4, 5, 4, 3, 2]].map((stairs, i) => [PHASES[i], `VO2max-Pyramide ${stairs.join('-')}`,
+      [warm(), ...stairs.flatMap((minutes, index) => [step('interval', min(minutes), PYRAMID[minutes], `${minutes} min`), ...(index < stairs.length - 1 ? [spin(min(minutes))] : [])]), cool()],
+      `${libraryPhases[PHASES[i]].label} Pyramide ${stairs.join('-')} min: 1 min ~125 %, 2 min ~120 %, 3 min ~115 %, 4–5 min ~110 % FTP. Pause so lang wie die Stufe davor.`])),
+  ...family('ride-vo2-321', 'ride', 'VO2max 3-2-1', ['vo2max', 'variable'], 'Blöcke aus 3 + 2 + 1 min mit steigender Leistung (~112 → 118 → 125 % FTP), 5 min locker.',
+    [2, 3, 4].map((n, i) => [PHASES[i], `${n} × (3 + 2 + 1 min)`,
+      [warm(), reps(n, step('interval', min(3), 1.12, '3 min'), step('interval', min(2), 1.18, '2 min'), step('interval', min(1), 1.25, '1 min'), spin(min(5))), cool()],
+      `${libraryPhases[PHASES[i]].label} 3-2-1: ${n} Blöcke aus 3 min ~112 %, 2 min ~118 % und 1 min ~125 % FTP ohne Pause, 5 min locker.`])),
+  ...family('ride-vo2-attack', 'ride', 'Attack-VO2max', ['vo2max', 'variable', 'race'], 'Rennähnlich: 15 s Attacke (~160 % FTP), dann 3:45 min hart halten. 4 min locker.',
+    [4, 5, 6].map((n, i) => [PHASES[i], `${n} × 4 min Attack-VO2max`,
+      [warm(), reps(n, step('interval', 15, 1.6, 'Attacke'), step('interval', 225, 1.12, 'Hart halten'), spin(min(4))), cool()],
+      `${libraryPhases[PHASES[i]].label} Attack-VO2max: ${n} × 4 min, 15 s Attacke ~160 % FTP, dann 3:45 min ~112 % FTP, 4 min locker.`])),
   ...family('ride-threshold', 'ride', 'Schwelle', ['threshold'], 'Lange Intervalle knapp unter FTP, 5 min locker. Zeit an der Schwelle steigt.', [
     ['start', '3 × 10 min Schwelle', [warm(), reps(3, step('interval', min(10), 0.97, 'Schwelle'), spin(min(5))), cool()],
       'Block-Start Schwelle: 3 × 10 min bei ~97 % FTP, 5 min locker dazwischen.'],
@@ -131,9 +192,6 @@ const rideLibrary = [
     ['end', '8 × 30 s SIT', [warm(20), reps(8, step('interval', 30, [1.6, 2.2], 'All-out'), spin(min(4))), cool(15)],
       'Block-Ende SIT: 8 × 30 s nahezu maximal, 4 min sehr locker.'],
   ]),
-  single('ride-vo2-pyramid', 'ride', 'VO2max-Pyramide 1-2-3-4-3-2-1', ['vo2max', 'anaerobic'],
-    [warm(), ...[1, 2, 3, 4, 3, 2, 1].flatMap((minutes, index, all) => [step('interval', min(minutes), minutes <= 2 ? 1.2 : 1.12, `${minutes} min`), ...(index < all.length - 1 ? [spin(min(minutes))] : [])]), cool()],
-    'Pyramide 1-2-3-4-3-2-1 min: kurze Stufen ~120 %, lange ~112 % FTP, Pause so lang wie das Intervall davor.'),
   single('ride-3030', 'ride', '2 × 12 × 30/30 s', ['vo2max', 'micro'],
     [warm(), ...series(2, reps(12, step('interval', 30, 1.2, 'Belastung'), step('recovery', 30, 0.5, 'Pause')), spin(min(6), 'Serienpause')), cool()],
     '30/30: 2 Serien à 12 × 30 s bei ~120 % FTP / 30 s locker, 6 min Serienpause. Guter Einstieg in VO2max-Arbeit.'),
@@ -296,7 +354,7 @@ export function libraryKeyTarget(entry, athlete) {
 
 export const librarySummary = (entry, date, athlete) => summary(createLibraryWorkout(entry, date, athlete));
 
-const normalize = text => text.toLowerCase().replace(/ø/g, 'o').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/×/g, 'x');
+const normalize = text => text.toLowerCase().replace(/ø/g, 'o').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/×/g, 'x').replace(/₂/g, '2');
 
 function haystack(entry) {
   const parts = [entry.title, entry.familyTitle, entry.description, entry.note, entry.sport === 'ride' ? 'rad radfahren bike ride' : 'laufen lauf run',
