@@ -50,7 +50,7 @@ test('progressions offer start, middle and end of a block with increasing work',
 test('3-series micro interval progressions and multi-part VO2max intervals keep their structure', () => {
   const titles = key => ['start', 'mid', 'end'].map(p => workoutLibrary.find(e => e.id === `${key}-${p}`).title);
   expect(titles('ride-vo2-3015-3')).toEqual(['3 × 6 × 30/15 s', '3 × 8 × 30/15 s', '3 × 11 × 30/15 s']);
-  expect(titles('ride-vo2-4020-3')).toEqual(['3 × 6 × 40/20 s', '3 × 8 × 40/20 s', '3 × 11 × 40/20 s']);
+  expect(titles('ride-vo2-4020')).toEqual(['3 × 6 × 40/20 s', '3 × 8 × 40/20 s', '3 × 11 × 40/20 s']);
   const micro = createLibraryWorkout(workoutLibrary.find(e => e.id === 'ride-vo2-3015-3-end'), '2026-09-24', { ftp: 300 });
   expect(micro.steps.filter(s => s.kind === 'repeat').map(b => [b.count, b.steps.map(s => [s.duration.value, s.target.low])])).toEqual(Array(3).fill([11, [[30, 375], [15, 150]]]));
   expect(micro.steps.filter(s => s.name === 'Serienpause')).toHaveLength(2);
