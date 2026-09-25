@@ -43,7 +43,7 @@ export function WorkoutRangeExport({ apiBase, month, workouts, loadError }) {
     <fieldset disabled={busy} className="range-fields">
       <label>Von<input type="date" value={start} onChange={e => { setStart(e.target.value); setMessage(''); setError(''); }} /></label>
       <label>Bis (einschließlich)<input type="date" value={end} onChange={e => { setEnd(e.target.value); setMessage(''); setError(''); }} /></label>
-      <label>Sport<select value={sport} onChange={e => { setSport(e.target.value); setMessage(''); setError(''); }}><option value="all">Alle Sportarten</option><option value="ride">Radfahren</option><option value="run">Laufen</option></select></label>
+      <label>Sport<select value={sport} onChange={e => { setSport(e.target.value); setMessage(''); setError(''); }}><option value="all">Alle Sportarten</option><option value="ride">Radfahren</option><option value="run">Laufen</option><option value="swim">Schwimmen</option></select></label>
       <button className="plan-primary" onClick={download} disabled={!valid || !selected.length || !!loadError}>{busy ? 'ZIP wird erstellt…' : `${selected.length} Workouts als ZIP`}</button>
     </fieldset>
     {!valid && <p role="alert">Bitte einen gültigen Zeitraum wählen.</p>}

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Simulate } from 'react-dom/test-utils';
 import WorkoutEditor from './WorkoutEditor';
 import { intensityZone, toDraft, toWorkout, workoutOverview, workoutTotals } from './workoutModel';
-import { createLibraryWorkout, libraryPhases, libraryProfile, libraryTags, searchLibrary, workoutLibrary } from './workoutLibraryData';
+import { createLibraryWorkout, libraryKeyTarget, libraryPhases, libraryProfile, libraryTags, searchLibrary, workoutLibrary } from './workoutLibraryData';
 
 let container, root;
 beforeEach(() => {
@@ -114,6 +114,35 @@ test('work steps are coloured below, at and above the threshold', () => {
   expect(container.querySelector('.workout-chart-legend').textContent).not.toContain('Belastung');
 });
 
+test('running and swimming offer VO2max, threshold, tempo and base progressions like cycling', () => {
+  const families = (sport, tag) => new Set(workoutLibrary.filter(e => e.sport === sport && e.family && e.tags.includes(tag)).map(e => e.family)).size;
+  for (const sport of ['run', 'swim']) {
+    expect(families(sport, 'vo2max')).toBeGreaterThanOrEqual(families('ride', 'vo2max'));
+    expect(families(sport, 'threshold')).toBeGreaterThanOrEqual(20);
+    expect(families(sport, 'tempo')).toBeGreaterThanOrEqual(8);
+    expect(families(sport, 'base')).toBeGreaterThanOrEqual(9);
+  }
+  const entry = id => workoutLibrary.find(e => e.id === id);
+  const zones = id => [...new Set(libraryProfile(entry(id)).map(s => s.zone).filter(Boolean))];
+  expect(zones('run-vo2-400-start')).toEqual(['vo2']);
+  expect(zones('run-threshold-1000-mid')).toEqual(['threshold']);
+  expect(zones('run-tempo-intervals-end')).toEqual(['tempo']);
+  expect(zones('swim-vo2-100-start')).toEqual(['vo2']);
+  expect(zones('swim-css-100-start')).toEqual(['threshold']);
+  expect(zones('swim-tempo-200-start')).toEqual(['tempo']);
+  expect(zones('swim-base-continuous-end')).toEqual(['endurance']);
+  expect(libraryKeyTarget(entry('swim-vo2-100-start'))).toBe('CSS −4 s/100 m');
+  expect(libraryKeyTarget(entry('swim-css-100-start'))).toBe('CSS-Tempo');
+  // Swimming has no CSS setting: the offset goes into the step name, the watch gets no pace target.
+  const swim = createLibraryWorkout(entry('swim-css-100-mid'), '2026-09-24', { ftp: 300, maxHr: 190 });
+  expect(swim.sport).toBe('swim');
+  expect(swim.steps[1]).toMatchObject({ kind: 'repeat', count: 12, steps: [
+    { name: '100 m · CSS', duration: { type: 'distance', value: 100 }, target: { type: 'none' } },
+    { intensity: 'recovery', duration: { type: 'time', value: 10 } }] });
+  expect(searchLibrary({ query: 'css block-ende', sport: 'swim' }).map(e => e.id)).toContain('swim-css-100-end');
+  expect(searchLibrary({ query: 'schwimmen vo2max' }).every(e => e.sport === 'swim')).toBe(true);
+});
+
 test('targets scale with FTP and maximum heart rate', () => {
   const entry = workoutLibrary.find(e => e.id === 'ride-vo2-4-start');
   expect(createLibraryWorkout(entry, '2026-09-24', { ftp: 300 }).steps[1].steps[0].target).toEqual({ type: 'power', low: 345, high: 345 });
@@ -165,6 +194,20 @@ test('the library opens from the templates, filters and replaces the workout wit
   expect(container.querySelector('[aria-label="Block 2: Wiederholungen"]').value).toBe('5');
   expect(container.querySelector('[aria-label="Workout-Hinweis"]').value).toContain('Block-Mitte');
   expect(container.querySelector('.workout-footer').textContent).toContain('Ungespeicherte Änderungen');
+});
+
+test('swimming workouts can be picked from the library and edited as pool sessions', () => {
+  render({ maxHr: 190 });
+  act(() => button('Beispiel-Einheiten durchsuchen').click());
+  act(() => button('Schwimmen (').click());
+  expect(container.querySelector('[aria-label="HFmax für Vorlagen"]')).toBeNull();
+  expect(container.textContent).toContain('CSS-Tempo');
+  act(() => container.querySelector('[aria-label="Vorlage 10 × 100 m CSS übernehmen"]').click());
+  expect(container.querySelector('[aria-label="Workout-Sportart"]').value).toBe('swim');
+  expect(container.querySelector('.workout-name input').value).toBe('10 × 100 m CSS');
+  const targets = Array.from(container.querySelector('[aria-label="Schritt 2.1: Ziel"]').options).map(o => o.value);
+  expect(targets).toEqual(['none', 'heart_rate']);
+  expect(container.querySelector('.workout-overview').textContent).toContain('Schwimmstrecke');
 });
 
 test('Escape closes only the library, then the editor', () => {

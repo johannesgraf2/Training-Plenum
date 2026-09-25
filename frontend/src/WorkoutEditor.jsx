@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { fitFileName, garminWorkoutName, intensityLabels, intervalBlock, newStep, newWorkout, powerStep, stepDescription, summary, targetLabels, toDraft, toWorkout, workoutTemplates, workoutTotals } from './workoutModel';
+import { distanceStep, fitFileName, garminWorkoutName, intensityLabels, intervalBlock, newStep, newWorkout, powerStep, sportTargets, stepDescription, summary, targetLabels, toDraft, toWorkout, workoutTemplates, workoutTotals } from './workoutModel';
 import WorkoutOverview from './WorkoutOverview';
 import WorkoutLibrary from './WorkoutLibrary';
 import { workoutLibrary } from './workoutLibraryData';
@@ -7,7 +7,7 @@ import './WorkoutEditor.css';
 
 const targetDefaults = { none: {}, pace: { low: '4:00', high: '4:10', mode: 'range' }, speed: { low: '25', high: '30', mode: 'range' }, heart_rate: { low: '130', high: '150', mode: 'range' }, power: { low: '180', high: '180', mode: 'single' }, cadence: { low: '80', high: '95', mode: 'range' } };
 
-function StepFields({ step, onChange, label, inRepeat = false }) {
+function StepFields({ step, onChange, label, sport, inRepeat = false }) {
   const target = step.target;
   const single = target.mode === 'single';
   const unit = { pace: 'min:ss/km', speed: 'km/h', heart_rate: 'bpm', power: 'W', cadence: 'rpm' }[target.type];
@@ -20,7 +20,7 @@ function StepFields({ step, onChange, label, inRepeat = false }) {
     </select></label>
     {step.duration.type !== 'open' && <label>{step.duration.type === 'time' ? 'Dauer (min:ss)' : 'Distanz (m)'}<input aria-label={`${label}: Dauer`} inputMode={step.duration.type === 'time' ? 'text' : 'decimal'} value={step.duration.value} onChange={e => onChange({ ...step, duration: { ...step.duration, value: e.target.value } })} /></label>}
     <label>Ziel<select aria-label={`${label}: Ziel`} value={target.type} onChange={e => onChange({ ...step, target: { type: e.target.value, ...targetDefaults[e.target.value] } })}>
-      {Object.entries(targetLabels).map(([value, text]) => <option key={value} value={value}>{value === 'power' ? 'Leistung (Watt)' : text}</option>)}
+      {Object.entries(targetLabels).filter(([value]) => value === target.type || sportTargets[sport].includes(value)).map(([value, text]) => <option key={value} value={value}>{value === 'power' ? 'Leistung (Watt)' : text}</option>)}
     </select></label>
     {target.type !== 'none' && <>
       <label>Vorgabe<select aria-label={`${label}: Zielmodus`} value={target.mode || 'range'} onChange={e => onChange({ ...step, target: { ...target, mode: e.target.value, high: e.target.value === 'single' ? target.low : target.high } })}><option value="single">Fester Wert</option><option value="range">Zielbereich</option></select></label>
@@ -141,12 +141,12 @@ export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onCl
       {libraryOpen ? <div className="workout-body workout-library-body"><WorkoutLibrary sport={draft.sport} date={draft.date} ftp={ftp} maxHr={maxHr} onClose={closeLibrary}
         onApply={workout => { setSelectedPath(null); change(toDraft(workout)); closeLibrary(); }} /></div> : <div className="workout-body">
         <fieldset className="workout-setup" disabled={!!busy}><div className="workout-basics"><label className="workout-name">Workout-Name<input ref={nameRef} value={draft.name} placeholder="z. B. Intervalle am Dienstag" maxLength={80} onChange={e => change({ ...draft, name: e.target.value })} /></label>
-            <label>Sportart<select aria-label="Workout-Sportart" value={draft.sport} onChange={e => change({ ...draft, sport: e.target.value })}><option value="run">Laufen</option><option value="ride">Radfahren</option></select></label>
+            <label>Sportart<select aria-label="Workout-Sportart" value={draft.sport} onChange={e => change({ ...draft, sport: e.target.value })}><option value="run">Laufen</option><option value="ride">Radfahren</option><option value="swim">Schwimmen</option></select></label>
             <label>Trainingsdatum<input type="date" value={draft.date} onChange={e => change({ ...draft, date: e.target.value })} /></label>
             <label className="workout-notes">Hinweis (optional)<textarea aria-label="Workout-Hinweis" value={draft.notes || ''} maxLength={250} rows={2} placeholder="z. B. Verpflegung: 60 g Kohlenhydrate pro Stunde" onChange={e => change({ ...draft, notes: e.target.value })} /><small>Erscheint auf der Garmin als Beschreibung des Workouts.</small></label>
-          </div><div className="workout-template-heading"><strong>{draft.sport === 'run' ? 'Lauf-Vorlagen' : 'Rad-Vorlagen'}</strong><span>Ersetzt den Ablauf · alle Werte sind anpassbar</span></div><div className="workout-templates">{workoutTemplates.filter(template => template.sport === draft.sport).map(template => <button type="button" className="workout-template" key={template.id} onClick={() => { setSelectedPath(null); change(toDraft(template.create(draft.date))); }}>
+          </div><div className="workout-template-heading"><strong>{{ run: 'Lauf-Vorlagen', ride: 'Rad-Vorlagen', swim: 'Schwimm-Vorlagen' }[draft.sport]}</strong><span>Ersetzt den Ablauf · alle Werte sind anpassbar</span></div><div className="workout-templates">{workoutTemplates.filter(template => template.sport === draft.sport).map(template => <button type="button" className="workout-template" key={template.id} onClick={() => { setSelectedPath(null); change(toDraft(template.create(draft.date))); }}>
             <span className="workout-template-bars" aria-hidden="true">{template.bars.map((height, index) => <i key={index} style={{ height: height * 4 }} />)}</span><strong>{template.title}</strong><small>{template.subtitle}</small>
-          </button>)}</div><button type="button" ref={libraryButtonRef} className="workout-library-open" onClick={() => setLibraryOpen(true)}><span>Vorlagen-Bibliothek</span><strong>Alle {workoutLibrary.length} Beispiel-Einheiten durchsuchen</strong><small>Tags wie VO2max, Schwelle, Grundlage · Progressionen für Block-Start, -Mitte und -Ende</small></button><p className="workout-template-note">{draft.sport === 'run' ? 'Lauf-Vorlagen: 2 km Einlaufen + Distanzintervalle + 1 km Auslaufen. Pace und Trabpausen lassen sich frei anpassen.' : 'Intervall-Vorlagen: je 10 min Auf- und Abwärmen. Bei 40/20: drei Serien à sieben Wiederholungen, dazwischen je 5 min Serienpause.'}</p></fieldset>
+          </button>)}</div><button type="button" ref={libraryButtonRef} className="workout-library-open" onClick={() => setLibraryOpen(true)}><span>Vorlagen-Bibliothek</span><strong>Alle {workoutLibrary.length} Beispiel-Einheiten durchsuchen</strong><small>Tags wie VO2max, Schwelle, Grundlage · Progressionen für Block-Start, -Mitte und -Ende</small></button><p className="workout-template-note">{draft.sport === 'swim' ? 'Schwimm-Vorlagen: 400 m Einschwimmen, Strecken in Metern, Pausen nach Zeit. Auf der Uhr als Beckenschwimmen mit 25-m-Bahn.' : draft.sport === 'run' ? 'Lauf-Vorlagen: 2 km Einlaufen + Distanzintervalle + 1 km Auslaufen. Pace und Trabpausen lassen sich frei anpassen.' : 'Intervall-Vorlagen: je 10 min Auf- und Abwärmen. Bei 40/20: drei Serien à sieben Wiederholungen, dazwischen je 5 min Serienpause.'}</p></fieldset>
         <WorkoutOverview workout={preview} selectedPath={selectedPath} onSelect={selectStep} disabled={!!busy} ftp={ftp} maxHr={maxHr} />
         <fieldset className="workout-edit-panel" disabled={!!busy}>
           <div className="workout-section-title"><h3>Trainingsschritte bearbeiten</h3><span className="workout-hint">Änderungen erscheinen direkt im Profil</span></div>
@@ -161,7 +161,7 @@ export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onCl
                 return <article className={`workout-step ${step.intensity} ${selectedPath === path ? 'workout-step-selected' : ''}`} key={childIndex} ref={element => { stepRefs.current[path] = element; }}>
                   <div className="workout-step-heading"><strong>{step.intensity === 'recovery' ? 'Pause / Erholung' : ['active', 'interval'].includes(step.intensity) ? 'Belastung' : intensityLabels[step.intensity]}</strong><Controls index={childIndex} length={block.steps.length} label={childLabel} onMove={delta => { setSelectedPath(null); replace(index, { ...block, steps: move(block.steps, childIndex, delta) }); }} onRemove={() => { setSelectedPath(null); replace(index, { ...block, steps: block.steps.filter((_, i) => i !== childIndex) }); }} /></div>
                   {step.name && <p className="workout-interval-name">{step.name}</p>}
-                  <StepFields step={step} label={childLabel} inRepeat onChange={next => replace(index, { ...block, steps: block.steps.map((s, i) => i === childIndex ? next : s) })} />
+                  <StepFields step={step} label={childLabel} sport={draft.sport} inRepeat onChange={next => replace(index, { ...block, steps: block.steps.map((s, i) => i === childIndex ? next : s) })} />
                 </article>;
               })}</div>
               {!block.steps.length && <p className="workout-empty">Füge mindestens einen Schritt zum Block hinzu.</p>}
@@ -169,12 +169,12 @@ export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onCl
             </section>;
             return <article className={`workout-step ${block.intensity} ${selectedPath === String(index) ? 'workout-step-selected' : ''}`} key={index} ref={element => { stepRefs.current[String(index)] = element; }}>
               <div className="workout-step-heading"><strong>{index + 1} · {intensityLabels[block.intensity]}</strong><Controls index={index} length={draft.steps.length} label={label} onMove={delta => setSteps(move(draft.steps, index, delta))} onRemove={() => setSteps(draft.steps.filter((_, i) => i !== index))} /></div>
-              <StepFields step={block} label={label} onChange={next => replace(index, next.intensity === 'interval' && block.intensity !== 'interval' ? makeIntervals(next) : next)} />
+              <StepFields step={block} label={label} sport={draft.sport} onChange={next => replace(index, next.intensity === 'interval' && block.intensity !== 'interval' ? makeIntervals(next) : next)} />
               {block.intensity === 'interval' && <button type="button" className="workout-text-button" onClick={() => replace(index, makeIntervals(block))}>+ Pause und Wiederholungen hinzufügen</button>}
             </article>;
           })}</div>
           {!draft.steps.length && <p className="workout-empty">Füge einen Schritt oder Wiederholungsblock hinzu.</p>}
-          <div className="workout-add-actions"><button type="button" onClick={() => setSteps([...draft.steps, toDraft({ steps: [draft.sport === 'ride' ? powerStep('active', 600, 180) : newStep()] }).steps[0]])}>+ Konstanter Abschnitt</button><button type="button" onClick={() => setSteps([...draft.steps, toDraft({ steps: [intervalBlock(draft.sport)] }).steps[0]])}>+ Intervalle mit Pause</button></div>
+          <div className="workout-add-actions"><button type="button" onClick={() => setSteps([...draft.steps, toDraft({ steps: [draft.sport === 'ride' ? powerStep('active', 600, 180) : draft.sport === 'swim' ? distanceStep('active', 400) : newStep()] }).steps[0]])}>+ Konstanter Abschnitt</button><button type="button" onClick={() => setSteps([...draft.steps, toDraft({ steps: [intervalBlock(draft.sport)] }).steps[0]])}>+ Intervalle mit Pause</button></div>
           <p className="workout-hint">Zeit in min:ss, Distanz in Metern. Bis zu 50 FIT-Schritte inklusive Wiederholungsmarkern.</p>
         </fieldset>
         <aside className="workout-preview"><div className="workout-preview-card"><span className="workout-eyebrow">Dein Ablauf</span><h3>{draft.name || 'Neues Workout'}</h3>{draft.notes?.trim() && <p className="workout-notes-preview">{draft.notes.trim()}</p>}

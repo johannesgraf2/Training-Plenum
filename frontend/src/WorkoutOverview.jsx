@@ -23,6 +23,7 @@ export default function WorkoutOverview({ workout, selectedPath, onSelect, disab
   </section>;
   const { segments, allTimed, allDistance, allPower, time, distance, workTime, recoveryTime, workDistance, recoveryDistance, averagePower } = overview;
   const hasPower = segments.some(step => step.power !== null);
+  const swimming = workout.sport === 'swim';
   const zones = segments.map(step => stepZone(step, Number(ftp), Number(maxHr)));
   const legendZones = Object.keys(zoneColors).filter(zone => zones.includes(zone));
   const unzonedWork = segments.some((step, index) => step.intensity === 'interval' && !zones[index]);
@@ -39,9 +40,10 @@ export default function WorkoutOverview({ workout, selectedPath, onSelect, disab
     <div className="workout-overview-heading"><div><span className="workout-eyebrow">Gesamtübersicht</span><h3>{hasPower ? 'Dein Leistungsprofil' : 'Dein Trainingsablauf'}</h3></div><span className="workout-chart-instruction">Block anklicken, um ihn zu bearbeiten</span></div>
     <div className="workout-metrics">
       <div><span>{allTimed ? 'Gesamtdauer' : allDistance ? 'Gesamtdistanz' : 'Geplante Abschnitte'}</span><strong>{allTimed ? minutes(time) : allDistance ? kilometres(distance) : summary(workout)}</strong></div>
-      <div><span>{allTimed || allDistance ? 'Belastung' : 'Belastung nach Zeit'}</span><strong>{allDistance ? kilometres(workDistance) : minutes(workTime)}</strong></div>
-      <div><span>{allTimed || allDistance ? 'Erholung' : 'Erholung nach Zeit'}</span><strong>{allDistance ? kilometres(recoveryDistance) : minutes(recoveryTime)}</strong></div>
-      <div><span>{workout.sport === 'run' ? 'Zielpace · Belastung' : 'Ø Zielleistung'}</span><strong>{workout.sport === 'run' ? runningPace : averagePower === null ? '—' : `${Math.round(averagePower)} W`}</strong></div>
+      {/* Swimming: work is measured in lengths, rests in time. */}
+      <div><span>{allTimed || allDistance || swimming ? 'Belastung' : 'Belastung nach Zeit'}</span><strong>{allDistance || swimming ? kilometres(workDistance) : minutes(workTime)}</strong></div>
+      <div><span>{swimming ? 'Pausen' : allTimed || allDistance ? 'Erholung' : 'Erholung nach Zeit'}</span><strong>{allDistance ? kilometres(recoveryDistance) : minutes(recoveryTime)}</strong></div>
+      <div><span>{{ run: 'Zielpace · Belastung', ride: 'Ø Zielleistung', swim: 'Schwimmstrecke' }[workout.sport]}</span><strong>{workout.sport === 'run' ? runningPace : workout.sport === 'swim' ? `${distance.toLocaleString('de-DE')} m` : averagePower === null ? '—' : `${Math.round(averagePower)} W`}</strong></div>
     </div>
     <div className="workout-chart-scroll"><svg className="workout-profile" viewBox="0 0 1110 207" role="group" aria-label={allTimed ? 'Trainingsprofil über die gesamte Dauer' : allDistance ? 'Trainingsprofil über die gesamte Distanz' : 'Trainingsprofil in Schrittfolge'}>
       <title>Jeder Balken ist ein Trainingsabschnitt. Wiederholungen sind einzeln dargestellt.</title>
