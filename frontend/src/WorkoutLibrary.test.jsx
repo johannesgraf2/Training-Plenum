@@ -95,6 +95,10 @@ test('work steps are coloured below, at and above the threshold', () => {
   expect(zones('run-tempo-start')).toEqual(['tempo']);
   expect(zones('ride-sweetspot-overunder-start')).toEqual(['sweetspot', 'threshold']);
   expect(zones('ride-sweetspot-longride-end')).toEqual(['endurance', 'sweetspot']);
+  expect(zones('ride-base-progressive-mid')).toEqual(['endurance']);
+  expect(zones('ride-base-tempofinish-end')).toEqual(['endurance', 'tempo']);
+  expect(zones('ride-base-durability-start')).toEqual(['endurance', 'threshold']);
+  expect(zones('run-easy-progressive-end')).toEqual(['endurance']);
   expect(zones('ride-threshold-20-mid')).toEqual(['threshold']);
   expect(zones('ride-vo2-4-start')).toEqual(['vo2']);
   expect(zones('ride-threshold-attack-start')).toEqual(['vo2', 'threshold']);
