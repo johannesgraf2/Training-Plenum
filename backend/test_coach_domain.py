@@ -4,7 +4,8 @@ from datetime import date
 
 from coach_domain import (CHECK_IN_SCHEMA, DAILY_SCHEMA, DEFAULT_PROFILE, DAYS, BLOCK_WEEKS_SCHEMA,
                           WEEK_OVERRIDE_SCHEMA, CoachError, apply_patch, day_date,
-                          effective_availability, iso_week, min_ride_minutes, response_schemas, update_profile,
+                          complete_profile, effective_availability, iso_week, min_ride_minutes, preferred_hours,
+                          response_schemas, rest_day_pairs, update_profile, week_season,
                           validate, week_start)
 from coach_templates import PARAM_NAMES, SESSION_SCHEMA
 
@@ -26,22 +27,49 @@ def changes(operations):
 
 
 class ProfileTests(unittest.TestCase):
-    def test_minimum_ride_follows_the_season_and_older_profiles_get_defaults(self):
+    def test_season_follows_the_outdoor_months_and_older_profiles_get_defaults(self):
         stored = profile()
-        del stored['preferences']['trainingEnvironment']
         after = update_profile(stored, {'availability': {'minRideMinutes': {'indoor': 60, 'outdoor': 90}, 'trainingDaysPerWeek': 4}})
         self.assertEqual(after['availability']['defaultAvailability'], stored['availability']['defaultAvailability'])
         self.assertEqual(after['availability']['trainingDaysPerWeek'], 4)
-        self.assertEqual(min_ride_minutes(after), 60)  # mixed allows the shorter one
-        after['preferences']['trainingEnvironment'] = 'outdoor'
-        self.assertEqual(min_ride_minutes(after), 90)
-        after['preferences']['trainingEnvironment'] = 'indoor'
-        self.assertEqual(min_ride_minutes(after), 60)
+        january, may = date(2027, 1, 4), date(2027, 5, 3)
+        self.assertIsNone(week_season(after, may))
+        self.assertEqual(min_ride_minutes(after, may), 60)  # without a split the shorter one applies
+        self.assertEqual(preferred_hours(after, january), 8)
+        after = update_profile(after, {'availability': {'outdoorMonths': [10, 4, 5, 6, 7, 8, 9], 'indoorWeeklyHours': 5}})
+        self.assertEqual(after['availability']['outdoorMonths'], [4, 5, 6, 7, 8, 9, 10])
+        self.assertEqual((week_season(after, january), week_season(after, may)), ('indoor', 'outdoor'))
+        self.assertEqual((min_ride_minutes(after, january), min_ride_minutes(after, may)), (60, 90))
+        self.assertEqual((preferred_hours(after, january), preferred_hours(after, may)), (5, 8))
+        # The Thursday decides: Mon 29 Mar 2027 belongs to April's week.
+        self.assertEqual(week_season(after, date(2027, 3, 29)), 'outdoor')
         after['availability']['minRideMinutes']['indoor'] = None
-        self.assertIsNone(min_ride_minutes(after))
-        with self.assertRaises(CoachError):
-            update_profile(after, {'availability': {'trainingDaysPerWeek': 8}})
+        self.assertIsNone(min_ride_minutes(after, january))
+        for bad in ({'trainingDaysPerWeek': 8}, {'outdoorMonths': [13]}, {'outdoorMonths': [4, 4]},
+                    {'indoorWeeklyHours': 13}, {'noConsecutiveRestDays': True, 'trainingDaysPerWeek': 2}):
+            with self.subTest(value=bad), self.assertRaises(CoachError):
+                update_profile(after, {'availability': bad})
 
+    def test_older_profiles_move_to_sports_goal_types_and_outdoor_months(self):
+        stored = profile()
+        stored['goal'] = {'type': 'marathon', 'name': 'Berlin', 'date': None, 'target': None}
+        stored['preferences'] = {'indoorPreference': 'avoid', 'outdoorPreference': 'prefer', 'trainingEnvironment': 'outdoor'}
+        value = complete_profile(stored)
+        self.assertEqual((value['goal']['type'], value['goal']['sports']), ('event', ['run']))
+        self.assertEqual(value['availability']['outdoorMonths'], list(range(1, 13)))
+        self.assertEqual(value['preferences'], DEFAULT_PROFILE['preferences'])
+        self.assertEqual(update_profile(value, {'goal': {'type': 'ftp'}})['goal']['type'], 'performance')
+        with self.assertRaises(CoachError):
+            update_profile(value, {'goal': {'sports': []}})
+        with self.assertRaises(CoachError):
+            update_profile(value, {'goal': {'sports': ['ride', 'rowing']}})
+
+    def test_rest_day_pairs_skip_days_without_time_and_elapsed_days(self):
+        limits = {day: {'maxMinutes': 0 if day in ('thu', 'fri') else 60} for day in DAYS}
+        self.assertEqual(rest_day_pairs({'mon', 'wed', 'sat'}, limits), set())  # Thu and Fri have no time
+        self.assertEqual(rest_day_pairs({'mon', 'sat'}, limits), {('tue', 'wed'), ('wed', 'thu')})
+        self.assertEqual(rest_day_pairs({'mon', 'sat'}, limits, elapsed=['mon', 'tue']), {('tue', 'wed'), ('wed', 'thu')})
+        self.assertEqual(rest_day_pairs({'mon', 'sat'}, limits, elapsed=['mon', 'tue', 'wed']), set())
     def test_updates_preserve_overrides_checkins_and_do_not_mutate_old_profile(self):
         before = profile()
         before['weeklyOverrides'] = [{'week': '2026-W40', 'overrides': {'thu': {'available': False}}, 'note': ''}]

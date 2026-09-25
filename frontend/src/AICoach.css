@@ -260,3 +260,16 @@
 .coach-type-detail h4 { margin: 12px 0 2px; font-size: 13px; font-weight: 600; }
 .coach-generating { margin: 14px 0 0; }
 .coach-season-range { margin: -4px 0 10px; }
+.coach-week-nav { display: flex; align-items: flex-end; gap: 8px; }
+.coach-week-nav .coach-field { margin: 0; }
+.ai-coach button.coach-week-step { display: grid; place-items: center; padding: 0; width: 39px; height: 39px; }
+.coach-flip { transform: rotate(180deg); }
+.coach-toggles { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.ai-coach button.coach-toggle { padding: 8px 13px; border: 1px solid var(--bd-d4dce7); border-radius: 999px; background: var(--bg-ffffff); color: var(--fg-475569); font-size: 12px; font-weight: 500; }
+.ai-coach button.coach-toggle[aria-pressed="true"], .ai-coach button.coach-toggle[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--btn-bg); background: var(--btn-bg); color: var(--btn-fg); }
+.coach-toggles.months button.coach-toggle { min-width: 52px; padding: 7px 0; }
+.coach-season-volume { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin: 14px 0 16px; }
+.coach-season-volume.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.coach-season-volume > div { border: 1px solid var(--bd-e2e8f0); border-radius: 4px; padding: 14px 14px 0; }
+.coach-season-volume h4 { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
+@media (max-width: 650px) { .coach-season-volume.two { grid-template-columns: 1fr; } }

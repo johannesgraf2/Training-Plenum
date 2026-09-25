@@ -53,6 +53,7 @@ class CoachAPITests(unittest.TestCase):
         self.start = date.today() + timedelta(days=7 - date.today().weekday())
         self.week = iso_week(self.start)
         self.profile = copy.deepcopy(DEFAULT_PROFILE)
+        self.profile['goal']['sports'] = ['ride', 'run']
         self.profile['availability'] = {'preferredWeeklyHours': 5, 'absoluteMaxWeeklyHours': 10,
                                          'defaultAvailability': dict.fromkeys(DAYS, 120)}
         fields = {key: self.profile[key] for key in ('goal', 'availability', 'preferences', 'limitations', 'currentState')}
@@ -414,8 +415,8 @@ class CoachAPITests(unittest.TestCase):
 
     def test_training_days_and_minimum_ride_length_are_enforced(self):
         self.block()
-        self.client.put('/api/athlete-profile', json={'availability': {'trainingDaysPerWeek': 2, 'minRideMinutes': {'indoor': 60, 'outdoor': 90}},
-                                                       'preferences': {'trainingEnvironment': 'outdoor'}})
+        self.assertEqual(self.client.put('/api/athlete-profile', json={'availability': {
+            'trainingDaysPerWeek': 2, 'minRideMinutes': {'indoor': 60, 'outdoor': 90}, 'outdoorMonths': list(range(1, 13))}}).status_code, 200)
         sessions = [self.session('a', 'mon', 60), self.session('b', 'tue', 90), self.session('c', 'wed', 90)]
         decision = {'week': self.week, 'targetHours': 4, 'focus': 'Basis', 'hinweise': []}
         response, _ = self.propose({'kind': 'week', 'week': self.week}, {**decision, 'sessions': sessions}, expected=400)
@@ -426,8 +427,50 @@ class CoachAPITests(unittest.TestCase):
         proposal, provider = self.propose({'kind': 'week', 'week': self.week},
                                           {**decision, 'targetHours': 2.5, 'sessions': [recovery, sessions[1]]})
         context = provider.generate.call_args.args[3]
-        self.assertEqual(context['trainingRules'], {'source': 'athlete', 'trainingDaysPerWeek': 2, 'environment': 'outdoor', 'minRideMinutes': 90})
+        self.assertEqual(context['trainingRules'], {'source': 'athlete', 'trainingDaysPerWeek': 2, 'noConsecutiveRestDays': False,
+                                                    'sports': ['ride', 'run'], 'environment': 'outdoor', 'minRideMinutes': 90})
         self.assertIn('rideMinutesMedian', context['recentPattern'])
+
+    def test_indoor_months_bring_their_own_volume_and_minimum_ride(self):
+        self.block()
+        month = (self.start + timedelta(days=3)).month  # The Thursday decides the week's month.
+        self.assertEqual(self.client.put('/api/athlete-profile', json={'availability': {
+            'indoorWeeklyHours': 3, 'minRideMinutes': {'indoor': 45, 'outdoor': 120}}}).status_code, 200)
+        decision = {'week': self.week, 'targetHours': 1, 'focus': 'Basis', 'hinweise': [], 'sessions': [self.session('a', 'mon', 60)]}
+        rules = lambda provider: (lambda c: (c['trainingRules']['environment'], c['trainingRules']['minRideMinutes'],
+                                             c['preferredWeeklyHours']))(provider.generate.call_args.args[3])
+        _, provider = self.propose({'kind': 'week', 'week': self.week}, decision)
+        self.assertEqual(rules(provider), ('mixed', 45, 5))  # Without outdoor months nothing changes over the year.
+        self.client.put('/api/athlete-profile', json={'availability': {'outdoorMonths': [m for m in range(1, 13) if m != month]}})
+        _, provider = self.propose({'kind': 'week', 'week': self.week}, decision)
+        self.assertEqual(rules(provider), ('indoor', 45, 3))
+        self.client.put('/api/athlete-profile', json={'availability': {'outdoorMonths': [month]}})
+        response, provider = self.propose({'kind': 'week', 'week': self.week}, decision, expected=400)
+        self.assertIn('mindestens 120 Minuten', response['error'])
+        self.assertEqual(rules(provider), ('outdoor', 120, 5))
+
+    def test_only_profile_sports_are_planned(self):
+        self.block()
+        self.client.put('/api/athlete-profile', json={'goal': {'sports': ['ride']}})
+        run = self.session('a', 'mon', 45, 'run_easy')
+        decision = {'week': self.week, 'targetHours': 0.75, 'focus': 'Basis', 'hinweise': [], 'sessions': [run]}
+        response, provider = self.propose({'kind': 'week', 'week': self.week}, decision, expected=400)
+        self.assertIn('Sportart', response['error'])
+        templates = {t['sport'] for t in provider.generate.call_args.args[3]['templates']}
+        self.assertEqual(templates, {'ride', 'strength', 'rest'})
+
+    def test_no_two_rest_days_in_a_row_when_the_athlete_asks(self):
+        self.block()
+        self.assertEqual(self.client.put('/api/athlete-profile', json={'availability': {'noConsecutiveRestDays': True}}).status_code, 200)
+        days = ['mon', 'tue', 'fri', 'sat']  # Wed and Thu stay free
+        decision = {'week': self.week, 'targetHours': 4, 'focus': 'Basis', 'hinweise': [],
+                    'sessions': [self.session(day, day, 60) for day in days]}
+        response, _ = self.propose({'kind': 'week', 'week': self.week}, decision, expected=400)
+        self.assertIn('zwei Ruhetage', response['error'])
+        days = ['mon', 'wed', 'fri', 'sun']
+        _, provider = self.propose({'kind': 'week', 'week': self.week},
+                                   {**decision, 'sessions': [self.session(day, day, 60) for day in days]})
+        self.assertTrue(provider.generate.call_args.args[3]['trainingRules']['noConsecutiveRestDays'])
 
     def test_season_plan_is_proposed_adjusted_confirmed_and_guides_the_next_block(self):
         goal = (self.start + timedelta(weeks=17, days=6)).isoformat()  # Sunday of the 18th week
