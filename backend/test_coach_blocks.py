@@ -29,7 +29,7 @@ class CatalogTests(unittest.TestCase):
     def test_catalog_offers_selectable_types_with_german_rules(self):
         result = catalog()
         ids = [item['id'] for item in result['blockTypes']]
-        self.assertEqual(ids, ['wiedereinstieg', 'grundlage', 'aufbau', 'schwelle', 'vo2max', 'wettkampfspezifisch', 'uebergang'])
+        self.assertEqual(ids, ['wiedereinstieg', 'grundlage', 'aufbau', 'schwelle', 'vo2max', 'wettkampfspezifisch', 'taper', 'uebergang'])
         vo2 = next(item for item in result['blockTypes'] if item['id'] == 'vo2max')
         self.assertEqual((vo2['minWeeks'], vo2['defaultWeeks'], vo2['maxWeeks']), (3, 4, 12))
         self.assertIn('Mindestens 2× VO2max-Einheit pro Belastungswoche', vo2['rules'])
@@ -45,6 +45,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(pattern(8), 'LLLDLLLD')
         self.assertEqual(pattern(10), 'LLLDLLDLLD')
         self.assertEqual(suggested_rhythm(2, 'uebergang'), [False, False])
+        self.assertEqual(suggested_rhythm(2, 'taper'), [True, True])
         for length in range(4, 13):  # Every suggested rhythm passes the block rules.
             check_block('aufbau', None, weeks(*['recovery' if d else 'build' for d in suggested_rhythm(length, 'aufbau')]),
                         start=MONDAY, profile=profile())
@@ -76,6 +77,14 @@ class BlockRuleTests(unittest.TestCase):
         with self.assertRaisesRegex(CoachError, '60 % des Wunschumfangs'):
             check_block('uebergang', None, weeks('recovery', 'recovery', hours=5), start=MONDAY, profile=profile())
         check_block('uebergang', None, weeks('recovery', 'recovery', hours=4.8), start=MONDAY, profile=profile())
+        goal = profile(goal={'date': '2026-10-11'})
+        check_block('taper', None, weeks('taper', hours=5), start=MONDAY, profile=goal)
+        with self.assertRaisesRegex(CoachError, 'jede Woche eine Entlastungswoche'):
+            check_block('taper', None, weeks('build', 'taper', hours=5), start=date(2026, 9, 28), profile=goal)
+        with self.assertRaisesRegex(CoachError, '70 % des Wunschumfangs'):
+            check_block('taper', None, weeks('taper', hours=6), start=MONDAY, profile=goal)
+        with self.assertRaisesRegex(CoachError, '„Taper“ muss spätestens in der Woche des Zieldatums'):
+            check_block('taper', None, weeks('taper', 'taper', hours=5), start=MONDAY, profile=goal)
         with self.assertRaisesRegex(CoachError, 'Krafttraining-Verfügbarkeit'):
             check_block('aufbau', 'kraft', weeks('build', 'build', 'build', 'recovery'), start=MONDAY, profile=profile())
         check_block('aufbau', 'kraft', weeks('build', 'build', 'build', 'recovery'), start=MONDAY,

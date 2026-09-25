@@ -58,9 +58,18 @@ class RuleTests(unittest.TestCase):
         with self.assertRaisesRegex(CoachError, 'ergeben 17 Wochen, bis zur Zielwoche sind es 18'):
             check_season(with_fixed([segment('aufbau', 4), segment('vo2max', 3), segment('wettkampfspezifisch', 4)], self.frame),
                          self.frame, profile())
-        with self.assertRaisesRegex(CoachError, 'letzte Block'):
+        with self.assertRaisesRegex(CoachError, 'endet mit einem wettkampfspezifischen Block'):
             check_season(with_fixed([segment('aufbau', 4), segment('wettkampfspezifisch', 4), segment('vo2max', 4)], self.frame),
                          self.frame, profile())
+
+    def test_a_short_taper_may_follow_the_race_specific_block(self):
+        check_season(with_fixed([segment('aufbau', 4), segment('vo2max', 4), segment('wettkampfspezifisch', 3), segment('taper', 1)],
+                                self.frame), self.frame, profile())
+        with self.assertRaisesRegex(CoachError, 'höchstens noch ein Taper'):
+            check_season(with_fixed([segment('aufbau', 4), segment('vo2max', 7), segment('taper', 1)], self.frame), self.frame, profile())
+        with self.assertRaisesRegex(CoachError, '„Taper“ dauert 1–3 Wochen'):
+            check_season(with_fixed([segment('aufbau', 4), segment('vo2max', 3), segment('wettkampfspezifisch', 2), segment('taper', 4)],
+                                    self.frame), self.frame, profile())
 
     def test_each_new_block_fits_its_type(self):
         with self.assertRaisesRegex(CoachError, 'Block 3: „VO2max“ dauert 3–12 Wochen'):
@@ -97,6 +106,9 @@ class BuildUpTests(unittest.TestCase):
     def test_ai_plans_keep_the_build_up_order(self):
         order = lambda *types: check_order([segment(t, 4) for t in types])
         order('wiedereinstieg', 'grundlage', 'grundlage', 'schwelle', 'vo2max', 'wettkampfspezifisch')
+        order('grundlage', 'vo2max', 'wettkampfspezifisch', 'taper')
+        with self.assertRaisesRegex(CoachError, 'Block 3: „Wettkampfspezifisch“ nach „Taper“'):
+            order('grundlage', 'taper', 'wettkampfspezifisch')
         with self.assertRaisesRegex(CoachError, 'Block 2: „Aufbau“ gehört nicht'):
             order('grundlage', 'aufbau', 'wettkampfspezifisch')
         with self.assertRaisesRegex(CoachError, 'Block 3: „Grundlage“ nach „VO2max“'):
