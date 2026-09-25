@@ -114,9 +114,48 @@ test('a proposal is human-readable and only saves after explicit confirmation', 
   expect(requests.filter(r => r.path === '/api/coach/proposals').slice(1).map(r => r.body)).toEqual([
     { kind: 'week', week: '2026-W39', instruction: '' }, { kind: 'week', week: '2026-W40', instruction: '' }]);
   expect(requests.filter(r => r.path.endsWith('/confirm')).slice(1).map(r => r.body)).toEqual([{ confirm: true }, { confirm: true }]);
-  expect(changed).toHaveBeenCalledTimes(2);
+  // Once for the block, then after every planned week so its workouts can be opened right away.
+  expect(changed).toHaveBeenCalledTimes(3);
   expect(container.textContent).toContain('2 Wochen geplant.');
   expect(container.textContent).toContain('2026-W39: Kurze Woche.');
+});
+
+test('the week card stays usable while the coach plans the block weeks', async () => {
+  let release;
+  responses['POST /api/coach/proposals'] = async body => {
+    if (body.kind === 'block') return { ok: true, json: async () => blockProposal };
+    if (body.week === '2026-W39' && !release) await new Promise(resolve => { release = resolve; });
+    return { ok: true, json: async () => ({ id: `week-${body.week}`, kind: 'week', hinweise: [], before: null, after: weekPlan }) };
+  };
+  const twoWeeks = { ...macro, weeks: blockProposal.after.options[1].block.weeks };
+  responses['POST /api/coach/proposals/proposal-1/confirm'] = async () => ({ ok: true, json: async () => ({ revision: 1, blocks: [twoWeeks], weeks: {} }) });
+  // The athlete's edit in the meantime makes the first answer stale.
+  let stale = true;
+  responses['POST /api/coach/proposals/week-2026-W39/confirm'] = async () => {
+    if (!stale) return { ok: true, json: async () => ({ revision: 2, blocks: [twoWeeks], weeks: {} }) };
+    stale = false;
+    return { ok: false, status: 409, json: async () => ({ error: 'Profil, Training oder Kalender haben sich geändert.' }) };
+  };
+  await render();
+  await startBlock();
+  await click(container.querySelector('[aria-label="Planvorschlag prüfen"] input[value="mehr"]'));
+  await click(button('Diese Option übernehmen'));
+  expect(container.textContent).toContain('Woche 1 von 2 wird geplant · 2026-W39');
+  expect(button('Woche anpassen').disabled).toBe(true);
+  expect(button('Block löschen').disabled).toBe(true);
+  expect(container.textContent).toContain('Während der Coach die Wochen plant');
+  const next = container.querySelector('[aria-label="Nächste Woche"]');
+  expect(next.disabled).toBe(false);
+  await click(next);
+  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W40');
+  await change(inputFor('Wunsch für die Planung'), 'Samstag lang');
+  await act(async () => release());
+  // The stale week is planned again with the new wish, which also applies to the weeks after it.
+  expect(requests.filter(r => r.path === '/api/coach/proposals' && r.body.kind === 'week').map(r => [r.body.week, r.body.instruction]))
+    .toEqual([['2026-W39', ''], ['2026-W39', 'Samstag lang'], ['2026-W40', 'Samstag lang']]);
+  expect(container.textContent).toContain('2 Wochen geplant.');
+  expect(container.textContent).not.toContain('Während der Coach die Wochen plant');
+  expect(button('Block löschen').disabled).toBe(false);
 });
 
 test('the remaining weeks are planned on request and a failing week stops with a clear message', async () => {
