@@ -49,9 +49,9 @@ test('progressions offer start, middle and end of a block with increasing work',
 
 test('3-series micro interval progressions and multi-part VO2max intervals keep their structure', () => {
   const titles = key => ['start', 'mid', 'end'].map(p => workoutLibrary.find(e => e.id === `${key}-${p}`).title);
-  expect(titles('ride-vo2-3015-3')).toEqual(['3 × 6 × 30/15 s', '3 × 8 × 30/15 s', '3 × 11 × 30/15 s']);
+  expect(titles('ride-vo2-3015')).toEqual(['3 × 6 × 30/15 s', '3 × 8 × 30/15 s', '3 × 11 × 30/15 s']);
   expect(titles('ride-vo2-4020')).toEqual(['3 × 6 × 40/20 s', '3 × 8 × 40/20 s', '3 × 11 × 40/20 s']);
-  const micro = createLibraryWorkout(workoutLibrary.find(e => e.id === 'ride-vo2-3015-3-end'), '2026-09-24', { ftp: 300 });
+  const micro = createLibraryWorkout(workoutLibrary.find(e => e.id === 'ride-vo2-3015-end'), '2026-09-24', { ftp: 300 });
   expect(micro.steps.filter(s => s.kind === 'repeat').map(b => [b.count, b.steps.map(s => [s.duration.value, s.target.low])])).toEqual(Array(3).fill([11, [[30, 375], [15, 150]]]));
   expect(micro.steps.filter(s => s.name === 'Serienpause')).toHaveLength(2);
   const waves = workoutOverview(createLibraryWorkout(workoutLibrary.find(e => e.id === 'ride-vo2-waves-end'), '2026-09-24', { ftp: 300 }));
@@ -92,7 +92,7 @@ test('the library opens from the templates, filters and replaces the workout wit
   expect(titles()).not.toContain('4 × 1000 m');
   act(() => button('VO2max').click());
   act(() => button('Block-Ende').click());
-  expect(titles()).toEqual(expect.arrayContaining(['6 × 4 min VO2max', '3 × 13 × 30/15 s']));
+  expect(titles()).toEqual(expect.arrayContaining(['6 × 4 min VO2max', '3 × 11 × 30/15 s']));
   expect(titles()).not.toContain('3 × 4 min VO2max');
   expect(titles()).not.toContain('3 × 20 min Sweetspot');
   expect(container.textContent).toContain('345 W');
