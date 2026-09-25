@@ -96,11 +96,11 @@ function cycle(seconds, pattern) {
   return [...(rounds > 1 ? [reps(rounds, ...steps)] : rounds ? steps : []), ...tail];
 }
 
-// Steady threshold intervals, 5 min easy; `variants` are [count, minutes, target] for start, middle and end.
+// Steady threshold intervals; `variants` are [count, minutes, target, easy minutes = 5] for start, middle and end.
 const steadyFamily = (key, familyTitle, tags, note, variants, name = 'Schwelle') => family(key, 'ride', familyTitle, tags, note,
-  variants.map(([n, minutes, target], i) => [PHASES[i], `${n} × ${minutes} min ${name}`,
-    [warm(), reps(n, step('interval', min(minutes), target, name), spin(min(5))), cool()],
-    `${libraryPhases[PHASES[i]].label} ${familyTitle}: ${n} × ${minutes} min bei ${targetText(target)} FTP, 5 min locker.`]));
+  variants.map(([n, minutes, target, rest = 5], i) => [PHASES[i], `${n} × ${minutes} min ${name}`,
+    [warm(), reps(n, step('interval', min(minutes), target, name), spin(min(rest))), cool()],
+    `${libraryPhases[PHASES[i]].label} ${familyTitle}: ${n} × ${minutes} min bei ${targetText(target)} FTP, ${rest} min locker.`]));
 
 // Intervals built from a repeating pattern (or `pattern(minutes)`), 5 min easy; `variants` are [count, minutes].
 const patternFamily = (key, familyTitle, tags, note, pattern, variants, name, detail) => family(key, 'ride', familyTitle, tags, note,
@@ -162,8 +162,8 @@ const rideLibrary = [
     [[3, 12, [0.98, 1]], [4, 12, [0.98, 1]], [5, 12, [0.98, 1]]]),
   ...steadyFamily('ride-threshold-15', 'Schwelle 15 min', ['threshold', 'classic'], 'Längere Intervalle knapp um FTP, 5 min locker. Bei mehr Umfang etwas defensiver starten.',
     [[2, 15, 1], [3, 15, [0.98, 1]], [4, 15, [0.95, 1]]]),
-  ...steadyFamily('ride-threshold-20', 'Schwelle 20 min', ['threshold', 'classic'], 'Klassische lange FTP-Intervalle bei 95–100 % FTP, 5 min locker. Am Ende länger statt mehr.',
-    [[2, 20, [0.95, 1]], [3, 20, [0.95, 1]], [2, 30, [0.95, 1]]]),
+  ...steadyFamily('ride-threshold-20', 'Schwelle 20 min', ['threshold', 'classic'], 'Klassische lange FTP-Intervalle bei 95–100 % FTP. Erst eine Wiederholung mehr, am Ende kürzere Pausen (3 statt 5 min).',
+    [[2, 20, [0.95, 1]], [3, 20, [0.95, 1]], [3, 20, [0.95, 1], 3]]),
   ...steadyFamily('ride-threshold-long', 'Schwelle lang', ['threshold', 'classic'], 'Sehr lange Intervalle bei 95–98 % FTP, 5 min locker. Gleichmäßig einteilen und verpflegen.',
     [[2, 25, [0.95, 0.98]], [2, 30, [0.95, 0.98]], [3, 25, [0.95, 0.98]]]),
   ...patternFamily('ride-overunder', 'Over-Under 2/1', ['threshold', 'variable', 'overunder'], 'Im Wechsel 2 min knapp unter / 1 min über FTP, 5 min locker.',

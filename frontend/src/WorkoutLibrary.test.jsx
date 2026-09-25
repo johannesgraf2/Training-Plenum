@@ -15,7 +15,6 @@ afterEach(() => { act(() => root.unmount()); container.remove(); delete global.I
 const button = text => Array.from(container.querySelectorAll('button')).find(b => b.textContent.includes(text));
 const edit = (label, value) => act(() => Simulate.change(container.querySelector(`[aria-label="${label}"]`), { target: { value } }));
 const render = props => act(() => root.render(<WorkoutEditor apiBase="" date="2026-09-24" onClose={jest.fn()} onSaved={jest.fn()} onDeleted={jest.fn()} {...props} />));
-const longestInterval = spec => Math.max(0, ...spec.flatMap(item => item.repeat ? item.steps : [item]).filter(s => s.intensity === 'interval' && typeof s.duration === 'number').map(s => s.duration));
 const titles = () => Array.from(container.querySelectorAll('.library-card strong')).map(e => e.textContent);
 
 test('every library session is a valid, exportable workout for both athletes with and without settings', () => {
@@ -40,11 +39,10 @@ test('progressions offer start, middle and end of a block with increasing work',
   expect(Object.keys(families).length).toBeGreaterThanOrEqual(10);
   for (const phases of Object.values(families)) {
     expect(Object.keys(phases).sort()).toEqual(['end', 'mid', 'start']);
-    const work = ['start', 'mid', 'end'].map(p => { const w = createLibraryWorkout(phases[p], '2026-09-24', { ftp: 250, maxHr: 190 }); const o = workoutOverview(w); return o.workTime + o.workDistance; });
-    const longest = ['start', 'mid', 'end'].map(p => longestInterval(phases[p].spec));
-    // Work rises, or stays equal while the intervals get longer (e.g. 3 × 20 → 2 × 30 min).
-    expect(work[0] < work[1] || (work[0] === work[1] && longest[0] < longest[1])).toBe(true);
-    expect(work[1] < work[2] || (work[1] === work[2] && longest[1] < longest[2])).toBe(true);
+    const overviews = ['start', 'mid', 'end'].map(p => workoutOverview(createLibraryWorkout(phases[p], '2026-09-24', { ftp: 250, maxHr: 190 })));
+    const work = overviews.map(o => o.workTime + o.workDistance);
+    // Work rises, or stays equal with shorter recoveries (e.g. 3 × 20 min with 5 → 3 min easy).
+    [[0, 1], [1, 2]].forEach(([a, b]) => expect(work[a] < work[b] || (work[a] === work[b] && overviews[b].recoveryTime < overviews[a].recoveryTime)).toBe(true));
   }
   const vo2 = ['start', 'mid', 'end'].map(p => workoutLibrary.find(e => e.id === `ride-vo2-4-${p}`));
   expect(vo2.map(e => e.spec[1].repeat)).toEqual([3, 4, 6]);
@@ -67,7 +65,9 @@ test('threshold progressions fill each interval with their pattern', () => {
   const entry = id => workoutLibrary.find(e => e.id === id);
   const titles = key => ['start', 'mid', 'end'].map(p => entry(`${key}-${p}`).title);
   expect(titles('ride-threshold-10')).toEqual(['3 × 10 min Schwelle', '4 × 10 min Schwelle', '5 × 10 min Schwelle']);
-  expect(titles('ride-threshold-20')).toEqual(['2 × 20 min Schwelle', '3 × 20 min Schwelle', '2 × 30 min Schwelle']);
+  expect(titles('ride-threshold-12')).toEqual(['3 × 12 min Schwelle', '4 × 12 min Schwelle', '5 × 12 min Schwelle']);
+  expect(titles('ride-threshold-20')).toEqual(['2 × 20 min Schwelle', '3 × 20 min Schwelle', '3 × 20 min Schwelle']);
+  expect(entry('ride-threshold-20-end').spec[1].steps[1].duration).toBe(3 * 60);
   expect(titles('ride-threshold-pyramid')).toEqual(['Schwellen-Pyramide 10-15-10', 'Schwellen-Pyramide 10-15-20-15-10', 'Schwellen-Pyramide 15-20-25-20']);
   const workTime = id => workoutOverview(createLibraryWorkout(entry(id), '2026-09-24', { ftp: 300 })).workTime;
   expect(workTime('ride-overunder-start')).toBe(3 * 10 * 60);
