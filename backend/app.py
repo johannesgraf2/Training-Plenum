@@ -117,6 +117,17 @@ class PlannedWorkout(db.Model):
         return {**json.loads(self.definition), 'id': self.id, 'locked': bool(self.locked)}
 
 
+class WorkoutTemplate(db.Model):
+    """A user's own workout, kept as a reusable template without a training date."""
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=False)
+    definition = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {**json.loads(self.definition), 'id': self.id}
+
+
 class TrainingBlock(db.Model):
     id = db.Column(db.String(36), primary_key=True)
     user_id = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=False)
@@ -479,6 +490,36 @@ def saved_workout(workout_id):
     row.definition = json.dumps(validate_workout(request.get_json(silent=True)))
     db.session.commit()
     return jsonify(row.to_dict())
+
+
+MAX_WORKOUT_TEMPLATES = 200
+
+
+@app.route('/api/workout-templates', methods=['GET', 'POST'])
+def workout_templates():
+    rows = WorkoutTemplate.query.filter_by(user_id=DEMO_USER_ID)
+    if request.method == 'GET':
+        return jsonify([row.to_dict() for row in rows.order_by(WorkoutTemplate.created_at.desc()).all()])
+    data = request.get_json(silent=True)
+    # A template has no date of its own; it gets the day it is applied to.
+    definition = validate_workout({**data, 'date': '2000-01-01'} if isinstance(data, dict) else data)
+    definition.pop('date')
+    if rows.count() >= MAX_WORKOUT_TEMPLATES:
+        raise WorkoutError(f'Es sind höchstens {MAX_WORKOUT_TEMPLATES} eigene Vorlagen möglich. Bitte zuerst alte Vorlagen löschen.')
+    row = WorkoutTemplate(user_id=DEMO_USER_ID, definition=json.dumps(definition))
+    db.session.add(row)
+    db.session.commit()
+    return jsonify(row.to_dict()), 201
+
+
+@app.route('/api/workout-templates/<template_id>', methods=['DELETE'])
+def delete_workout_template(template_id):
+    row = WorkoutTemplate.query.filter_by(id=template_id, user_id=DEMO_USER_ID).first()
+    if row is None:
+        return jsonify({'error': 'Diese Vorlage wurde nicht gefunden.'}), 404
+    db.session.delete(row)
+    db.session.commit()
+    return '', 204
 
 
 @app.route('/api/workouts/export', methods=['POST'])

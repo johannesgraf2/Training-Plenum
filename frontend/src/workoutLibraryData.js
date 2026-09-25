@@ -2,7 +2,7 @@
 // running targets fractions of maximum heart rate, swimming targets seconds per 100 m
 // relative to CSS; `create` turns them into a normal editable workout with watts / bpm
 // for the current athlete (swimming without a target, the CSS offset is in the step name).
-import { intensityZone, summary } from './workoutModel';
+import { intensityZone, summary, workoutOverview } from './workoutModel';
 
 export const DEFAULT_FTP = 250;
 
@@ -837,4 +837,41 @@ export function searchLibrary({ query = '', sport, tag = '', phase = '' }, entri
   const words = normalize(query).split(/\s+/).filter(Boolean);
   return entries.filter(entry => (!sport || entry.sport === sport) && (!tag || entry.tags.includes(tag)) && (!phase || entry.phase === phase)
     && words.every(word => haystack(entry).includes(word)));
+}
+
+// ─── Own templates: workouts the athlete saved from the builder, with absolute targets (W, bpm, pace). ───
+
+// A saved template placed on a training day, ready for the editor.
+export function applyCustomTemplate(template, date) {
+  const { id, date: _, ...workout } = template;
+  return { ...workout, date };
+}
+
+// Card profile like `libraryProfile`: power and heart rate are coloured by zone when FTP / HFmax are known.
+export function customProfile(template, athlete = {}) {
+  const fallback = { warmup: 0.6, cooldown: 0.5, recovery: 0.45, active: 0.7, interval: 1.2 };
+  const { ftp, maxHr } = athleteValues(athlete);
+  let overview;
+  try { overview = workoutOverview(template); } catch (_) { return []; }
+  const segments = overview.segments.map(step => {
+    const seconds = step.seconds ?? (step.metres != null ? step.metres * (template.sport === 'swim' ? 1.1 : 0.25) : 60);
+    const middle = (step.target.low + step.target.high) / 2;
+    const fraction = step.target.type === 'power' ? middle / ftp : step.target.type === 'heart_rate' && maxHr ? middle / maxHr : null;
+    const level = fraction == null ? fallback[step.intensity] / 1.6 : step.target.type === 'power' ? fraction / 1.6 : (fraction - 0.5) / 0.46;
+    const zone = fraction != null && ['active', 'interval'].includes(step.intensity) ? intensityZone(fraction, step.target.type) : null;
+    return { seconds, intensity: step.intensity, zone, level: Math.min(1, Math.max(0.12, level)) };
+  });
+  const total = segments.reduce((sum, s) => sum + s.seconds, 0) || 1;
+  let start = 0;
+  return segments.map(s => { const x = start / total; start += s.seconds; return { ...s, x, width: s.seconds / total }; });
+}
+
+// Same word matching as the library: name, note and sport.
+export function searchCustomTemplates(templates, { query = '', sport }) {
+  const words = normalize(query).split(/\s+/).filter(Boolean);
+  return templates.filter(template => {
+    if (sport && template.sport !== sport) return false;
+    const text = normalize([template.name, template.notes, { ride: 'rad radfahren bike ride', run: 'laufen lauf run', swim: 'schwimmen swim' }[template.sport]].filter(Boolean).join(' '));
+    return words.every(word => text.includes(word) || text.replace(/\s+/g, '').includes(word));
+  });
 }

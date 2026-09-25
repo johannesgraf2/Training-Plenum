@@ -9,7 +9,7 @@ Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und
 |---------|--------------------------|
 | 🔒 **Deine Daten bleiben bei dir** | Läuft auf deinem Rechner, per Windows-Launcher oder Docker. Datenbank und Originaldateien liegen auf deiner Festplatte. Tracks und FIT-Dateien gehen an keinen Kartendienst, die Route wird im Browser gezeichnet. |
 | 🤖 **KI-Coach, aber du entscheidest** | Optional plant ein KI-Coach ganze Trainingsblöcke und Wochen nach Ziel, verfügbarer Zeit und deinen Check-ins, mit deinem eigenen OpenAI-Key. Übernommen wird nur, was du bestätigst. Fixierte Einheiten bleiben unangetastet, und Rohdaten verlassen nie den Rechner. |
-| 📚 **Über 500 Workout-Vorlagen** | Mehr als 500 fertige Einheiten für Rad, Lauf und Schwimmen, von Grundlage, Sweetspot und Schwelle bis VO2max, Mikrointervalle und Tests, viele als Steigerung über Block-Start, -Mitte und -Ende. Nach Stichwort, Trainingsart und Blockphase durchsuchbar; Watt- und Pulsziele passen sich an deine FTP und maximale HF an. Selbst auswählen oder vom KI-Coach passende Einheiten planen lassen. |
+| 📚 **Über 500 Workout-Vorlagen** | Mehr als 500 fertige Einheiten für Rad, Lauf und Schwimmen, von Grundlage, Sweetspot und Schwelle bis VO2max, Mikrointervalle und Tests, viele als Steigerung über Block-Start, -Mitte und -Ende. Nach Stichwort, Trainingsart und Blockphase durchsuchbar; Watt- und Pulsziele passen sich an deine FTP und maximale HF an. Eigene Workouts lassen sich als Vorlage dazu speichern. Selbst auswählen oder vom KI-Coach passende Einheiten planen lassen. |
 | 📦 **Umzug von TrainingPeaks oder Garmin Connect in Minuten** | Den entpackten Export als ganzen Ordner per Drag & Drop importieren. FIT, FIT.GZ, GPX und TCX werden nacheinander verarbeitet, Duplikate übersprungen und fehlerhafte Dateien einzeln gemeldet, ohne dass der Import abbricht. |
 | 📈 **Die Kennzahlen, die du kennst** | Bestwerte (Leistung 30 s bis 60 min, Laufzeiten 400 m bis 21 km), Normalized Power und TSS, Zeit in HF- und Leistungszonen, Wochenumfänge, Sportarten-Mix und Jahresvergleiche. Jedes Diagramm zeigt exakte Werte und eine aufklappbare Tabelle. |
 | ⚡ **Schnell, auch mit Jahren an Daten** | Berechnungen werden pro Aktivität zwischengespeichert. Filter und Jahreswechsel reagieren sofort. Nach einer FTP-Änderung werden nur die Zonen neu berechnet, ohne alle Dateien erneut einzulesen. |
@@ -119,6 +119,7 @@ Jedes Diagramm zeigt die genauen Werte und hat eine aufklappbare Tabelle. Darunt
 2. Sportart wählen und Schritte bauen: Aufwärmen, Intervalle mit Pause, Erholung, Abwärmen. Ziele gehen nach Watt, Pace, Tempo, Puls oder Kadenz.
 3. Oder eine fertige Einheit aus der **Vorlagen-Bibliothek** übernehmen (über 500 Vorlagen). Alle Werte bleiben änderbar.
 4. **Workout speichern**. Es erscheint dann im Kalender.
+5. Optional **Als Vorlage speichern**: Das Workout landet ohne Datum in der Vorlagen-Bibliothek unter **Meine Vorlagen** und lässt sich dort an jedem Tag wieder übernehmen oder löschen.
 
 Die **Gesamtübersicht** unten im Editor zeigt das ganze Workout als Leistungsprofil mit Dauer, Belastung und Erholung. Ein Klick auf einen Block springt direkt zu seinen Einstellungen.
 

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_FTP, createLibraryWorkout, libraryKeyTarget, libraryPhases, libraryProfile, librarySummary, libraryTags, phaseIndex, searchLibrary, workoutLibrary } from './workoutLibraryData';
+import { summary } from './workoutModel';
+import { DEFAULT_FTP, applyCustomTemplate, createLibraryWorkout, customProfile, libraryKeyTarget, libraryPhases, libraryProfile, librarySummary, libraryTags, phaseIndex, searchCustomTemplates, searchLibrary, workoutLibrary } from './workoutLibraryData';
 
-function Profile({ entry }) {
+function Profile({ entry, segments = libraryProfile(entry) }) {
   return <svg className="library-profile" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
-    {libraryProfile(entry).map((segment, index) => <rect key={index} className={[segment.intensity, segment.zone && `zone-${segment.zone}`].filter(Boolean).join(' ')} x={segment.x * 100} width={Math.max(segment.width * 100, 0.4)} y={24 - segment.level * 24} height={segment.level * 24} />)}
+    {segments.map((segment, index) => <rect key={index} className={[segment.intensity, segment.zone && `zone-${segment.zone}`].filter(Boolean).join(' ')} x={segment.x * 100} width={Math.max(segment.width * 100, 0.4)} y={24 - segment.level * 24} height={segment.level * 24} />)}
   </svg>;
 }
 
@@ -17,17 +18,57 @@ function Card({ entry, athlete, date, onApply, showPhase }) {
   </button>;
 }
 
-export default function WorkoutLibrary({ sport: initialSport, date, ftp, maxHr, onApply, onClose }) {
+function CustomCard({ template, athlete, date, onApply, onDelete }) {
+  const [confirm, setConfirm] = useState(false);
+  let text = '';
+  try { text = summary(template); } catch (_) { /* Shown without duration. */ }
+  return <div className="library-single library-custom">
+    <button type="button" className="library-card" onClick={() => onApply(applyCustomTemplate(template, date))} aria-label={`Vorlage ${template.name} übernehmen`}>
+      <Profile segments={customProfile(template, athlete)} />
+      <strong>{template.name}</strong>
+      <small>{[text, template.notes].filter(Boolean).join(' · ')}</small>
+    </button>
+    {confirm
+      ? <span className="library-custom-confirm" role="alert">Vorlage löschen?<button type="button" onClick={() => setConfirm(false)}>Behalten</button><button type="button" onClick={() => onDelete(template.id)}>Löschen</button></span>
+      : <button type="button" className="library-custom-delete" aria-label={`Vorlage ${template.name} löschen`} onClick={() => setConfirm(true)}>Löschen</button>}
+  </div>;
+}
+
+export default function WorkoutLibrary({ apiBase = '', sport: initialSport, date, ftp, maxHr, onApply, onClose }) {
   const [sport, setSport] = useState(initialSport);
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState('');
   const [phase, setPhase] = useState('');
   const [ftpInput, setFtpInput] = useState(ftp ? String(ftp) : '');
   const [hrInput, setHrInput] = useState(maxHr ? String(maxHr) : '');
+  const [custom, setCustom] = useState([]);
+  const [customError, setCustomError] = useState('');
   const searchRef = useRef(null);
   useEffect(() => { searchRef.current?.focus(); }, []);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/workout-templates`);
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        if (active) setCustom(Array.isArray(data) ? data : []);
+      } catch (_) { if (active) setCustomError('Eigene Vorlagen konnten nicht geladen werden.'); }
+    })();
+    return () => { active = false; };
+  }, [apiBase]);
+  const removeCustom = async id => {
+    setCustomError('');
+    try {
+      const response = await fetch(`${apiBase}/api/workout-templates/${id}`, { method: 'DELETE' });
+      if (!response.ok && response.status !== 404) throw new Error();
+      setCustom(list => list.filter(t => t.id !== id));
+    } catch (_) { setCustomError('Die Vorlage konnte nicht gelöscht werden. Bitte erneut versuchen.'); }
+  };
   const athlete = { ftp: ftpInput, maxHr: hrInput };
   const results = searchLibrary({ query, sport, tag, phase });
+  // Own templates have no tags or block phase, so those filters hide them.
+  const customResults = tag || phase ? [] : searchCustomTemplates(custom, { query, sport });
   const sportTags = useMemo(() => Object.keys(libraryTags).filter(key => workoutLibrary.some(entry => entry.sport === sport && entry.tags.includes(key))), [sport]);
 
   const families = [], singles = [];
@@ -42,14 +83,14 @@ export default function WorkoutLibrary({ sport: initialSport, date, ftp, maxHr, 
 
   return <div className="library">
     <div className="library-header">
-      <div><span className="workout-eyebrow">Vorlagen-Bibliothek</span><h3>{workoutLibrary.length} Beispiel-Einheiten</h3>
+      <div><span className="workout-eyebrow">Vorlagen-Bibliothek</span><h3>{workoutLibrary.length} Beispiel-Einheiten{custom.length > 0 && ` · ${custom.length} eigene`}</h3>
         <p>Nach Tags oder Blockphase filtern. Progressionen zeigen Start, Mitte und Ende eines Trainingsblocks. Die Vorlage ersetzt den aktuellen Ablauf, alle Werte bleiben anpassbar.</p></div>
       <button type="button" onClick={onClose}>← Zurück zum Workout</button>
     </div>
     <div className="library-controls">
       <label className="library-search">Suchen<input ref={searchRef} type="search" aria-label="Vorlagen durchsuchen" value={query} placeholder="z. B. vo2max, threshold, base, 4x4, Block-Ende" onChange={e => setQuery(e.target.value)} /></label>
       <div className="library-sport" role="group" aria-label="Sportart der Vorlagen">
-        {[['ride', 'Rad'], ['run', 'Laufen'], ['swim', 'Schwimmen']].map(([value, label]) => <button type="button" key={value} aria-pressed={sport === value} onClick={() => { setSport(value); setTag(''); }}>{label} ({workoutLibrary.filter(e => e.sport === value).length})</button>)}
+        {[['ride', 'Rad'], ['run', 'Laufen'], ['swim', 'Schwimmen']].map(([value, label]) => <button type="button" key={value} aria-pressed={sport === value} onClick={() => { setSport(value); setTag(''); }}>{label} ({workoutLibrary.filter(e => e.sport === value).length + custom.filter(t => t.sport === value).length})</button>)}
       </div>
       {sport === 'swim' ? null : sport === 'ride'
         ? <label className="library-athlete">FTP (W)<input type="number" min="50" max="1000" aria-label="FTP für Vorlagen" value={ftpInput} placeholder={String(DEFAULT_FTP)} onChange={e => setFtpInput(e.target.value)} /></label>
@@ -68,8 +109,14 @@ export default function WorkoutLibrary({ sport: initialSport, date, ftp, maxHr, 
       <button type="button" aria-pressed={!phase} onClick={() => setPhase('')}>Alle Phasen</button>
       {Object.entries(libraryPhases).map(([key, { label }]) => <button type="button" key={key} className={`library-phase-chip ${key}`} aria-pressed={phase === key} onClick={() => setPhase(phase === key ? '' : key)}>{label}</button>)}
     </div>
-    <p className="library-count" role="status">{results.length === 1 ? '1 Einheit' : `${results.length} Einheiten`}</p>
-    {!results.length && <div className="library-empty"><p>Keine Vorlage passt zu deiner Suche.</p><button type="button" onClick={reset}>Filter zurücksetzen</button></div>}
+    <p className="library-count" role="status">{results.length + customResults.length === 1 ? '1 Einheit' : `${results.length + customResults.length} Einheiten`}</p>
+    {customError && <p className="library-custom-error" role="alert">{customError}</p>}
+    {customResults.length > 0 && <section className="library-section" aria-label="Meine Vorlagen">
+      <h4>Meine Vorlagen</h4>
+      <div className="library-cards library-singles">{customResults.map(template => <CustomCard key={template.id} template={template} athlete={athlete} date={date} onApply={onApply} onDelete={removeCustom} />)}</div>
+    </section>}
+    {!custom.some(t => t.sport === sport) && !customError && !tag && !phase && !query && <p className="library-custom-hint">Tipp: Eigene Workouts kannst du im Builder mit „Als Vorlage speichern“ hier unter „Meine Vorlagen“ ablegen.</p>}
+    {!results.length && !customResults.length && <div className="library-empty"><p>Keine Vorlage passt zu deiner Suche.</p><button type="button" onClick={reset}>Filter zurücksetzen</button></div>}
     {families.length > 0 && <section className="library-section" aria-label="Blockprogressionen">
       <h4>Blockprogressionen</h4>
       {families.map(group => <article className="library-family" key={group.key}>

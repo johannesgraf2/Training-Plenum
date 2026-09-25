@@ -3,15 +3,16 @@ import { createRoot } from 'react-dom/client';
 import { Simulate } from 'react-dom/test-utils';
 import WorkoutEditor from './WorkoutEditor';
 import { intensityZone, toDraft, toWorkout, workoutOverview, workoutTotals } from './workoutModel';
-import { createLibraryWorkout, libraryKeyTarget, libraryPhases, libraryProfile, libraryTags, searchLibrary, workoutLibrary } from './workoutLibraryData';
+import { applyCustomTemplate, createLibraryWorkout, customProfile, libraryKeyTarget, libraryPhases, libraryProfile, libraryTags, searchCustomTemplates, searchLibrary, workoutLibrary } from './workoutLibraryData';
 
-let container, root;
+let container, root, originalFetch;
 beforeEach(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement('div'); document.body.appendChild(container);
-  root = createRoot(container);
+  root = createRoot(container); originalFetch = global.fetch;
+  global.fetch = jest.fn(async () => ({ ok: true, json: async () => [] }));
 });
-afterEach(() => { act(() => root.unmount()); container.remove(); delete global.IS_REACT_ACT_ENVIRONMENT; });
+afterEach(() => { act(() => root.unmount()); container.remove(); global.fetch = originalFetch; delete global.IS_REACT_ACT_ENVIRONMENT; });
 const button = text => Array.from(container.querySelectorAll('button')).find(b => b.textContent.includes(text));
 const edit = (label, value) => act(() => Simulate.change(container.querySelector(`[aria-label="${label}"]`), { target: { value } }));
 const render = props => act(() => root.render(<WorkoutEditor apiBase="" date="2026-09-24" onClose={jest.fn()} onSaved={jest.fn()} onDeleted={jest.fn()} {...props} />));
@@ -219,4 +220,75 @@ test('Escape closes only the library, then the editor', () => {
   expect(onClose).not.toHaveBeenCalled();
   act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
   expect(onClose).toHaveBeenCalled();
+});
+
+const ownTemplate = (changes = {}) => ({ id: 'own-1', version: 1, name: 'Meine 4 × 8 min', sport: 'ride', notes: 'Mit Freunden',
+  steps: [{ kind: 'step', name: 'Einfahren', intensity: 'warmup', duration: { type: 'time', value: 600 }, target: { type: 'power', low: 150, high: 150 } },
+    { kind: 'repeat', count: 4, steps: [
+      { kind: 'step', name: '', intensity: 'interval', duration: { type: 'time', value: 480 }, target: { type: 'power', low: 260, high: 270 } },
+      { kind: 'step', name: '', intensity: 'recovery', duration: { type: 'time', value: 240 }, target: { type: 'none' } }] }], ...changes });
+
+test('own templates get the training day, a zone profile and are found by name, note and sport', () => {
+  const applied = applyCustomTemplate(ownTemplate(), '2026-10-01');
+  expect(applied).not.toHaveProperty('id');
+  expect(applied.date).toBe('2026-10-01');
+  expect(toWorkout(toDraft(applied))).toEqual(applied);
+  expect(customProfile(ownTemplate(), { ftp: 280 }).filter(s => s.zone).map(s => s.zone)).toEqual(Array(4).fill('threshold'));
+  expect(customProfile(ownTemplate({ steps: [] }))).toEqual([]);
+  const run = ownTemplate({ id: 'own-2', name: 'Langer Lauf', sport: 'run', notes: '' });
+  expect(searchCustomTemplates([ownTemplate(), run], { query: 'freunden', sport: 'ride' }).map(t => t.id)).toEqual(['own-1']);
+  expect(searchCustomTemplates([ownTemplate(), run], { query: 'lauf', sport: 'run' }).map(t => t.id)).toEqual(['own-2']);
+  expect(searchCustomTemplates([ownTemplate(), run], { query: 'vo2', sport: 'ride' })).toEqual([]);
+});
+
+test('a built workout is saved as a template without changing the saved workout', async () => {
+  const onSaved = jest.fn();
+  global.fetch = jest.fn(async (_, request) => ({ ok: true, json: async () => ({ ...JSON.parse(request.body), id: 'own-1' }) }));
+  render({ onSaved });
+  act(() => Simulate.change(container.querySelector('.workout-name input'), { target: { value: 'Meine Intervalle' } }));
+  await act(async () => button('Als Vorlage speichern').click());
+  expect(global.fetch.mock.calls[0][0]).toBe('/api/workout-templates');
+  expect(global.fetch.mock.calls[0][1].method).toBe('POST');
+  expect(JSON.parse(global.fetch.mock.calls[0][1].body).name).toBe('Meine Intervalle');
+  expect(container.querySelector('[role="status"]').textContent).toContain('Meine Vorlagen');
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(container.querySelector('.workout-save-state').textContent).toBe('Ungespeicherte Änderungen');
+});
+
+test('own templates appear in the library next to the examples, apply to the chosen day and can be deleted', async () => {
+  global.fetch = jest.fn(async (url, request) => request?.method === 'DELETE' ? { ok: true, status: 204 }
+    : { ok: true, json: async () => [ownTemplate(), ownTemplate({ id: 'own-2', name: 'Langer Lauf', sport: 'run' })] });
+  render({ date: '2026-10-03' });
+  await act(async () => button('Beispiel-Einheiten durchsuchen').click());
+  expect(global.fetch.mock.calls[0][0]).toBe('/api/workout-templates');
+  expect(container.querySelector('.library-header h3').textContent).toContain('2 eigene');
+  const own = () => Array.from(container.querySelectorAll('[aria-label="Meine Vorlagen"] .library-card strong')).map(e => e.textContent);
+  expect(own()).toEqual(['Meine 4 × 8 min']);
+  expect(button('Rad (').textContent).toBe(`Rad (${workoutLibrary.filter(e => e.sport === 'ride').length + 1})`);
+  // Tag filters only apply to the examples.
+  act(() => button('VO2max').click());
+  expect(own()).toEqual([]);
+  act(() => button('Alle Typen').click());
+  act(() => button('Löschen').click());
+  expect(container.querySelector('.library-custom-confirm').textContent).toContain('Vorlage löschen?');
+  act(() => button('Behalten').click());
+  act(() => container.querySelector('[aria-label="Vorlage Meine 4 × 8 min übernehmen"]').click());
+  expect(container.querySelector('.library')).toBeNull();
+  expect(container.querySelector('.workout-name input').value).toBe('Meine 4 × 8 min');
+  expect(container.querySelector('input[type="date"]').value).toBe('2026-10-03');
+  expect(container.querySelector('[aria-label="Block 2: Wiederholungen"]').value).toBe('4');
+  await act(async () => button('Beispiel-Einheiten durchsuchen').click());
+  act(() => button('Löschen').click());
+  await act(async () => container.querySelector('.library-custom-confirm button:last-child').click());
+  expect(global.fetch.mock.calls.find(([, r]) => r?.method === 'DELETE')[0]).toBe('/api/workout-templates/own-1');
+  expect(own()).toEqual([]);
+  expect(container.querySelector('.library-custom-hint')).not.toBeNull();
+});
+
+test('a library without reachable own templates still shows every example', async () => {
+  global.fetch = jest.fn(async () => ({ ok: false, status: 500 }));
+  render();
+  await act(async () => button('Beispiel-Einheiten durchsuchen').click());
+  expect(container.querySelector('.library-custom-error').textContent).toContain('nicht geladen');
+  expect(container.querySelector('.library-header h3').textContent).toBe(`${workoutLibrary.length} Beispiel-Einheiten`);
 });
