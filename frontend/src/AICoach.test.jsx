@@ -286,6 +286,26 @@ test('a season plan is proposed, adjusted by swapping blocks and confirmed', asy
   expect(container.textContent).toContain('Von dir angepasst');
 });
 
+test('with a goal the block is shaped only once the season plan is set', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
+  const option = (id, recommended) => ({ id, recommended, rationale: `Plan ${id}.`, season: { ...season, segments: seasonSegments } });
+  responses['POST /api/coach/proposals'] = async () => ({ ok: true, json: async () => ({ id: 'season-3', kind: 'season', before: null, hinweise: [], rejectedOptions: [],
+    after: { options: [option('a', true), option('b', false)], openFrom: '2026-09-28', remainingWeeks: 18, fixedCount: 0 } }) });
+  responses['POST /api/coach/proposals/season-3/confirm'] = async () => ({ ok: true, json: async () => ({ ...initialPlan, season }) });
+  await render();
+  expect(container.textContent).not.toContain('Neuen Trainingsblock starten');
+  expect(container.querySelector('.coach-season-card details:not([open]) .coach-wizard')).not.toBeNull();
+  await click(button('Saisonplan vorschlagen lassen'));
+  expect(container.querySelector('.coach-jump-card')).toBeNull();
+  await click(button('Diesen Plan übernehmen'));
+  expect(container.querySelector('.coach-jump-card h2').textContent).toBe('Block 1 von 3: Grundlage · 8 Wochen');
+  // Editing the plan hides the block until the plan is set again.
+  await click(button('Saisonplan bearbeiten'));
+  expect(container.querySelector('.coach-jump-card')).toBeNull();
+  await click(button('Abbrechen'));
+  expect(container.querySelector('.coach-jump-card')).not.toBeNull();
+});
+
 test('planned blocks stay in the season editor as fixed first rows', async () => {
   responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
   const segments = [{ ...seasonSegments[0], blockId: 'b1', secondaryFocus: 'radfahren', secondaryName: 'Radfahren' }, ...seasonSegments.slice(1)];

@@ -976,8 +976,14 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
   const seasonOpen = season ? season.segments.filter(segment => segment.startDate >= season.openFrom) : [];
   const seasonFixed = season ? season.segments.filter(segment => segment.startDate < season.openFrom && segment.endDate >= today) : [];
   const goalAhead = !!profile?.goal?.date && profile.goal.date >= today;
+  // With a goal ahead the season plan comes first: a block is shaped only once the plan is set, fits the blocks
+  // and is not being proposed anew or edited.
+  const seasonFirst = stage !== 'setup' && goalAhead && (!season || !season.aligned || proposal?.kind === 'season' || seasonEditing);
   const goalName = profile?.goal?.name?.trim() || goalLabel(profile?.goal?.type) || 'deinem Ziel';
   const seasonWishField = <Field label="Wunsch für den Saisonplan (optional)" hint="z. B. „Im Winter vor allem Rolle, im Frühjahr ein Trainingslager“."><textarea maxLength={1500} value={seasonWish} onChange={e => { invalidate(); setSeasonWish(e.target.value); }} /></Field>;
+  // Several wizards can be on screen; a block proposal shows in the one that asked for it.
+  const wizardFor = (origin, extra = {}) => <BlockWizard key={origin} catalog={catalog} profile={profile} busy={!!busy} canPlan={canPlan} generating={proposing === 'block' && blockOrigin === origin} proposal={proposal?.kind === 'block' && blockOrigin === origin ? proposal : null}
+    onEdit={() => invalidate()} onPropose={body => { setBlockOrigin(origin); propose('block', body); }} onConfirm={confirmProposal} onDiscard={discardProposal} {...extra} />;
   const seasonCard = stage !== 'setup' && goalAhead && <section className="coach-card coach-season-card" aria-label="Saisonplan">
     <div className="coach-section-heading"><div><span className="coach-eyebrow">Saisonplan · bis {goalName}</span><h2>{season ? 'Dein Weg zum Ziel' : 'Deinen Weg zum Ziel planen'}</h2></div>
       {season && proposal?.kind !== 'season' && <span className={`coach-badge ${season.source === 'athleteEdited' ? 'athlete' : 'recommendation'}`}>{season.source === 'athleteEdited' ? 'Von dir angepasst' : 'AI-Empfehlung'}</span>}</div>
@@ -1002,11 +1008,10 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
         {seasonWishField}
         <div className="coach-actions"><button className="coach-primary" disabled={!canPlan} onClick={proposeSeason}>Saisonplan vorschlagen lassen</button></div>
         {seasonGenerating}
+        <p className="coach-muted coach-season-hint">Sobald dein Saisonplan steht, gestaltest du hier Block für Block, beginnend mit dem ersten.</p>
+        {['start', 'ended'].includes(stage) && <details className="coach-details" open={(proposal?.kind === 'block' && blockOrigin === 'main') || undefined}><summary>Ohne Saisonplan einen einzelnen Block planen</summary>{wizardFor('main')}</details>}
       </>}
   </section>;
-  // Several wizards can be on screen; a block proposal shows in the one that asked for it.
-  const wizardFor = (origin, extra = {}) => <BlockWizard key={origin} catalog={catalog} profile={profile} busy={!!busy} canPlan={canPlan} generating={proposing === 'block' && blockOrigin === origin} proposal={proposal?.kind === 'block' && blockOrigin === origin ? proposal : null}
-    onEdit={() => invalidate()} onPropose={body => { setBlockOrigin(origin); propose('block', body); }} onConfirm={confirmProposal} onDiscard={discardProposal} {...extra} />;
   const wizard = wizardFor('main');
   const jumpCard = jumpTarget && <section className="coach-card coach-jump-card" aria-label="Block aus dem Saisonplan">
     <div className="coach-section-heading"><div><span className="coach-eyebrow">{jumpSegment ? 'Block aus deinem Saisonplan' : 'Nächster Schritt · Block aus deinem Saisonplan'} · noch nicht angelegt</span>
@@ -1079,18 +1084,18 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
     {!loading && profile && tab === 'plan' && <>
       <SeasonGoal goal={profile.goal} />
       {seasonCard}
-      {jumpCard}
+      {!seasonFirst && jumpCard}
       {stage !== 'setup' && !provider?.configured && <div className="coach-message">Verbinde deinen eigenen API-Zugang, um Vorschläge zu erstellen. <button onClick={() => setTab('provider')}>Provider einrichten</button></div>}
       {anyDirty && <div className="coach-message">Speichere deine offenen Angaben, bevor du einen neuen AI-Vorschlag erstellst.</div>}
       {stage === 'setup' && <SetupChecklist missing={dirty.profile ? [...missing, 'Änderungen speichern'] : missing} providerReady={!!provider?.configured} onProfile={() => setTab('profile')} onProvider={() => setTab('provider')} />}
-      {stage === 'start' && !seasonNext && <section className="coach-card"><span className="coach-eyebrow">Nächster Schritt</span><h2>Neuen Trainingsblock starten</h2>
+      {stage === 'start' && !seasonNext && !seasonFirst && <section className="coach-card"><span className="coach-eyebrow">Nächster Schritt</span><h2>Neuen Trainingsblock starten</h2>
         <p className="coach-muted">Ein Trainingsblock dauert meist 4–12 Wochen und endet mit einer Entlastungswoche. Gespeichert wird erst, wenn du ihn übernimmst.</p>
         {wizard}
       </section>}
       {stage === 'ended' && <section className="coach-card" aria-label="Blockrückblick"><span className="coach-eyebrow">Block abgeschlossen · Rückblick</span><h2>So lief dein Block</h2>
         <BlockOverview value={block} chart={review && review.blockId === block.id && <BlockReview key={review.blockId} review={review} busy={!!busy} onSave={saveReview} />} />
       </section>}
-      {stage === 'ended' && !seasonNext && <section className="coach-card"><span className="coach-eyebrow">Nächster Schritt</span><h2>Nächsten Trainingsblock starten</h2>
+      {stage === 'ended' && !seasonNext && !seasonFirst && <section className="coach-card"><span className="coach-eyebrow">Nächster Schritt</span><h2>Nächsten Trainingsblock starten</h2>
         <p className="coach-muted">Verlauf, ausgelassene Einheiten und deine Einschätzung gehen als Kontext in die Vorschläge ein.</p>
         {wizard}
       </section>}
