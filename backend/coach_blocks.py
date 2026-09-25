@@ -58,9 +58,11 @@ BLOCK_TYPES = {
     'grundlage': _block('Grundlage', 'Aerobe Basis mit viel lockerem Umfang.', 8, 6, 12,
                         forbidden=('vo2',), max_per_week={'quality': 1}, easy_share=.8,
                         guidance='Volume focus: easy endurance is the foundation. Progress the long easy ride across the block '
-                                 '(for example 1:30 -> 2:00 -> 2:30 -> 3:00 h). At most one tempo, sweetspot or SIT session; '
-                                 'keep neuromuscular power with sprints inside easy rides (bike_z2_sprints) or short SIT '
-                                 '(4x30 s -> 6x30 s -> 8x30 s).'),
+                                 '(for example 1:30 -> 2:00 -> 2:30 -> 3:00 h). At most one tempo, sweetspot or SIT session. '
+                                 'Keep neuromuscular power with short sprints inside easy rides: in two of every four weeks '
+                                 '(every other week, for example weeks 1, 3, 5 ...) exactly one easy ride of about 1:30 h is '
+                                 'bike_z2_sprints with 6 s sprints, progressing across the block (for example 8x6 s -> 10x6 s -> '
+                                 '12x6 s); the other weeks have no sprints. These sprint rides count as easy, not as quality.'),
     'aufbau': _block('Aufbau', 'Umfang halten und die Intensität schrittweise steigern.', 6, 4, 12,
                      max_per_week={'vo2': 1}, min_per_load_week={'quality': 2},
                      guidance='Two quality sessions per load week plus a long easy ride. Progress work duration across the '
