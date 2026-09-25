@@ -450,6 +450,9 @@ class CoachAPITests(unittest.TestCase):
                                           {'options': [plan_a, plan_b, plan_c], 'hinweise': ['Lange Saison.']})
         context = provider.generate.call_args.args[3]
         self.assertEqual((context['startDate'], context['weeksToFill'], context['fixedBlocks']), (self.start.isoformat(), 18, []))
+        _, later = self.propose({'kind': 'season', 'startDate': (self.start + timedelta(weeks=1)).isoformat()},
+                                {'options': [plan_a, plan_c], 'hinweise': []}, expected=400)
+        self.assertEqual(later.generate.call_args.args[3]['weeksToFill'], 17)
         self.assertEqual([s['blockType'] for s in context['typicalSeason']], ['grundlage', 'vo2max', 'schwelle', 'wettkampfspezifisch'])
         self.assertEqual(context['athleteWish'], {'source': 'athlete', 'text': 'Winter auf der Rolle'})
         self.assertEqual([o['id'] for o in proposal['after']['options']], ['a', 'c'])
@@ -467,10 +470,22 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual(self.client.put('/api/coach/season', json={'segments': swapped[:3]}).status_code, 400)
         edited = self.client.put('/api/coach/season', json={'segments': [seg('grundlage', 8), seg('vo2max', 6), seg('wettkampfspezifisch', 4)]})
         self.assertEqual([s['weeks'] for s in edited.json['season']['segments']], [8, 6, 4])
+        # A later season start leaves fewer weeks; the start stays with the season on later edits.
+        later = (self.start + timedelta(weeks=2)).isoformat()
+        shorter = [seg('grundlage', 6), seg('vo2max', 6), seg('wettkampfspezifisch', 4)]
+        self.assertEqual(self.client.put('/api/coach/season', json={'segments': shorter}).status_code, 400)
+        moved = self.client.put('/api/coach/season', json={'segments': shorter, 'startDate': later}).json['season']
+        self.assertEqual((moved['startDate'], moved['segments'][0]['startDate'], moved['aligned']), (later, later, True))
+        self.assertEqual(self.client.put('/api/coach/season', json={'segments': shorter}).json['season']['startDate'], later)
+        self.client.put('/api/coach/season', json={'segments': [seg('grundlage', 8), seg('vo2max', 6), seg('wettkampfspezifisch', 4)],
+                                                   'startDate': self.start.isoformat()})
         body = {'kind': 'block', 'mode': 'choose', 'blockType': 'grundlage', 'secondaryFocus': None,
-                'startDate': self.start.isoformat(), 'weeks': 8}
+                'startDate': self.start.isoformat(), 'weeks': 8,
+                'design': [{'question': 'Wie soll der Umfang verlaufen?', 'answer': 'Mit 4 h pro Woche beginnen und steigern'}]}
         _, provider = self.propose(body, {'options': [self.option(block_type='grundlage', phases=('base', 'base', 'base', 'recovery') * 2)], 'hinweise': []})
-        self.assertEqual(provider.generate.call_args.args[3]['seasonPlan']['segments'][1]['blockType'], 'vo2max')
+        context = provider.generate.call_args.args[3]
+        self.assertEqual(context['seasonPlan']['segments'][1]['blockType'], 'vo2max')
+        self.assertEqual(context['athleteDesign'], {'source': 'athlete', 'answers': body['design']})
         self.assertIsNone(self.client.delete('/api/coach/season').json['season'])
 
     def test_season_plan_keeps_planned_blocks_at_the_start(self):
