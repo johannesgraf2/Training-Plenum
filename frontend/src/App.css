@@ -89,3 +89,7 @@
   .app-notice { padding: 0 16px; }
   .calendar-toolbar { padding: 16px; }
 }
+.app-nav-status { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; vertical-align: 2px; background: var(--accent); }
+.app-nav-status.busy { animation: app-nav-pulse 1.2s ease-in-out infinite; }
+@keyframes app-nav-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .app-nav-status.busy { animation: none; } }

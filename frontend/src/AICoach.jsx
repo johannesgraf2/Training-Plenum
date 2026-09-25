@@ -533,8 +533,14 @@ function Proposal({ value, busy, onConfirm, onDiscard }) {
   </section>;
 }
 
-export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = EMPTY_WORKOUTS, onWorkoutsChanged, onOpenWorkout }) {
+export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase = '', workouts = EMPTY_WORKOUTS, onWorkoutsChanged, onOpenWorkout, onBusyChange }) {
   const [tab, setTab] = useState(initialTab);
+  // The app keeps the coach mounted between pages; a new tabVersion asks it to show initialTab again.
+  const shownTabVersion = useRef(tabVersion);
+  useEffect(() => {
+    if (shownTabVersion.current === tabVersion) return;
+    shownTabVersion.current = tabVersion; setTab(initialTab);
+  }, [tabVersion, initialTab]);
   const [snapshot, setSnapshot] = useState(null);
   const [profile, setProfile] = useState(null);
   const [provider, setProvider] = useState(null);
@@ -595,6 +601,7 @@ export default function AICoach({ initialTab = 'plan', apiBase = '', workouts = 
     try { await action(); } catch (e) { setError(e.message || 'Die Anfrage konnte nicht abgeschlossen werden.'); }
     finally { pending.current = false; setBusy(''); }
   }
+  useEffect(() => { onBusyChange?.(busy); }, [busy]);
   async function refreshSnapshot() { setSnapshot(await request(`/api/athlete-snapshot?${tzQuery()}`)); }
 
   useEffect(() => {
