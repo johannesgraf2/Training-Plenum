@@ -678,11 +678,17 @@ test('a season block without a plan is created from the season strip, in order',
   const segments = container.querySelectorAll('button.coach-season-segment');
   expect(segments).toHaveLength(3);
   expect(container.querySelector('.coach-jump-card')).toBeNull();
+  expect(container.querySelector('.coach-block-card')).not.toBeNull();
+  expect(container.textContent).toContain('Deine Trainingswoche');
+  expect(container.textContent).not.toContain('Absolviertes Training berücksichtigen');
   await click(segments[2]);
   expect(container.querySelector('.coach-jump-card').textContent).toContain('Als Nächstes kommt VO2max ab 23. Nov.');
   await click(button('Zu VO2max springen'));
   expect(container.querySelector('.coach-jump-card h2').textContent).toBe('Block 2 von 3: VO2max · 6 Wochen');
   expect(container.querySelectorAll('button.coach-season-segment')[1].getAttribute('aria-pressed')).toBe('true');
+  // The opened season block takes the place of the Grundlage block and its weeks.
+  expect(container.querySelector('.coach-block-card')).toBeNull();
+  expect(container.textContent).not.toContain('Deine Trainingswoche');
   await click(button('Weiter'));
   let resolveProposal;
   responses['POST /api/coach/proposals'] = () => new Promise(resolve => { resolveProposal = resolve; });

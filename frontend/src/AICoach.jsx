@@ -755,8 +755,6 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
   const [seasonEditing, setSeasonEditing] = useState(false);
   const [seasonStart, setSeasonStart] = useState('');
   const [proposing, setProposing] = useState('');
-  const [feedbackWeek, setFeedbackWeek] = useState('');
-  const [feedback, setFeedback] = useState(null);
   const [proposal, setProposal] = useState(null);
   const [selectedBlockId, setSelectedBlockId] = useState(null);
   const [jumpSegment, setJumpSegment] = useState(null);
@@ -820,7 +818,7 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
     // A profile save must not replace a weekly draft the athlete is still editing.
   }, [week, profile?.weeklyOverrides]);
   useEffect(() => {
-    if (priorWorkouts.current !== workouts) { priorWorkouts.current = workouts; contextVersion.current += 1; setProposal(null); setFeedback(null); }
+    if (priorWorkouts.current !== workouts) { priorWorkouts.current = workouts; contextVersion.current += 1; setProposal(null); }
   }, [workouts]);
 
   // A function as value derives the new value from the current one, so quick clicks do not overwrite each other.
@@ -856,7 +854,7 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
     await run('Der Coach erstellt einen Vorschlag …', async () => {
       setProposal(null); setProposing(kind);
       try {
-        const context = extra.feedbackWeek ? { feedbackWeek: extra.feedbackWeek, missedSessions: extra.missedSessions } : kind === 'patch' && feedbackWeek ? { feedbackWeek } : {};
+        const context = extra.feedbackWeek ? { feedbackWeek: extra.feedbackWeek, missedSessions: extra.missedSessions } : {};
         const body = kind === 'block' ? extra : kind === 'season' ? { kind, ...(seasonWish.trim() ? { instruction: seasonWish.trim() } : {}), ...extra }
           : { kind, week: extra.week || week, instruction, ...context };
         const next = await request(`/api/coach/proposals?${tzQuery()}`, 'POST', body);
@@ -895,7 +893,7 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
         else if (proposal.kind === 'block') {
           const chosen = proposal.after.options.find(option => option.id === optionId).block;
           setSelectedBlockId(chosen.id || null); setJumpSegment(null); setScrollTarget('.coach-block-card');
-          setWeek(isoWeek(chosen.startDate)); setFeedback(null); setAutoStart({ block: chosen, weeks: saved.weeks || {} });
+          setWeek(isoWeek(chosen.startDate)); setAutoStart({ block: chosen, weeks: saved.weeks || {} });
         } else setNotice('Plan übernommen. Die Einheiten sind im Kalender verfügbar.');
       } catch (e) { setProposal(null); throw e; }
     });
@@ -981,7 +979,7 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
   // After a deletion the plan shows the block that is now current, starting with its first open week.
   function afterDelete(saved) {
     const next = blockRange(currentBlock(saved.blocks, localDate()));
-    setPlan(saved); setSelectedBlockId(null); setJumpSegment(null); setConfirmDelete(null); setPlanHints([]); setFeedback(null);
+    setPlan(saved); setSelectedBlockId(null); setJumpSegment(null); setConfirmDelete(null); setPlanHints([]);
     setWeek(next && localDate() < next.start ? isoWeek(next.start) : isoWeek());
   }
   async function deleteSeason(withBlocks) {
@@ -1005,7 +1003,7 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
   function showBlock(target) {
     if (dirty.weekly) { setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); return; }
     const r = blockRange(target);
-    invalidate(); setFeedback(null); setJumpSegment(null); setConfirmDelete(null);
+    invalidate(); setJumpSegment(null); setConfirmDelete(null);
     setSelectedBlockId(target.id === current?.id ? null : target.id);
     setWeek(r.start <= today && today <= r.end ? isoWeek(today) : isoWeek(r.start));
     setScrollTarget('.coach-block-card');
@@ -1044,7 +1042,7 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
   function goToWeek(key) {
     if (dirty.weekly) { setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); return; }
     if (key === week) return;
-    invalidate(); setFeedback(null); setWeek(key);
+    invalidate(); setWeek(key);
   }
   const inRange = key => !!range && weekStart(key) >= weekStart(isoWeek(range.start)) && weekStart(key) <= range.end;
   const previousWeek = range && inRange(isoWeek(addDays(weekStart(week), -7))) ? isoWeek(addDays(weekStart(week), -7)) : null;
@@ -1080,6 +1078,8 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
   // With a goal ahead the season plan comes first: a block is shaped only once the plan is set, fits the blocks
   // and is not being proposed anew or edited.
   const seasonFirst = stage !== 'setup' && goalAhead && (!season || !season.aligned || proposal?.kind === 'season' || seasonEditing);
+  // A season block the athlete opened from the strip takes the place of the current block and its weeks.
+  const jumpOpen = !!jumpSegment && !!jumpTarget && !seasonFirst;
   const goalName = profile?.goal?.name?.trim() || goalLabel(profile?.goal?.type, profile?.goal?.sports) || 'deinem Ziel';
   const seasonWishField = <Field label="Wunsch für den Saisonplan (optional)" hint="z. B. „Im Winter vor allem Rolle, im Frühjahr ein Trainingslager“."><textarea maxLength={1500} value={seasonWish} onChange={e => { invalidate(); setSeasonWish(e.target.value); }} /></Field>;
   // Several wizards can be on screen; a block proposal shows in the one that asked for it.
@@ -1215,12 +1215,12 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
       {rhythm && <WeekRhythm key={`${rhythm.review}-${!!rhythm.planned}`} review={rhythm.review} next={rhythm.next} planned={!!rhythm.planned} reviewPlan={plan.weeks?.[rhythm.review]} nextBlockWeek={current.weeks?.[blockWeek(currentRange, weekStart(rhythm.next)) - 1]}
         feedback={rhythmFeedback?.week === rhythm.review ? rhythmFeedback : null} busy={occupied} canPlan={canPlan} checkInForm={checkInForm} wishField={wishField}
         onLoad={key => request(`/api/coach/feedback?week=${encodeURIComponent(key)}&${tzQuery()}`).then(setRhythmFeedback).catch(e => setError(e.message))}
-        onPlan={missedSessions => { setSelectedBlockId(null); setWeek(rhythm.next); setFeedback(null); propose(rhythm.planned ? 'patch' : 'week', { week: rhythm.next, feedbackWeek: rhythm.review, missedSessions }); }}
+        onPlan={missedSessions => { setSelectedBlockId(null); setWeek(rhythm.next); propose(rhythm.planned ? 'patch' : 'week', { week: rhythm.next, feedbackWeek: rhythm.review, missedSessions }); }}
         onKeep={missedSessions => run('Rückblick wird gespeichert …', async () => { invalidate(); setPlan(await request(`/api/coach/weeks/${rhythm.review}/missed`, 'PUT', { missedSessions })); setNotice('Rückblick gespeichert. Die nächste Woche bleibt, wie sie ist.'); })} />}
-      {stage === 'active' && <><section className="coach-card coach-block-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">{block === current ? 'Aktueller Trainingsblock' : 'Kommender Trainingsblock'}</span><h2>{today < range.start ? `Startet am ${dateLabel(range.start)}` : `Woche ${blockWeek(range, today)} von ${range.weeks}`}</h2></div><span className="coach-badge recommendation">AI-Empfehlung</span></div>
+      {stage === 'active' && !jumpOpen && <><section className="coach-card coach-block-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">{block === current ? 'Aktueller Trainingsblock' : 'Kommender Trainingsblock'}</span><h2>{today < range.start ? `Startet am ${dateLabel(range.start)}` : `Woche ${blockWeek(range, today)} von ${range.weeks}`}</h2></div><span className="coach-badge recommendation">AI-Empfehlung</span></div>
         {keptBlocks.length > 1 && <div className="coach-block-switch" role="group" aria-label="Trainingsblöcke">{keptBlocks.map(item => <button key={item.id} type="button" aria-pressed={item.id === block.id} disabled={occupied}
           onClick={() => { if (item.id !== block.id) showBlock(item); }}><strong>{item.typeName || 'Block'}</strong><small>{dateLabel(item.startDate)} – {dateLabel(blockRange(item).end)}</small></button>)}</div>}
-        <BlockOverview value={block} chart={timeline && <BlockTimeline timeline={timeline} selected={week} onSelect={key => { if (dirty.weekly) setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); else if (key !== week) { invalidate(); setFeedback(null); setWeek(key); } }} />} />
+        <BlockOverview value={block} chart={timeline && <BlockTimeline timeline={timeline} selected={week} onSelect={key => { if (dirty.weekly) setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); else if (key !== week) { invalidate(); setWeek(key); } }} />} />
         {openWeeks.length > 0 && <div className="coach-actions"><button className="coach-primary" disabled={!canPlan} onClick={() => planBlockWeeks(block, plan.weeks)}>{blockHasWeeks ? 'Restliche Wochen planen' : 'Alle Wochen planen'} ({openWeeks.length})</button><small className="coach-muted">Mit deiner Standardwoche aus dem Athletenprofil. Ausnahmen trägst du in der jeweiligen Woche ein.</small></div>}
         {planning && <Generating text={planning} />}
         <Hinweise items={planHints} />
@@ -1247,7 +1247,6 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
           {planning && <p className="coach-muted">Während der Coach die Wochen plant, kannst du schon Einheiten fixieren, Ausnahmen eintragen und deinen Wunsch ändern. Noch nicht geplante Wochen berücksichtigen das. Woche planen oder anpassen geht danach wieder.</p>}
           {['week', 'patch'].includes(proposing) && <Generating text="Der Coach plant deine Woche … Das kann bis zu einer Minute dauern." />}
         </fieldset>
-        <details className="coach-details"><summary>Absolviertes Training berücksichtigen</summary><p className="coach-muted">Wähle eine abgeschlossene Woche als Grundlage für die nächste Anpassung.</p><fieldset disabled={!!busy}><div className="coach-inline-form"><Field label="Feedback-Woche"><input type="week" value={feedbackWeek} onChange={e => { invalidate(); setFeedback(null); setFeedbackWeek(e.target.value); }} /></Field><button disabled={!feedbackWeek} onClick={() => run('Wochenfeedback wird geladen …', async () => { setFeedback(await request(`/api/coach/feedback?week=${encodeURIComponent(feedbackWeek)}&${tzQuery()}`)); })}>Training vergleichen</button></div></fieldset>{feedback && <div className="coach-feedback"><div><small>Geplant</small><strong>{hours(feedback.planned?.hours ?? feedback.planned?.trainingHours)}</strong></div><div><small>Absolviert</small><strong>{hours(feedback.completed?.hours ?? feedback.completed?.trainingHours)}</strong></div><div><small>Nicht zugeordnet / ausgefallen</small><strong>{feedback.missedSessions?.length ?? '—'} Einheiten</strong></div></div>}{feedbackWeek && <p className="coach-muted">Eine Anpassung berücksichtigt {feedbackWeek}. Die Zuordnung von Aktivitäten zu Einheiten kann unvollständig sein.</p>}</details>
       </section></>}
 
       {proposal && !['block', 'season'].includes(proposal.kind) && <Proposal key={proposal.id} value={proposal} busy={occupied} onConfirm={confirmProposal} onDiscard={discardProposal} />}
