@@ -86,10 +86,13 @@ test('threshold progressions fill each interval with their pattern', () => {
 });
 
 test('work steps are coloured below, at and above the threshold', () => {
-  expect([0.65, 0.82, 0.9, 0.95, 1, 1.05, 1.08, 1.2].map(f => intensityZone(f))).toEqual(['endurance', 'sweetspot', 'sweetspot', 'threshold', 'threshold', 'threshold', 'vo2', 'vo2']);
-  expect([0.75, 0.845, 0.88, 0.925].map(f => intensityZone(f, 'heart_rate'))).toEqual(['endurance', 'sweetspot', 'threshold', 'vo2']);
+  expect([0.65, 0.82, 0.85, 0.9, 0.95, 1, 1.05, 1.08, 1.2].map(f => intensityZone(f))).toEqual(['endurance', 'tempo', 'tempo', 'sweetspot', 'threshold', 'threshold', 'threshold', 'vo2', 'vo2']);
+  expect([0.75, 0.845, 0.88, 0.925].map(f => intensityZone(f, 'heart_rate'))).toEqual(['endurance', 'tempo', 'threshold', 'vo2']);
   const zones = id => [...new Set(libraryProfile(workoutLibrary.find(e => e.id === id)).map(s => s.zone).filter(Boolean))];
   expect(zones('ride-sweetspot-start')).toEqual(['sweetspot']);
+  expect(zones('ride-tempo-start')).toEqual(['tempo']);
+  expect(zones('ride-k3-start')).toEqual(['tempo']);
+  expect(zones('run-tempo-start')).toEqual(['tempo']);
   expect(zones('ride-threshold-20-mid')).toEqual(['threshold']);
   expect(zones('ride-vo2-4-start')).toEqual(['vo2']);
   expect(zones('ride-threshold-attack-start')).toEqual(['vo2', 'threshold']);
@@ -100,7 +103,7 @@ test('work steps are coloured below, at and above the threshold', () => {
   expect(container.querySelectorAll('.library-profile rect.zone-sweetspot').length).toBeGreaterThan(0);
   expect(container.querySelector('.library-profile rect.zone-vo2')).toBeNull();
   act(() => container.querySelector('[aria-label="Vorlage 3 × 12 min Sweetspot übernehmen"]').click());
-  expect(container.querySelector('.workout-chart-legend').textContent).toContain('Unter der Schwelle');
+  expect(container.querySelector('.workout-chart-legend').textContent).toContain('Sweetspot');
   expect(container.querySelector('.workout-chart-legend').textContent).not.toContain('Belastung');
 });
 

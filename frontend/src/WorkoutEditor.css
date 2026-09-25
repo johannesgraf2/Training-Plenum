@@ -179,6 +179,7 @@
 .library-profile rect.active { fill: var(--blue); }
 .library-profile rect.interval { fill: var(--accent); }
 .library-profile rect.zone-endurance { fill: var(--blue); }
+.library-profile rect.zone-tempo { fill: var(--zone-tempo); }
 .library-profile rect.zone-sweetspot { fill: var(--zone-sweetspot); }
 .library-profile rect.zone-threshold { fill: var(--zone-threshold); }
 .library-profile rect.zone-vo2 { fill: var(--zone-vo2); }
