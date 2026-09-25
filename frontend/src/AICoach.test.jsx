@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Simulate } from 'react-dom/test-utils';
-import AICoach, { blockQuestions, designAnswers, endsWithRace, fitSeasonWeeks, isoWeek, weekStart, weeksToGoal } from './AICoach';
+import AICoach, { blockQuestions, designAnswers, endsWithRace, fitSeasonWeeks, isoWeek, monthSpans, weekStart, weeksToGoal } from './AICoach';
 
 const profile = {
   source: 'athlete', goal: { type: 'endurance', name: 'Fit bleiben' },
@@ -251,16 +251,47 @@ test('an incomplete setup shows a checklist that jumps to the missing step inste
   expect(button('Athletenprofil speichern')).toBeDefined();
 });
 
-test('the profile stores training days, season and the minimum ride length', async () => {
+test('the profile stores sports, goal, outdoor months with their own volume and the training days', async () => {
   await render(); await click(button('Athletenprofil'));
+  const toggle = label => [...container.querySelectorAll('.coach-toggle')].find(b => b.textContent === label);
+  expect(toggle('Radfahren').getAttribute('aria-pressed')).toBe('true');
+  await click(toggle('Radfahren'));  // The last sport stays chosen.
+  expect(toggle('Radfahren').getAttribute('aria-pressed')).toBe('true');
+  await click(toggle('Triathlon'));
+  expect(['Radfahren', 'Laufen', 'Schwimmen'].map(label => toggle(label).getAttribute('aria-pressed'))).toEqual(['true', 'true', 'true']);
+  expect(container.textContent).toContain('Für Schwimmen hat der Coach noch keine Trainingsvorlagen');
+  await click(toggle('Schwimmen'));
+  expect(toggle('Triathlon').getAttribute('aria-pressed')).toBe('false');
+  await click(container.querySelector('input[name="goal-type"][value="event"]'));
+  expect(inputFor('Zieldatum').closest('label').textContent).toContain('Saisonplan und Wettkampfblöcke');
+  await change(inputFor('Mindestdauer Radeinheit (min)'), '60');
+  for (const month of ['Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt']) await click(toggle(month));
+  expect(container.querySelector('.coach-season-volume').textContent).toContain('Draußen · Apr–Okt');
+  expect(container.querySelector('.coach-season-volume').textContent).toContain('Drinnen · Nov–Mär');
+  expect(inputFor('Umfang drinnen (h/Woche)').placeholder).toBe('8');
+  await change(inputFor('Umfang drinnen (h/Woche)'), '5');
+  await change(inputFor('Mindestdauer Radeinheit draußen (min)'), '90');
+  expect(inputFor('Mindestdauer Radeinheit drinnen (min)').value).toBe('60');
+  expect(container.querySelector('.coach-week-summary').textContent).toContain('Wunsch draußen 8 h, drinnen 5 h');
+  await change(inputFor('Trainingstage pro Woche'), '2');
+  await click(container.querySelector('.coach-checkbox input'));
+  expect(container.textContent).toContain('mindestens 3 Trainingstage');
   await change(inputFor('Trainingstage pro Woche'), '4');
-  await change(inputFor('Saison'), 'indoor');
-  await change(inputFor('Mindestdauer Rad auf der Rolle (min)'), '60');
-  await change(inputFor('Mindestdauer Rad draußen (min)'), '90');
+  await change(container.querySelector('[aria-label="Sa Standardverfügbarkeit"]'), '240');
   await submit(button('Athletenprofil speichern').closest('form'));
   const body = requests.find(r => r.path === '/api/athlete-profile' && r.method === 'PUT').body;
-  expect(body.availability).toMatchObject({ trainingDaysPerWeek: 4, minRideMinutes: { indoor: 60, outdoor: 90 } });
-  expect(body.preferences.trainingEnvironment).toBe('indoor');
+  expect(body.goal).toMatchObject({ type: 'event', sports: ['ride', 'run'] });
+  expect(body.availability).toMatchObject({ trainingDaysPerWeek: 4, noConsecutiveRestDays: true, outdoorMonths: [4, 5, 6, 7, 8, 9, 10],
+    preferredWeeklyHours: 8, indoorWeeklyHours: 5, minRideMinutes: { indoor: 60, outdoor: 90 } });
+  expect(body.availability.defaultAvailability.sat).toBe(240);
+  expect(body.preferences).toEqual({ preferredRestDay: null, preferredLongSessionDay: null, gymAvailability: false });
+});
+
+test('outdoor months are shown as ranges, also over the new year', () => {
+  expect(monthSpans([4, 5, 6, 7, 8, 9, 10])).toBe('Apr–Okt');
+  expect(monthSpans([11, 12, 1, 2, 3])).toBe('Nov–Mär');
+  expect(monthSpans([1, 3, 12])).toBe('Mär, Dez–Jan');
+  expect(monthSpans([...Array(12)].map((_, i) => i + 1))).toBe('ganzjährig');
 });
 
 test('a season plan is proposed, adjusted by swapping blocks and confirmed', async () => {
@@ -410,6 +441,22 @@ test('an active block shows the current block week and German planning actions',
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]').textContent).toContain('Wochenplan prüfen');
 });
 
+test('the week buttons step through the block weeks', async () => {
+  initialPlan = { revision: 1, blocks: [activeBlock], weeks: {} };
+  await render();
+  const weekInput = () => container.querySelector('[aria-label="Planungswoche"]');
+  const step = label => container.querySelector(`[aria-label="${label}"]`);
+  expect(weekInput().value).toBe('2026-W39');
+  await click(step('Nächste Woche'));
+  expect(weekInput().value).toBe('2026-W40');
+  expect(step('Nächste Woche').disabled).toBe(true);
+  await click(step('Vorherige Woche'));
+  await click(step('Vorherige Woche'));
+  expect(weekInput().value).toBe('2026-W38');
+  expect(step('Vorherige Woche').disabled).toBe(true);
+  expect(container.textContent).toContain('Woche 1 von 3');
+});
+
 test('an upcoming block opens on its first week', async () => {
   initialPlan = { revision: 1, blocks: [{ ...macro, startDate: '2026-10-05' }], weeks: {} };
   await render();
@@ -444,9 +491,8 @@ test('goal types and the season countdown are shown in German', async () => {
   await render();
   expect(container.querySelector('.coach-season').textContent).toBe('Noch 10 Wochen bis Allgemeine Ausdauer · 2. Dez.');
   await click(button('Athletenprofil'));
-  const select = inputFor('Zieltyp');
-  expect(select.value).toBe('endurance');
-  expect(select.textContent).not.toContain('general_endurance');
+  expect(container.querySelector('input[name="goal-type"]:checked').value).toBe('fitness');
+  expect(container.querySelector('[aria-label="Was ist dein Ziel?"]').textContent).not.toContain('general_endurance');
 });
 
 test('the block timeline compares planned and completed hours and selects a week', async () => {
@@ -558,7 +604,8 @@ test('the normal week shows a live sum and flags a wish far from recent training
   expect(summary()).toContain('Wunsch 12 h');
   expect(summary()).toContain('über der Zeit, die du an den einzelnen Tagen angegeben hast');
   expect(summary()).toContain('im Schnitt 6,8 h pro Woche trainiert. Dein Wunsch von 12 h liegt deutlich darüber.');
-  await change(container.querySelector('[aria-label="Fr Standardverfügbarkeit in Minuten"]'), '');
+  expect(container.querySelector('[aria-label="Fr Standardverfügbarkeit"]').value).toBe('0');
+  await change(container.querySelector('[aria-label="Fr Standardverfügbarkeit"]'), '');
   expect(summary()).toContain('10 h verfügbar (Fr offen)');
   expect(summary()).not.toContain('über der Zeit');
 });
