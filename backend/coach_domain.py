@@ -66,46 +66,85 @@ def iso_week(value):
     return f'{year:04}-W{week:02}'
 
 
+SPORTS = ['ride', 'run', 'swim']
+GOAL_TYPES = ['event', 'performance', 'fitness']
+# Goal types of earlier profiles, before the goal became sport-neutral.
+GOAL_ALIASES = {'cycling_event': 'event', 'running_event': 'event', 'marathon': 'event', 'ftp': 'performance',
+                'endurance': 'fitness', 'general_endurance': 'fitness'}
+LEGACY_PREFERENCES = ('indoorPreference', 'outdoorPreference', 'trainingEnvironment')
 DEFAULT_PROFILE = {
-    'goal': {'type': 'general_endurance', 'name': '', 'date': None, 'target': None},
-    'availability': {'preferredWeeklyHours': None, 'absoluteMaxWeeklyHours': None,
-                     'defaultAvailability': dict.fromkeys(DAYS), 'trainingDaysPerWeek': None,
-                     'minRideMinutes': {'indoor': None, 'outdoor': None}},
-    'preferences': {'preferredRestDay': None, 'preferredLongSessionDay': None,
-                    'indoorPreference': 'neutral', 'outdoorPreference': 'neutral', 'gymAvailability': False,
-                    'trainingEnvironment': 'mixed'},
+    'goal': {'type': 'fitness', 'sports': ['ride'], 'name': '', 'date': None, 'target': None},
+    'availability': {'preferredWeeklyHours': None, 'indoorWeeklyHours': None, 'absoluteMaxWeeklyHours': None,
+                     'outdoorMonths': [], 'defaultAvailability': dict.fromkeys(DAYS), 'trainingDaysPerWeek': None,
+                     'noConsecutiveRestDays': False, 'minRideMinutes': {'indoor': None, 'outdoor': None}},
+    'preferences': {'preferredRestDay': None, 'preferredLongSessionDay': None, 'gymAvailability': False},
     'limitations': {'notes': ''}, 'currentState': {'notes': ''},
     'weeklyOverrides': [], 'dailyOverrides': [], 'checkIns': [],
 }
 PROFILE_SCHEMA = obj({
-    'goal': obj({'type': text(80), 'name': text(200), 'date': text(10, True), 'target': text(300, True)}),
-    'availability': obj({'preferredWeeklyHours': num(0, 80, True), 'absoluteMaxWeeklyHours': num(0, 80, True),
+    'goal': obj({'type': {'enum': GOAL_TYPES},
+                 'sports': {'type': 'array', 'minItems': 1, 'uniqueItems': True, 'items': {'enum': SPORTS}},
+                 'name': text(200), 'date': text(10, True), 'target': text(300, True)}),
+    'availability': obj({'preferredWeeklyHours': num(0, 80, True), 'indoorWeeklyHours': num(0, 80, True),
+                         'absoluteMaxWeeklyHours': num(0, 80, True),
+                         'outdoorMonths': {'type': 'array', 'uniqueItems': True, 'items': num(1, 12, integer=True)},
                          'defaultAvailability': obj({day: num(0, 1440, True, True) for day in DAYS}),
-                         'trainingDaysPerWeek': num(1, 7, True, True),
+                         'trainingDaysPerWeek': num(1, 7, True, True), 'noConsecutiveRestDays': {'type': 'boolean'},
                          'minRideMinutes': obj({place: num(0, 600, True, True) for place in ('indoor', 'outdoor')})}),
     'preferences': obj({'preferredRestDay': {'enum': [None, *DAYS]}, 'preferredLongSessionDay': {'enum': [None, *DAYS]},
-                        'indoorPreference': {'enum': ['neutral', 'prefer', 'avoid']},
-                        'outdoorPreference': {'enum': ['neutral', 'prefer', 'avoid']}, 'gymAvailability': {'type': 'boolean'},
-                        'trainingEnvironment': {'enum': ['indoor', 'outdoor', 'mixed']}}),
+                        'gymAvailability': {'type': 'boolean'}}),
     'limitations': obj({'notes': text(1500)}), 'currentState': obj({'notes': text(1500)}),
 })
 
 
 def complete_profile(value):
-    """Stored profiles predate later fields; fill them with their defaults."""
+    """Stored profiles predate later fields; fill them with their defaults and move replaced ones over."""
     result = copy.deepcopy(value)
+    stored_goal = result.get('goal', {})
+    old_type = stored_goal.get('type')
+    result['goal'] = {**copy.deepcopy(DEFAULT_PROFILE['goal']), **stored_goal}
+    result['goal']['type'] = GOAL_ALIASES.get(old_type, old_type if old_type in GOAL_TYPES else 'fitness')
+    if 'sports' not in stored_goal and old_type in ('marathon', 'running_event'):
+        result['goal']['sports'] = ['run']
+    preferences = result.get('preferences', {})
+    if 'outdoorMonths' not in result.get('availability', {}) and preferences.get('trainingEnvironment') == 'outdoor':
+        result.setdefault('availability', {})['outdoorMonths'] = list(range(1, 13))
+    result['preferences'] = {key: value for key, value in preferences.items() if key not in LEGACY_PREFERENCES}
     for section in ('availability', 'preferences'):
         result[section] = {**copy.deepcopy(DEFAULT_PROFILE[section]), **result.get(section, {})}
     return result
 
 
-def min_ride_minutes(profile):
-    """The athlete's minimum for a normal ride in the current season; mixed allows the shorter one."""
+def week_season(profile, monday):
+    """'outdoor' or 'indoor' by the athlete's outdoor months, None without a split; the Thursday decides like ISO weeks."""
+    months = profile['availability']['outdoorMonths']
+    if not months:
+        return None
+    return 'outdoor' if (monday + timedelta(days=3)).month in months else 'indoor'
+
+
+def preferred_hours(profile, monday):
+    """The wished weekly volume for the week starting on monday; the indoor months may have their own."""
+    availability = profile['availability']
+    if week_season(profile, monday) == 'indoor' and availability['indoorWeeklyHours'] is not None:
+        return availability['indoorWeeklyHours']
+    return availability['preferredWeeklyHours']
+
+
+def min_ride_minutes(profile, monday):
+    """The athlete's minimum for a normal ride in that week's season; without a split the shorter one applies."""
     values = profile['availability']['minRideMinutes']
-    environment = profile['preferences']['trainingEnvironment']
-    if environment in values:
-        return values[environment] or None
+    season = week_season(profile, monday)
+    if season:
+        return values[season] or None
     return min((v for v in values.values() if v), default=None)
+
+
+def rest_day_pairs(training_days, limits, elapsed=()):
+    """Neighbouring days of one week that both stay without training although one of them could still get it."""
+    rest = [day not in training_days for day in DAYS]
+    open_day = [limits[day]['maxMinutes'] and day not in elapsed for day in DAYS]
+    return {(DAYS[i], DAYS[i + 1]) for i in range(6) if rest[i] and rest[i + 1] and (open_day[i] or open_day[i + 1])}
 
 
 def update_profile(current, changes):
@@ -114,13 +153,20 @@ def update_profile(current, changes):
     result = complete_profile(current)
     for key, value in changes.items():
         # Clients that predate a field keep its stored value.
-        result[key] = {**result[key], **value} if key in ('availability', 'preferences') and isinstance(value, dict) else value
+        result[key] = {**result[key], **value} if key in ('goal', 'availability', 'preferences') and isinstance(value, dict) else value
+    if isinstance(result['goal'], dict):
+        result['goal']['type'] = GOAL_ALIASES.get(result['goal'].get('type'), result['goal'].get('type'))
     validate({key: result[key] for key in PROFILE_SCHEMA['properties']}, PROFILE_SCHEMA)
     if result['goal']['date']:
         day_date(result['goal']['date'])
-    preferred, maximum = (result['availability'][key] for key in ('preferredWeeklyHours', 'absoluteMaxWeeklyHours'))
-    if preferred is not None and maximum is not None and preferred > maximum:
+    availability = result['availability']
+    availability['outdoorMonths'] = sorted(availability['outdoorMonths'])
+    maximum = availability['absoluteMaxWeeklyHours']
+    if maximum is not None and any(availability[key] is not None and availability[key] > maximum
+                                   for key in ('preferredWeeklyHours', 'indoorWeeklyHours')):
         raise CoachError('Der gewünschte Umfang darf das absolute Zeitmaximum nicht überschreiten.')
+    if availability['noConsecutiveRestDays'] and (availability['trainingDaysPerWeek'] or 7) < 3:
+        raise CoachError('Mit weniger als 3 Trainingstagen lassen sich zwei Ruhetage hintereinander nicht vermeiden.')
     return result
 
 

@@ -104,6 +104,8 @@ def check_season(segments, frame, profile):
             raise CoachError(f'Block {index}: Unbekannter Nebenschwerpunkt.')
         if secondary == 'kraft' and not profile['preferences']['gymAvailability']:
             raise CoachError(f'Block {index}: Kraft als Nebenschwerpunkt benötigt die Krafttraining-Verfügbarkeit.')
+        if secondary == 'laufen' and 'run' not in profile['goal']['sports']:
+            raise CoachError(f'Block {index}: Laufen als Nebenschwerpunkt braucht Laufen bei deinen Sportarten.')
     total = sum(segment['weeks'] for segment in segments)
     if total != frame['totalWeeks']:
         raise CoachError(f"Die Blöcke ergeben {total} Wochen, bis zur Zielwoche sind es {frame['totalWeeks']}.")
