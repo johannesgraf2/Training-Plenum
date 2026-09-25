@@ -57,6 +57,12 @@ Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und
 
 Training Plēnum liest **FIT**, **FIT.GZ**, **GPX** und **TCX**, einzeln oder als ganzen Ordner. Die Originaldatei bleibt erhalten, jeder Messpunkt wird gespeichert.
 
+**Woher kommen die Dateien?**
+
+- **Direkt vom Garmin:** Garmin per USB an den PC anschließen und den Ordner `GARMIN/Activity` auf den PC kopieren. Darin liegen deine Aktivitäten als FIT-Dateien. Auf dem Gerät sind meist nur die letzten Aktivitäten gespeichert.
+- **Garmin Connect (komplette Historie):** Im Garmin-Konto unter **Datenverwaltung** den Datenexport anfordern. Der Download-Link kommt per E-Mail. Die ZIP-Datei entpacken und darin auch die weiteren ZIPs mit den Aktivitäten.
+- **TrainingPeaks:** Export herunterladen und entpacken.
+
 **So geht's:**
 
 1. Oben rechts auf **Datei importieren / exportieren** klicken.
@@ -65,7 +71,7 @@ Training Plēnum liest **FIT**, **FIT.GZ**, **GPX** und **TCX**, einzeln oder al
 
 **Gut zu wissen:**
 
-- **ZIP-Dateien zuerst entpacken.** Beim Export aus Garmin Connect stecken die Aktivitäten in weiteren ZIPs, die ebenfalls entpackt werden müssen.
+- **ZIP-Dateien zuerst entpacken.** Direkt lesen kann Training Plēnum nur die entpackten Dateien.
 - **Doppelte Dateien** werden erkannt und übersprungen. Denselben Ordner nochmal zu importieren schadet also nicht.
 - **Eine kaputte Datei** stoppt den Import nicht. Sie wird in der Liste als Fehler angezeigt und lässt sich mit **Fehler erneut versuchen** nochmal probieren.
 - **Anhalten:** **Nach aktueller Datei stoppen** beendet den Import sauber. Bereits importierte Aktivitäten bleiben gespeichert.
