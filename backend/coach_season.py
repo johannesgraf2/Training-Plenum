@@ -2,7 +2,7 @@
 
 The AI proposes the sequence, the athlete may reorder or change it. TrainHub checks
 that the blocks fill every week up to the goal week, that each block fits its type
-and that the season ends with a race-specific block. Blocks that are already planned
+and that the season ends with a race-specific block, optionally followed by a short taper. Blocks that are already planned
 stay fixed at the start. Only the next block is ever worked out in detail, through
 the normal block flow; the season plan is a roadmap, not a commitment.
 """
@@ -15,9 +15,11 @@ from coach_domain import HINWEISE_SCHEMA, CoachError, day_date, num, obj, text
 MAX_SEGMENTS = 20
 MAX_SEASON_WEEKS = 104
 FINAL_TYPE = 'wettkampfspezifisch'
+TAPER_TYPE = 'taper'
 # Training philosophy for AI season plans: aerobic base, then raise the engine (VO2max) and lower VLamax
-# at threshold, then race-specific. VO2max and Schwelle may swap. Aufbau and Übergang are no season stages.
-SEASON_RANK = {'wiedereinstieg': 0, 'grundlage': 1, 'vo2max': 2, 'schwelle': 2, FINAL_TYPE: 3}
+# at threshold, then race-specific, optionally with an own taper block. VO2max and Schwelle may swap.
+# Aufbau and Übergang are no season stages.
+SEASON_RANK = {'wiedereinstieg': 0, 'grundlage': 1, 'vo2max': 2, 'schwelle': 2, FINAL_TYPE: 3, TAPER_TYPE: 4}
 TYPICAL_SHARE = {'grundlage': .35, 'vo2max': .2, 'schwelle': .25, FINAL_TYPE: .2}
 
 SEGMENT_SCHEMA = obj({
@@ -88,8 +90,14 @@ def check_season(segments, frame, profile):
     total = sum(segment['weeks'] for segment in segments)
     if total != frame['totalWeeks']:
         raise CoachError(f"Die Blöcke ergeben {total} Wochen, bis zur Zielwoche sind es {frame['totalWeeks']}.")
-    if segments[-1]['blockType'] != FINAL_TYPE:
-        raise CoachError('Der letzte Block vor dem Ziel ist wettkampfspezifisch.')
+    if not ends_with_final(segments):
+        raise CoachError('Der Saisonplan endet mit einem wettkampfspezifischen Block, danach ist höchstens noch ein Taper möglich.')
+
+
+def ends_with_final(segments):
+    """Wettkampfspezifisch last, or directly followed by a taper."""
+    types = [segment['blockType'] for segment in segments]
+    return types[-1:] == [FINAL_TYPE] or types[-2:] == [FINAL_TYPE, TAPER_TYPE]
 
 
 def typical_season(weeks, after=None):

@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Simulate } from 'react-dom/test-utils';
-import AICoach, { isoWeek, weekStart } from './AICoach';
+import AICoach, { endsWithRace, fitSeasonWeeks, isoWeek, weekStart } from './AICoach';
 
 const profile = {
   source: 'athlete', goal: { type: 'endurance', name: 'Fit bleiben' },
@@ -18,7 +18,8 @@ const blockProposal = { id: 'proposal-1', kind: 'block', before: null, hinweise:
 const catalog = { blockTypes: [
   { id: 'grundlage', name: 'Grundlage', summary: 'Aerobe Basis.', defaultWeeks: 8, minWeeks: 6, maxWeeks: 12, rules: ['Keine VO2max-Einheit'], rhythms: { 6: [false, false, true, false, false, true], 8: [false, false, false, true, false, false, false, true] } },
   { id: 'vo2max', name: 'VO2max', summary: 'Kurze, harte Intervalle.', defaultWeeks: 4, minWeeks: 3, maxWeeks: 6, rules: ['Mindestens 2× VO2max-Einheit pro Belastungswoche'], rhythms: { 3: [false, false, true], 4: [false, false, false, true], 5: [false, false, true, false, true], 6: [false, false, true, false, false, true] } },
-  { id: 'wettkampfspezifisch', name: 'Wettkampfspezifisch', summary: 'Frisch am Start.', defaultWeeks: 4, minWeeks: 2, maxWeeks: 6, rules: [], rhythms: {} },
+  { id: 'wettkampfspezifisch', name: 'Wettkampfspezifisch', summary: 'Frisch am Start.', defaultWeeks: 4, minWeeks: 2, maxWeeks: 6, endsByGoal: true, rules: [], rhythms: {} },
+  { id: 'taper', name: 'Taper', summary: 'Frisch werden.', defaultWeeks: 1, minWeeks: 1, maxWeeks: 3, endsByGoal: true, rules: [], rhythms: {} },
 ], secondaryFocus: [{ id: 'kraft', name: 'Kraft' }, { id: 'laufen', name: 'Laufen' }] };
 const timeline = { blockId: 'block-1', weeks: [
   { number: 1, week: '2026-W38', startDate: '2026-09-14', phase: 'build', focus: 'Aufbau', targetHours: 8, planned: true, plannedHours: 7.5, completedHours: 6.5, state: 'past' },
@@ -593,4 +594,40 @@ test('the coach reports when it starts and finishes working', async () => {
   expect(busyChanges).toHaveBeenLastCalledWith('Der Coach erstellt einen Vorschlag …');
   await act(async () => resolveProposal({ ok: true, json: async () => blockProposal }));
   expect(busyChanges).toHaveBeenLastCalledWith('');
+});
+
+test('the season may end with a taper after the race-specific block', () => {
+  expect(endsWithRace(['grundlage', 'wettkampfspezifisch'])).toBe(true);
+  expect(endsWithRace(['grundlage', 'wettkampfspezifisch', 'taper'])).toBe(true);
+  expect(endsWithRace(['grundlage', 'taper'])).toBe(false);
+  expect(endsWithRace(['wettkampfspezifisch', 'grundlage'])).toBe(false);
+});
+
+test('fitting the weeks spreads the difference within the type limits and keeps the taper', () => {
+  const typeOf = id => catalog.blockTypes.find(type => type.id === id);
+  const fit = (target, ...items) => fitSeasonWeeks(items.map(([blockType, weeks]) => ({ blockType, weeks })), typeOf, target).map(item => item.weeks);
+  expect(fit(20, ['grundlage', 6], ['vo2max', 3], ['wettkampfspezifisch', 2], ['taper', 1])).toEqual([9, 5, 5, 1]);
+  expect(fit(13, ['grundlage', 12], ['vo2max', 6], ['wettkampfspezifisch', 4], ['taper', 2])).toEqual([6, 3, 2, 2]);
+  expect(fit(12, ['grundlage', 40], ['wettkampfspezifisch', ''])).toEqual([10, 2]); // Out of range and empty lengths first go into the limits.
+  expect(fit(40, ['grundlage', 8], ['wettkampfspezifisch', 4], ['taper', 1])).toEqual([12, 6, 3]); // Every block at its maximum.
+});
+
+test('the season editor takes a one-week taper and fits the other blocks to the goal week', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
+  initialPlan = { ...initialPlan, season };
+  responses['PUT /api/coach/season'] = async body => ({ ok: true, json: async () => ({ ...initialPlan, season: { ...season, segments: body.segments } }) });
+  await render();
+  await click(button('Saisonplan bearbeiten'));
+  expect(button('Wochen angleichen').disabled).toBe(true);
+  await click(button('Block hinzufügen'));
+  await change(container.querySelector('[aria-label="Block 3 Typ"]'), 'taper');
+  await click(container.querySelector('[aria-label="Block 3 nach hinten"]'));
+  expect(container.querySelector('[aria-label="Block 4 Typ"]').value).toBe('taper');
+  expect(container.querySelector('[aria-label="Block 4 Wochen"]').value).toBe('1');
+  expect(container.textContent).toContain('19 von 18 Wochen verplant · 1 Woche zu viel');
+  await click(button('Wochen angleichen'));
+  expect(container.textContent).toContain('18 von 18 Wochen verplant');
+  await click(button('Saisonplan speichern'));
+  expect(requests.find(r => r.path === '/api/coach/season').body.segments.map(item => [item.blockType, item.weeks]))
+    .toEqual([['grundlage', 8], ['vo2max', 5], ['wettkampfspezifisch', 4], ['taper', 1]]);
 });
