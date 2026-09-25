@@ -46,24 +46,41 @@ def _kept(blocks, today):
                   key=lambda b: b['startDate'])
 
 
-def open_from(blocks, today):
-    """First Monday that no current or upcoming block covers."""
+def first_monday(today):
+    """The earliest Monday a block can start: today or the next one."""
+    return today + timedelta(days=(-today.weekday()) % 7)
+
+
+def open_from(blocks, today, season_start=None):
+    """First Monday that no current or upcoming block covers.
+
+    Without such blocks the season begins at the athlete's chosen start, but never before the next Monday."""
     kept = _kept(blocks, today)
-    return day_date(kept[-1]['endDate']) + timedelta(days=1) if kept else today + timedelta(days=(-today.weekday()) % 7)
+    if kept:
+        return day_date(kept[-1]['endDate']) + timedelta(days=1)
+    return max(first_monday(today), season_start) if season_start else first_monday(today)
 
 
-def season_frame(blocks, goal_date, today):
-    """Season start, the planned blocks that stay fixed and the weeks left for new blocks."""
+def season_frame(blocks, goal_date, today, start=None):
+    """Season start, the planned blocks that stay fixed and the weeks left for new blocks.
+
+    `start` is the athlete's season start; it only applies while no block is current or upcoming, otherwise the
+    season starts with those blocks."""
     if not goal_date:
         raise CoachError('Für einen Saisonplan bitte ein Zieldatum im Athletenprofil speichern.')
     kept = _kept(blocks, today)
+    if start and not kept:
+        if start.weekday() != 0:
+            raise CoachError('Der Saisonplan beginnt an einem Montag.')
+        if start < first_monday(today):
+            raise CoachError('Der Saisonstart liegt in der Vergangenheit. Bitte einen kommenden Montag wählen.')
     fixed = [{'blockType': b['blockType'], 'secondaryFocus': b.get('secondaryFocus'), 'weeks': len(b['weeks']),
               'purpose': '', 'blockId': b['id']} for b in kept]
-    start = day_date(kept[0]['startDate']) if kept else open_from(blocks, today)
+    first_open = open_from(blocks, today, start)
+    start = day_date(kept[0]['startDate']) if kept else first_open
     total = (goal_monday(goal_date) - start).days // 7 + 1
     if total > MAX_SEASON_WEEKS:
         raise CoachError(f'Ein Saisonplan reicht höchstens {MAX_SEASON_WEEKS} Wochen bis zum Ziel.')
-    first_open = open_from(blocks, today)
     remaining = (goal_monday(goal_date) - first_open).days // 7 + 1
     if remaining < block_type(FINAL_TYPE)['minWeeks']:
         raise CoachError('Bis zum Ziel bleibt zu wenig Zeit für einen Saisonplan. Plane direkt einen wettkampfspezifischen Block.')
@@ -196,7 +213,7 @@ def public_season(season, blocks, goal_date, today):
             match = next((b for b in live.values() if b['startDate'] == segment['startDate']
                           and b['blockType'] == segment['blockType']), None)
             segment['blockId'] = match['id'] if match else None
-    first_open = open_from(blocks, today)
+    first_open = open_from(blocks, today, day_date(season['startDate']))
     editable = [s for s in segments if day_date(s['startDate']) >= first_open]
     remaining = (goal_monday(goal_date) - first_open).days // 7 + 1 if goal_date else None
     aligned = bool(editable) and editable[0]['startDate'] == first_open.isoformat() and \

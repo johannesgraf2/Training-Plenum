@@ -39,6 +39,16 @@ class FrameTests(unittest.TestCase):
         self.assertEqual(frame['fixed'][0]['blockId'], blocks[-1]['id'])
         self.assertEqual((frame['openFrom'].isoformat(), frame['remainingWeeks'], frame['totalWeeks']), ('2026-11-09', 12, 18))
 
+    def test_the_athlete_picks_a_later_monday_as_season_start(self):
+        frame = season_frame([], GOAL, TODAY, date(2026, 10, 12))
+        self.assertEqual((frame['start'].isoformat(), frame['openFrom'].isoformat(), frame['remainingWeeks']), ('2026-10-12', '2026-10-12', 16))
+        with self.assertRaisesRegex(CoachError, 'Montag'):
+            season_frame([], GOAL, TODAY, date(2026, 10, 13))
+        with self.assertRaisesRegex(CoachError, 'Vergangenheit'):
+            season_frame([], GOAL, TODAY, date(2026, 9, 21))
+        # Planned blocks set the start; a chosen one no longer applies.
+        self.assertEqual(season_frame([block()], GOAL, TODAY, date(2026, 9, 21))['start'].isoformat(), '2026-09-28')
+
     def test_goal_must_exist_leave_room_and_stay_within_two_years(self):
         with self.assertRaisesRegex(CoachError, 'Zieldatum'):
             season_frame([], None, TODAY)
@@ -135,6 +145,13 @@ class PublicSeasonTests(unittest.TestCase):
         # The athlete planned a longer next block than the season foresaw.
         self.assertFalse(public_season(season, [*blocks, block('aufbau', '2026-11-09', 5)], GOAL, TODAY)['aligned'])
         self.assertIsNone(public_season(None, blocks, GOAL, TODAY))
+
+    def test_a_later_season_start_stays_aligned_until_it_has_passed(self):
+        frame = season_frame([], GOAL, TODAY, date(2026, 10, 12))
+        season = new_season([segment('grundlage', 8), segment('vo2max', 4), segment('wettkampfspezifisch', 4)], frame, GOAL, '', 'athleteEdited')
+        result = public_season(season, [], GOAL, TODAY)
+        self.assertEqual((result['openFrom'], result['remainingWeeks'], result['aligned']), ('2026-10-12', 16, True))
+        self.assertFalse(public_season(season, [], GOAL, date(2026, 10, 14))['aligned'])
 
 
 if __name__ == '__main__':
