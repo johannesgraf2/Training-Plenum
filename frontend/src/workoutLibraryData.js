@@ -83,7 +83,7 @@ const rideLibrary = [
   ]),
   ...microFamily('ride-vo2-3015', 'VO2max 30/15', 30, 15, 1.25, [['start', 3, 6], ['mid', 3, 8], ['end', 3, 11]]),
   ...microFamily('ride-vo2-4020', 'VO2max 40/20', 40, 20, 1.2, [['start', 3, 6], ['mid', 3, 8], ['end', 3, 11]]),
-  ...microFamily('ride-vo2-4515', 'VO2max 45/15', 45, 15, 1.24, [['start', 2, 8], ['mid', 3, 8], ['end', 3, 10]]),
+  ...microFamily('ride-vo2-4515', 'VO2max 45/15', 45, 15, 1.24, [['start', 3, 6], ['mid', 3, 8], ['end', 3, 10]]),
   ...microFamily('ride-vo2-2010', 'VO2max 20/10', 20, 10, 1.4, [['start', 2, 10], ['mid', 3, 10], ['end', 3, 15]]),
   ...microFamily('ride-vo2-1515', 'VO2max 15/15', 15, 15, 1.4, [['start', 2, 15], ['mid', 3, 15], ['end', 3, 20]]),
   ...classicFamily('ride-vo2-3', 'VO2max 3 min', min(3), min(3), 1.2, [4, 5, 6]),
