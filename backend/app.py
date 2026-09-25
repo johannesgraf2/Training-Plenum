@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from dateutil.tz import gettz
 from fit_import import parse_fit_file, FitImportError, read_fit_bytes
 from best_efforts import TARGETS, VERSION as EFFORT_VERSION, activity_efforts
-from analytics import VERSION as ANALYTICS_VERSION, activity_summary, aggregate, valid
+from analytics import VERSION as ANALYTICS_VERSION, activity_summary, aggregate, fitness, valid
 from workout_export import WorkoutError, validate_workout, export_workout
 from training_plan import history_summary, make_block, date_range
 
@@ -966,6 +966,7 @@ def analytics():
     user = db.session.get(User, DEMO_USER_ID)
     rows = load_analytics_rows()
     result = aggregate(rows, period, zone, user.ftp, user.max_hr, sport)
+    result['fitness'] = fitness(rows, zone, user.ftp, user.max_hr)
     try:
         db.session.commit()
     except IntegrityError:

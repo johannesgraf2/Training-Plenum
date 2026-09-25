@@ -27,6 +27,20 @@
 .analysis-overview-grid { display: grid; grid-template-columns: minmax(270px, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: stretch; }
 .analysis-card { padding: 22px; background: var(--bg-ffffff); border: 1px solid var(--bd-e2e8f0); border-radius: 4px; min-width: 0; }
 .analysis-wide { grid-column: span 2; }
+.fitness-card { margin-bottom: 20px; }
+.fitness-card .analysis-toggle { flex-wrap: wrap; }
+.fitness-kpi { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; margin-bottom: 16px; }
+.fitness-kpi span { display: block; color: var(--muted); font-size: 13px; }
+.fitness-kpi > div:first-child strong { display: block; margin-top: 6px; font-family: var(--font-display); font-size: 56px; line-height: 1; font-weight: 400; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.fitness-trend strong { display: block; font-family: var(--font-display); font-size: 28px; font-weight: 400; font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+.fitness-up strong { color: var(--success); }
+.fitness-down strong { color: var(--danger); }
+.fitness-chart svg:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.fitness-chart svg { cursor: crosshair; }
+.fitness-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.fitness-area { fill: var(--accent-bg); }
+.fitness-marker line { stroke: var(--accent); stroke-width: 1; }
+.fitness-marker circle { fill: var(--accent); stroke: var(--bg-ffffff); stroke-width: 2; }
 .analysis-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
 .analysis-card h3, .analysis-week-toolbar h3 { font-family: var(--font-display); font-size: 24px; font-weight: 500; margin: 0; letter-spacing: -.01em; }
 .analysis-card .analysis-eyebrow { font-size: 12px; margin-bottom: 7px; }

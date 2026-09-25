@@ -8,7 +8,7 @@ const bucket = (key, extra = {}) => ({ key, count: 1, seconds: 3600, distance: 4
 const sample = () => ({ settings: { ftp: 320, maxHr: 191 }, years: [2026, 2022], totals: bucket('total'), sportShare: [bucket('ride')], cyclingYears: [bucket('2022'), bucket('2026')], weeks: [
   { ...bucket('2026-08-03'), label: 'KW 32', end: '2026-08-09', days: Array.from({ length: 7 }, (_, i) => bucket(`2026-08-${String(i + 3).padStart(2, '0')}`)) },
   { ...bucket('2026-08-10'), label: 'KW 33', end: '2026-08-16', days: Array.from({ length: 7 }, (_, i) => bucket(`2026-08-${i + 10}`)) },
-] });
+], fitness: { value: 44, window: 42, thresholdHr: 172, activities: { power: 10, hr: 5, missing: 2 }, days: Array.from({ length: 730 }, (_, i) => ({ key: new Date(Date.UTC(2024, 7, 17) + i * 86400000).toISOString().slice(0, 10), value: i < 365 ? 10 : i === 365 ? 20 : i === 729 ? 44 : 30, load: i % 3 ? 0 : 60 })) } });
 let host, root, originalFetch, data;
 const response = payload => ({ ok: true, json: async () => payload });
 beforeEach(() => {
@@ -103,4 +103,28 @@ test('a missing chart value stays a dash while a recorded zero remains zero', as
   await act(async () => root.render(<BarChart rows={[{ key: '1', label: 'KW 1', value: null }, { key: '2', label: 'KW 2', value: 0 }]} series={[{ key: 'value', label: 'TSS', color: '#000' }]} unit="TSS" label="Test" />));
   expect(host.querySelectorAll('tbody td')[0].textContent).toBe('—');
   expect(host.querySelectorAll('tbody td')[1].textContent).toBe('0');
+});
+
+test('fitness shows today, the change for the chosen range and daily values', async () => {
+  await render();
+  const card = host.querySelector('section[aria-label="Fitness"]');
+  expect(card.querySelector('.fitness-kpi').textContent).toContain('44');
+  expect(card.textContent).toContain('▲ 120 %');
+  expect(card.textContent).toContain('+24 Punkte im letzten Jahr');
+  expect(card.textContent).toContain('15 Einheiten ausgewertet, 2 ohne ausreichende');
+  await click('2 Jahre');
+  expect(card.textContent).toContain('▲ 340 %');
+  expect(card.textContent).toContain('+34 Punkte in den letzten 2 Jahren');
+  const chart = card.querySelector('svg[aria-label="Fitness pro Tag"]');
+  await act(async () => Simulate.keyDown(chart, { key: 'End' }));
+  expect(card.querySelector('.analysis-chart-caption').textContent).toContain('Fitness 44');
+  await act(async () => Simulate.keyDown(chart, { key: 'ArrowLeft' }));
+  expect(card.querySelector('.analysis-chart-caption').textContent).toContain('Fitness 30');
+});
+
+test('fitness asks for heart rate or FTP before it can be calculated', async () => {
+  data.settings = { ftp: null, maxHr: null };
+  data.fitness = { value: null, days: [], activities: { power: 0, hr: 0, missing: 3 } };
+  await render();
+  expect(host.querySelector('section[aria-label="Fitness"]').textContent).toContain('HFmax oder FTP hinterlegen');
 });

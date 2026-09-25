@@ -3,6 +3,11 @@
 Power TSS uses duration(hours) * (NP/FTP)^2 * 100. NP is the fourth root
 of the mean fourth power of complete 30-second rolling averages (1 Hz).
 See https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power
+
+Fitness is the chronic training load (CTL): an exponentially weighted
+42-day average of the daily load, i.e. ctl += (load - ctl) / 42 per day.
+The load is power TSS for rides, otherwise heart-rate TSS relative to an
+estimated threshold of 90 % HFmax, so every sport contributes.
 """
 import math
 from bisect import bisect_left
@@ -12,6 +17,9 @@ from datetime import datetime, timedelta, timezone
 VERSION = 2
 POWER_LIMITS = [.55, .75, .90, 1.05, 1.20, 1.50]
 HR_LIMITS = [.60, .70, .80, .90]
+FITNESS_DAYS = 42
+FITNESS_HISTORY = 730
+THRESHOLD_HR = .90
 
 
 def valid(value):
@@ -202,3 +210,50 @@ def aggregate(rows, year, zone, ftp=None, max_hr=None, sport='all', today=None):
             'settings': {'ftp': ftp, 'maxHr': max_hr}, 'totals': finish(total),
             'sportShare': [finish(row) for row in share.values()],
             'cyclingYears': [finish(annual[y]) for y in sorted(annual)], 'weeks': list(weeks.values())}
+
+
+def hr_load(row, max_hr):
+    """Heart-rate TSS: hours at (HR / threshold HR)^2 * 100, scaled to the session duration."""
+    duration, hr = row.get('seconds'), row['hr']
+    if not max_hr or not valid(duration) or not duration or hr['seconds'] < duration / 2:
+        return None
+    threshold = max_hr * THRESHOLD_HR
+    intensity = sum(seconds * (float(value) / threshold) ** 2 for value, seconds in hr['histogram'].items()) / hr['seconds']
+    return duration / 3600 * intensity * 100
+
+
+def training_load(row, ftp, max_hr):
+    if ftp and valid(row.get('tssFactor')):
+        return row['tssFactor'] / ftp ** 2, 'power'
+    load = hr_load(row, max_hr)
+    return (load, 'hr') if load is not None else (None, None)
+
+
+def fitness(rows, zone, ftp=None, max_hr=None, today=None):
+    """Daily fitness over all sports for the last two years, independent of dashboard filters."""
+    today = today or datetime.now(zone).date()
+    loads = defaultdict(float)
+    counted = {'power': 0, 'hr': 0, 'missing': 0}
+    for row in rows:
+        parsed = utc(row['date'])
+        day = (parsed.astimezone(zone) if row['utc'] else parsed.replace(tzinfo=zone)).date()
+        if day > today:
+            continue
+        load, source = training_load(row, ftp, max_hr)
+        counted[source or 'missing'] += 1
+        if load is not None:
+            loads[day] += load
+    result = {'value': None, 'days': [], 'window': FITNESS_DAYS, 'thresholdHr': round(max_hr * THRESHOLD_HR) if max_hr else None,
+              'activities': counted}
+    if not loads:
+        return result
+    ctl = 0.0
+    first = today - timedelta(days=FITNESS_HISTORY - 1)
+    day = min(min(loads), first)
+    while day <= today:
+        ctl += (loads.get(day, 0) - ctl) / FITNESS_DAYS
+        if day >= first:
+            result['days'].append({'key': day.isoformat(), 'value': round(ctl, 1), 'load': round(loads.get(day, 0), 1)})
+        day += timedelta(days=1)
+    result['value'] = round(ctl, 1)
+    return result

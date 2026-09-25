@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import BestEfforts from './BestEfforts';
 import './Dashboard.css';
 
@@ -114,6 +114,82 @@ function ZoneCard({ type, weeks, threshold, onSettings, year }) {
   </Card>;
 }
 
+const FITNESS_RANGES = [['30', '1 Monat', 'im letzten Monat'], ['91', '3 Monate', 'in den letzten 3 Monaten'], ['182', '6 Monate', 'in den letzten 6 Monaten'], ['365', '1 Jahr', 'im letzten Jahr'], ['730', '2 Jahre', 'in den letzten 2 Jahren']];
+const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+const fullDate = key => new Date(`${key}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+
+export function FitnessChart({ days }) {
+  const [hover, setHover] = useState(null);
+  const [width, setWidth] = useState(600);
+  const frame = useRef(null);
+  useEffect(() => {
+    // Measure the real width so labels keep their size on phones and wide screens.
+    if (!frame.current || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(280, Math.round(entry.contentRect.width))));
+    observer.observe(frame.current);
+    return () => observer.disconnect();
+  }, []);
+  const right = width - 10;
+  const maximum = Math.max(10, ...days.map(day => day.value)) * 1.15;
+  const step = Math.max(10, Math.ceil(maximum / 4 / 10) * 10);
+  const x = index => 57 + (days.length > 1 ? index / (days.length - 1) : .5) * (right - 57);
+  const y = value => 176 - value / maximum * 140;
+  const line = days.map((day, index) => `${index ? 'L' : 'M'}${x(index).toFixed(1)} ${y(day.value).toFixed(1)}`).join(' ');
+  const months = days.map((day, index) => [day, index]).filter(([day, index]) => index && day.key.endsWith('-01') && x(index) < right - 45);
+  const stride = Math.ceil(months.length / Math.max(2, Math.floor(width / 90)));
+  const index = hover == null ? null : Math.min(hover, days.length - 1);
+  const active = index == null ? null : days[index];
+  const describe = day => `${fullDate(day.key)}: Fitness ${number(day.value, 1)} · Tagesbelastung ${number(day.load)}`;
+  const pick = event => {
+    const box = event.currentTarget.getBoundingClientRect();
+    const position = ((event.clientX - box.left) / box.width * width - 57) / (right - 57);
+    setHover(Math.max(0, Math.min(days.length - 1, Math.round(position * (days.length - 1)))));
+  };
+  const keys = event => {
+    const moves = { ArrowLeft: -1, ArrowRight: 1, Home: -days.length, End: days.length };
+    if (!(event.key in moves)) return;
+    event.preventDefault();
+    setHover(Math.max(0, Math.min(days.length - 1, (index ?? days.length - 1) + moves[event.key])));
+  };
+  const weekly = days.filter((_, index) => (days.length - 1 - index) % 7 === 0).reverse();
+  return <div className="analysis-chart fitness-chart" ref={frame}>
+    <svg viewBox={`0 0 ${width} 220`} role="img" aria-label="Fitness pro Tag" tabIndex="0" onMouseMove={pick} onClick={pick} onMouseLeave={() => setHover(null)} onKeyDown={keys} onBlur={() => setHover(null)}>
+      {Array.from({ length: Math.floor(maximum / step) + 1 }, (_, index) => index * step).map(value => <g key={value}><line x1="57" x2={right} y1={y(value)} y2={y(value)} style={{ stroke: 'var(--bd-e8edf3)' }} strokeDasharray={value ? '3 4' : undefined} /><text x="48" y={y(value) + 4} textAnchor="end">{value}</text></g>)}
+      <path className="fitness-area" d={`${line} L${x(days.length - 1).toFixed(1)} 176 L${x(0).toFixed(1)} 176 Z`} />
+      <path className="fitness-line" d={line} />
+      {months.filter((_, index) => index % stride === 0).map(([day, index]) => <text key={day.key} x={x(index)} y="201" textAnchor="middle">{MONTHS[Number(day.key.slice(5, 7)) - 1]}</text>)}
+      <text x={right} y="201" textAnchor="end">Heute</text>
+      {active && <g className="fitness-marker"><line x1={x(index)} x2={x(index)} y1="28" y2="176" /><circle cx={x(index)} cy={y(active.value)} r="4" /></g>}
+    </svg>
+    <div className="analysis-chart-caption" aria-live="polite">{active ? describe(active) : 'Linie berühren oder mit den Pfeiltasten auswählen für genaue Werte.'}</div>
+    <details className="analysis-data"><summary>Werte als Tabelle</summary><div className="analysis-table-scroll"><table><caption>Fitness pro Woche (jeweils gleicher Wochentag wie heute)</caption><thead><tr><th>Tag</th><th>Fitness</th><th>Tagesbelastung</th></tr></thead><tbody>{weekly.map(day => <tr key={day.key}><th scope="row">{fullDate(day.key)}</th><td>{number(day.value, 1)}</td><td>{number(day.load)}</td></tr>)}</tbody></table></div></details>
+  </div>;
+}
+
+function FitnessCard({ fitness, settings, onSettings }) {
+  const [period, setPeriod] = useState('365');
+  const [, , phrase] = FITNESS_RANGES.find(([key]) => key === period);
+  const days = (fitness?.days || []).slice(-Number(period));
+  const current = fitness?.value;
+  const start = days[0]?.value;
+  const points = current != null && start != null ? current - start : null;
+  const percent = points != null && start > 0 ? points / start * 100 : null;
+  const trend = points == null || Math.abs(points) < .05 ? 'flat' : points > 0 ? 'up' : 'down';
+  const counted = fitness ? fitness.activities.power + fitness.activities.hr : 0;
+  return <Card title="Fitness" eyebrow="Alle Sportarten · Trainingsbelastung über 42 Tage" className="fitness-card" extra={current != null && <Toggle label="Zeitraum für Fitness" value={period} onChange={setPeriod} options={FITNESS_RANGES.map(([key, text]) => [key, text])} />}>
+    {!settings.ftp && !settings.maxHr ? <div className="analysis-setup-empty"><span>♥</span><p>Wie fit bist du gerade? Hinterlege deine HFmax oder FTP, damit aus deinen Einheiten ein Fitnesswert entsteht.</p><button type="button" onClick={onSettings}>HFmax oder FTP hinterlegen →</button></div>
+      : current == null ? <div className="analysis-empty">Noch keine Einheiten mit Puls- oder Leistungsdaten bis heute.</div>
+      : <>
+        <div className="fitness-kpi">
+          <div><span>Heute</span><strong>{number(current)}</strong></div>
+          <div className={`fitness-trend fitness-${trend}`}><strong aria-label={`Veränderung ${phrase}`}>{trend === 'up' ? '▲ ' : trend === 'down' ? '▼ ' : ''}{percent == null ? `${points > 0 ? '+' : ''}${number(points)} Punkte` : `${number(Math.abs(percent))} %`}</strong><span>{percent == null ? '' : `${points > 0 ? '+' : ''}${number(points)} Punkte `}{phrase}</span></div>
+        </div>
+        <FitnessChart days={days} />
+        <p className="analysis-note">Fitness ist dein über 42 Tage gewichteter Tagesdurchschnitt der Trainingsbelastung: Regelmäßiges Training lässt ihn steigen, Pausen senken ihn langsam. Belastung aus Leistung (TSS){settings.ftp ? ` mit FTP ${number(settings.ftp)} W` : ''}, sonst aus Puls{fitness.thresholdHr ? ` mit geschätzter Schwellen-HF ${number(fitness.thresholdHr)} bpm (90 % HFmax)` : ''}. {counted} Einheiten ausgewertet{fitness.activities.missing ? `, ${fitness.activities.missing} ohne ausreichende Puls- oder Leistungsdaten nicht berücksichtigt` : ''}.</p>
+      </>}
+  </Card>;
+}
+
 export default function Dashboard({ apiBase, activities, loading, onOpenActivity, onSettingsSaved }) {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [sport, setSport] = useState('all');
@@ -184,6 +260,7 @@ export default function Dashboard({ apiBase, activities, loading, onOpenActivity
         ['Distanz', `${number(data.totals.distance, 1)} km`, 'distance'],
         ['Höhenmeter', `${number(data.totals.elevation)} m`, 'elevation'],
       ].map(([label, value, key]) => <div key={key}><span>{label}</span><strong>{value}</strong><small>{scope} · {sportName}{key !== 'count' && data.totals.known[key] < data.totals.count ? ' · teilweise erfasst' : ''}</small></div>)}</div>
+      <FitnessCard fitness={data.fitness} settings={data.settings} onSettings={openSettings} />
       {!data.totals.count && <p className="analysis-empty-banner">Keine Aktivitäten für diese Auswahl. Wähle ein anderes Jahr oder importiere deine Trainingsdateien.</p>}
       <div className="analysis-overview-grid">
         <Card title="Dein Sportarten-Mix" eyebrow={`Zeitanteil · ${scope}`} extra={<span className="analysis-badge">alle Sportarten</span>}><SportShare rows={data.sportShare} /></Card>
@@ -213,7 +290,7 @@ export default function Dashboard({ apiBase, activities, loading, onOpenActivity
         <ZoneCard type="hr" weeks={weeks} year={year} threshold={data.settings.maxHr} onSettings={openSettings} />
         <ZoneCard type="power" weeks={weeks} year={year} threshold={data.settings.ftp} onSettings={openSettings} />
       </div>
-      <details className="analysis-method"><summary>So werden die Analysen berechnet</summary><p>Zeitanteile basieren auf der gespeicherten Trainingsdauer (bei FIT: Timerzeit). Multisport-Einheiten werden nach ihren Sportabschnitten aufgeteilt. Jahre und Wochen richten sich nach dem lokalen Startdatum; Wochen am Jahresrand enthalten nur Einheiten des gewählten Jahres.</p><p>Zonenzeiten entstehen aus dem Zeitabstand aufeinanderfolgender Messpunkte. Fehlende Werte, Lücken über 30 Sekunden und Sportwechsel werden nicht überbrückt. Zonenzeiten können deshalb kleiner als die Trainingsdauer sein. Die HF-Zonen verwenden ein einfaches Fünf-Zonen-Modell relativ zur HFmax.</p><p>TSS = Stunden × (normalisierte Leistung / FTP)² × 100. Die normalisierte Leistung basiert auf vollständigen 30-Sekunden-Fenstern. Historische Werte verwenden die aktuell hinterlegte FTP; kurze Aufzeichnungen sind weniger aussagekräftig. <a href="https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power" target="_blank" rel="noreferrer">Berechnungsgrundlage bei TrainingPeaks ↗</a></p><p>Ein Strich bedeutet fehlende Daten, 0 eine leere Trainingswoche oder einen aufgezeichneten Nullwert. Bei Teildaten wird nur die bekannte Summe angezeigt. Die Bestwerte haben zusätzlich eine eigene Sportarten- und Jahresauswahl.</p></details>
+      <details className="analysis-method"><summary>So werden die Analysen berechnet</summary><p>Zeitanteile basieren auf der gespeicherten Trainingsdauer (bei FIT: Timerzeit). Multisport-Einheiten werden nach ihren Sportabschnitten aufgeteilt. Jahre und Wochen richten sich nach dem lokalen Startdatum; Wochen am Jahresrand enthalten nur Einheiten des gewählten Jahres.</p><p>Zonenzeiten entstehen aus dem Zeitabstand aufeinanderfolgender Messpunkte. Fehlende Werte, Lücken über 30 Sekunden und Sportwechsel werden nicht überbrückt. Zonenzeiten können deshalb kleiner als die Trainingsdauer sein. Die HF-Zonen verwenden ein einfaches Fünf-Zonen-Modell relativ zur HFmax.</p><p>TSS = Stunden × (normalisierte Leistung / FTP)² × 100. Die normalisierte Leistung basiert auf vollständigen 30-Sekunden-Fenstern. Historische Werte verwenden die aktuell hinterlegte FTP; kurze Aufzeichnungen sind weniger aussagekräftig. <a href="https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power" target="_blank" rel="noreferrer">Berechnungsgrundlage bei TrainingPeaks ↗</a></p><p>Ein Strich bedeutet fehlende Daten, 0 eine leere Trainingswoche oder einen aufgezeichneten Nullwert. Bei Teildaten wird nur die bekannte Summe angezeigt. Die Bestwerte haben zusätzlich eine eigene Sportarten- und Jahresauswahl.</p><p>Fitness (chronische Trainingsbelastung, CTL) = Fitness von gestern + (Tagesbelastung − Fitness von gestern) / 42. Sie gilt für alle Sportarten und unabhängig von Zeitraum- und Sportartfilter. Die Tagesbelastung ist der Leistungs-TSS einer Rad-Einheit, sonst ein Puls-TSS: Stunden × (Puls / Schwellen-HF)² × 100, mit Schwellen-HF = 90 % der HFmax. Dafür muss der Puls mindestens die halbe Trainingsdauer abdecken.</p></details>
     </>}
   </div>;
 }
