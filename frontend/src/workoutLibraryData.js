@@ -10,15 +10,18 @@ export const libraryTags = {
   vo2max: { label: 'VO2max', terms: ['vo2', 'hit', 'hiit', 'maximal'] },
   threshold: { label: 'Schwelle', terms: ['threshold', 'treshold', 'ftp', 'lt2', 'schwellen'] },
   sweetspot: { label: 'Sweetspot', terms: ['sweet spot', 'ss'] },
-  overunder: { label: 'Over-Under', terms: ['over under', 'overunder', 'wechsel'] },
+  overunder: { label: 'Over-Under', terms: ['over under', 'over/under', 'overunder', 'wechsel'] },
   tempo: { label: 'Tempo', terms: ['z3', 'tempodauerlauf', 'fahrtspiel', 'fartlek'] },
   base: { label: 'Grundlage', terms: ['base', 'endurance', 'ga1', 'z2', 'zone 2', 'grundlagenausdauer', 'lit', 'locker'] },
   long: { label: 'Lang', terms: ['long', 'langer lauf', 'lange ausfahrt'] },
   recovery: { label: 'Regeneration', terms: ['recovery', 'reko', 'easy', 'erholung'] },
   micro: { label: 'Mikrointervalle', terms: ['micro', 'microbursts', 'ronnestad', 'rønnestad'] },
+  classic: { label: 'Klassische Intervalle', terms: ['klassisch', 'classic', 'konstant', 'steady'] },
+  progressive: { label: 'Progressiv', terms: ['progressive', 'progression', 'steigernd', 'negative split'] },
   variable: { label: 'Variable Intervalle', terms: ['variabel', 'variable', 'wechselnd'] },
   sprint: { label: 'Sprint', terms: ['neuromuskulär', 'strides', 'steigerungen', 'steigerungsläufe'] },
   anaerobic: { label: 'Anaerob', terms: ['anaerobic', 'sit', 'z6', 'laktat'] },
+  cadence: { label: 'Kadenz', terms: ['cadence', 'high cadence', 'trittfrequenz', 'rpm', 'hohe kadenz'] },
   strength: { label: 'Kraftausdauer', terms: ['k3', 'low cadence', 'kraft', 'berg', 'hill', 'hügel'] },
   race: { label: 'Rennvorbereitung', terms: ['opener', 'aktivierung', 'race', 'wettkampf', 'vorbelastung'] },
   test: { label: 'Test', terms: ['ftp-test', 'leistungstest', 'field test'] },
@@ -68,12 +71,45 @@ const microFamily = (key, familyTitle, work, rest, target, variants) => family(k
 
 // Classic intervals with a fixed easy recovery; the number of repetitions rises over the block.
 const classicFamily = (key, familyTitle, work, rest, target, counts, title = (n, name) => `${n} × ${clockText(work)} ${name}`) =>
-  family(key, 'ride', familyTitle, ['vo2max'], `${clockText(work)} bei ~${percent(target)} FTP, ${clockText(rest)} locker. Anzahl steigt über den Block.`,
+  family(key, 'ride', familyTitle, ['vo2max', 'classic'], `${clockText(work)} bei ~${percent(target)} FTP, ${clockText(rest)} locker. Anzahl steigt über den Block.`,
     counts.map((n, i) => [PHASES[i], title(n, 'VO2max'), [warm(), reps(n, step('interval', work, target, 'VO2max'), spin(rest)), cool()],
       `${libraryPhases[PHASES[i]].label} ${familyTitle}: ${n} × ${clockText(work)} bei ~${percent(target)} FTP, ${clockText(rest)} locker.`]));
 
+const targetText = target => Array.isArray(target) ? `${Math.round(target[0] * 100)}–${Math.round(target[1] * 100)} %` : `~${percent(target)}`;
+const STAIRS = { 5: 1.02, 10: 1, 15: 0.98, 20: 0.97, 25: 0.95 };
+
+// Single intervals of their own length and target, `rest` easy spinning between them.
+const ladder = (intervals, rest = min(5)) => intervals.flatMap(([minutes, target, name], index) =>
+  [step('interval', min(minutes), target, name), ...(index < intervals.length - 1 ? [spin(rest)] : [])]);
+
+// Fills `seconds` with a repeating [seconds, target, name] pattern; the last round is cut off where the time ends.
+function cycle(seconds, pattern) {
+  const round = pattern.reduce((sum, [length]) => sum + length, 0);
+  const rounds = Math.floor(seconds / round);
+  const steps = pattern.map(([length, target, name]) => step('interval', length, target, name));
+  let left = seconds - rounds * round;
+  const tail = pattern.flatMap(([length, target, name]) => {
+    const part = Math.min(length, left);
+    left -= part;
+    return part > 0 ? [step('interval', part, target, name)] : [];
+  });
+  return [...(rounds > 1 ? [reps(rounds, ...steps)] : rounds ? steps : []), ...tail];
+}
+
+// Steady threshold intervals, 5 min easy; `variants` are [count, minutes, target] for start, middle and end.
+const steadyFamily = (key, familyTitle, tags, note, variants, name = 'Schwelle') => family(key, 'ride', familyTitle, tags, note,
+  variants.map(([n, minutes, target], i) => [PHASES[i], `${n} × ${minutes} min ${name}`,
+    [warm(), reps(n, step('interval', min(minutes), target, name), spin(min(5))), cool()],
+    `${libraryPhases[PHASES[i]].label} ${familyTitle}: ${n} × ${minutes} min bei ${targetText(target)} FTP, 5 min locker.`]));
+
+// Intervals built from a repeating pattern (or `pattern(minutes)`), 5 min easy; `variants` are [count, minutes].
+const patternFamily = (key, familyTitle, tags, note, pattern, variants, name, detail) => family(key, 'ride', familyTitle, tags, note,
+  variants.map(([n, minutes], i) => [PHASES[i], `${n} × ${minutes} min ${name}`,
+    [warm(), ...series(n, cycle(min(minutes), typeof pattern === 'function' ? pattern(minutes) : pattern), spin(min(5)), 'Intervall'), cool()],
+    `${libraryPhases[PHASES[i]].label} ${familyTitle}: ${n} × ${minutes} min, ${detail}, 5 min locker.`]));
+
 const rideLibrary = [
-  ...family('ride-vo2-4', 'ride', 'VO2max 4 min', ['vo2max'], '4-min-Intervalle bei ~115 % FTP, 4 min locker. Umfang steigt über den Block.', [
+  ...family('ride-vo2-4', 'ride', 'VO2max 4 min', ['vo2max', 'classic'], '4-min-Intervalle bei ~115 % FTP, 4 min locker. Umfang steigt über den Block.', [
     ['start', '3 × 4 min VO2max', [warm(), reps(3, step('interval', min(4), 1.15, 'VO2max'), spin(min(4))), cool()],
       'Block-Start VO2max: 3 × 4 min bei ~115 % FTP. Gleichmäßig fahren, die letzte Wiederholung soll noch sauber gelingen.'],
     ['mid', '4 × 4 min VO2max', [warm(), reps(4, step('interval', min(4), 1.15, 'VO2max'), spin(min(4))), cool()],
@@ -120,22 +156,56 @@ const rideLibrary = [
     [4, 5, 6].map((n, i) => [PHASES[i], `${n} × 4 min Attack-VO2max`,
       [warm(), reps(n, step('interval', 15, 1.6, 'Attacke'), step('interval', 225, 1.12, 'Hart halten'), spin(min(4))), cool()],
       `${libraryPhases[PHASES[i]].label} Attack-VO2max: ${n} × 4 min, 15 s Attacke ~160 % FTP, dann 3:45 min ~112 % FTP, 4 min locker.`])),
-  ...family('ride-threshold', 'ride', 'Schwelle', ['threshold'], 'Lange Intervalle knapp unter FTP, 5 min locker. Zeit an der Schwelle steigt.', [
-    ['start', '3 × 10 min Schwelle', [warm(), reps(3, step('interval', min(10), 0.97, 'Schwelle'), spin(min(5))), cool()],
-      'Block-Start Schwelle: 3 × 10 min bei ~97 % FTP, 5 min locker dazwischen.'],
-    ['mid', '3 × 12 min Schwelle', [warm(), reps(3, step('interval', min(12), 0.98, 'Schwelle'), spin(min(5))), cool()],
-      'Block-Mitte Schwelle: 3 × 12 min bei ~98 % FTP, 5 min locker dazwischen.'],
-    ['end', '2 × 20 min Schwelle', [warm(), reps(2, step('interval', min(20), 0.97, 'Schwelle'), spin(min(5))), cool()],
-      'Block-Ende Schwelle: 2 × 20 min bei ~97 % FTP. Konstant bleiben, nicht mit zu viel Druck anfahren.'],
-  ]),
-  ...family('ride-overunder', 'ride', 'Over-Under', ['threshold', 'overunder'], 'Wechsel 2 min unter / 1 min über FTP in drei Serien, 5 min Serienpause.', [
-    ['start', '3 × 9 min Over-Under', [warm(), ...series(3, reps(3, step('interval', min(2), 0.95, 'Under'), step('interval', min(1), 1.08, 'Over')), spin(min(5), 'Serienpause')), cool()],
-      'Block-Start Over-Under: 3 Serien à 3 × (2 min ~95 % / 1 min ~108 % FTP), 5 min Serienpause.'],
-    ['mid', '3 × 12 min Over-Under', [warm(), ...series(3, reps(4, step('interval', min(2), 0.95, 'Under'), step('interval', min(1), 1.08, 'Over')), spin(min(5), 'Serienpause')), cool()],
-      'Block-Mitte Over-Under: 3 Serien à 4 × (2 min ~95 % / 1 min ~108 % FTP), 5 min Serienpause.'],
-    ['end', '3 × 15 min Over-Under', [warm(), ...series(3, reps(5, step('interval', min(2), 0.95, 'Under'), step('interval', min(1), 1.08, 'Over')), spin(min(5), 'Serienpause')), cool()],
-      'Block-Ende Over-Under: 3 Serien à 5 × (2 min ~95 % / 1 min ~108 % FTP), 5 min Serienpause.'],
-  ]),
+  ...steadyFamily('ride-threshold-10', 'Schwelle 10 min', ['threshold', 'classic'], 'Kurze Schwellenintervalle um ~100 % FTP, 5 min locker. Die Anzahl steigt über den Block.',
+    [[3, 10, 1], [4, 10, 1], [5, 10, 1]]),
+  ...steadyFamily('ride-threshold-12', 'Schwelle 12 min', ['threshold', 'classic'], 'Intervalle bei 98–100 % FTP, 5 min locker. Erst mehr Wiederholungen, dann längere Intervalle.',
+    [[3, 12, [0.98, 1]], [4, 12, [0.98, 1]], [4, 15, [0.98, 1]]]),
+  ...steadyFamily('ride-threshold-15', 'Schwelle 15 min', ['threshold', 'classic'], 'Längere Intervalle knapp um FTP, 5 min locker. Bei mehr Umfang etwas defensiver starten.',
+    [[2, 15, 1], [3, 15, [0.98, 1]], [4, 15, [0.95, 1]]]),
+  ...steadyFamily('ride-threshold-20', 'Schwelle 20 min', ['threshold', 'classic'], 'Klassische lange FTP-Intervalle bei 95–100 % FTP, 5 min locker. Am Ende länger statt mehr.',
+    [[2, 20, [0.95, 1]], [3, 20, [0.95, 1]], [2, 30, [0.95, 1]]]),
+  ...steadyFamily('ride-threshold-long', 'Schwelle lang', ['threshold', 'classic'], 'Sehr lange Intervalle bei 95–98 % FTP, 5 min locker. Gleichmäßig einteilen und verpflegen.',
+    [[2, 25, [0.95, 0.98]], [2, 30, [0.95, 0.98]], [3, 25, [0.95, 0.98]]]),
+  ...patternFamily('ride-overunder', 'Over-Under 2/1', ['threshold', 'variable', 'overunder'], 'Im Wechsel 2 min knapp unter / 1 min über FTP, 5 min locker.',
+    [[120, 0.95, 'Under'], [60, 1.05, 'Over']], [[3, 10], [3, 12], [3, 15]], 'Over-Under 2/1', '2 min ~95 % / 1 min ~105 % FTP im Wechsel'),
+  ...patternFamily('ride-overunder-31', 'Over-Under 3/1', ['threshold', 'overunder'], 'Kontrollierter: 3 min bei ~95 % / 1 min bei ~105 % FTP im Wechsel, 5 min locker.',
+    [[180, 0.95, 'Under'], [60, 1.05, 'Over']], [[3, 12], [3, 16], [3, 20]], 'Over-Under 3/1', '3 min ~95 % / 1 min ~105 % FTP im Wechsel'),
+  ...patternFamily('ride-overunder-hard', 'Over-Under aggressiv', ['threshold', 'overunder', 'race'], 'Stärkere Schwankungen: 1 min ~110 % / 2 min ~95 % FTP im Wechsel, 5 min locker. Wie im Rennen oder am Anstieg.',
+    [[60, 1.1, 'Over'], [120, 0.95, 'Under']], [[3, 9], [3, 12], [3, 15]], 'Over-Under aggressiv', '1 min ~110 % / 2 min ~95 % FTP im Wechsel'),
+  ...patternFamily('ride-threshold-waves', 'Schwellen-Waves', ['threshold', 'variable'], 'Langsame Leistungswellen: je 2 min bei ~95, ~100 und ~105 % FTP, 5 min locker.',
+    [[120, 0.95, 'Welle tief'], [120, 1, 'Welle mittel'], [120, 1.05, 'Welle hoch']], [[3, 12], [3, 15], [3, 20]], 'Schwellen-Waves', 'je 2 min ~95 / ~100 / ~105 % FTP in Wellen'),
+  ...patternFamily('ride-threshold-3030', 'Schwelle 30/30', ['threshold', 'variable'], 'Kontrollierte 30/30 rund um FTP: 30 s ~105 % / 30 s ~95 %, keine echte Erholung. 5 min locker.',
+    [[30, 1.05, 'Over'], [30, 0.95, 'Under']], [[3, 10], [3, 12], [3, 15]], 'Schwelle 30/30', '30 s ~105 % / 30 s ~95 % FTP im Wechsel'),
+  ...patternFamily('ride-threshold-21', 'Schwelle 2/1', ['threshold', 'variable'], '2 min bei 100–102 % / 1 min bei 90–95 % FTP, die Leistung fällt nie in den Erholungsbereich. 5 min locker.',
+    [[120, [1, 1.02], 'Schwelle'], [60, [0.9, 0.95], 'Etwas leichter']], [[3, 12], [3, 15], [3, 18]], 'Schwelle 2/1', '2 min 100–102 % / 1 min 90–95 % FTP im Wechsel'),
+  ...patternFamily('ride-threshold-progressive', 'Progressive Schwelle', ['threshold', 'progressive'], 'Jedes Intervall in drei gleich langen Stufen bei ~95, ~100 und ~105 % FTP, 5 min locker.',
+    minutes => [[minutes * 20, 0.95, 'Stufe 95 %'], [minutes * 20, 1, 'Stufe 100 %'], [minutes * 20, 1.05, 'Stufe 105 %']], [[3, 10], [3, 12], [3, 15]], 'progressiv', 'je Drittel ~95 → 100 → 105 % FTP'),
+  ...family('ride-threshold-negsplit', 'ride', 'Schwelle Negative Split', ['threshold', 'progressive'], 'Die Intervalle werden innerhalb der Einheit härter, 5 min locker.',
+    [[12, [0.95, 0.98, 1.01]], [15, [0.95, 1, 1.03]], [20, [0.95, 1, 1.03]]].map(([minutes, targets], i) => [PHASES[i], `3 × ${minutes} min Negative Split`,
+      [warm(), ...ladder(targets.map((target, index) => [minutes, target, `Intervall ${index + 1}`])), cool()],
+      `${libraryPhases[PHASES[i]].label} Negative Split: 3 × ${minutes} min bei ${targets.map(percent).join(' → ')} FTP, 5 min locker.`])),
+  ...family('ride-threshold-pyramid', 'ride', 'Schwellen-Pyramide', ['threshold', 'variable'], 'Schwellenintervalle als Pyramide bei ~97 % FTP, 5 min locker dazwischen.',
+    [[10, 15, 10], [10, 15, 20, 15, 10], [15, 20, 25, 20]].map((stairs, i) => [PHASES[i], `Schwellen-Pyramide ${stairs.join('-')}`,
+      [warm(), ...ladder(stairs.map(minutes => [minutes, 0.97, `${minutes} min`])), cool()],
+      `${libraryPhases[PHASES[i]].label} Pyramide ${stairs.join('-')} min bei ~97 % FTP, 5 min locker dazwischen.`])),
+  ...family('ride-threshold-51015', 'ride', 'Stufenpyramide 5-10-15', ['threshold', 'variable'], 'Kompakte Pyramide, Intensität nach Länge: 5 min ~102 %, 10 min ~100 %, 15 min ~98 %, 20 min ~97 %, 25 min ~95 % FTP.',
+    [[5, 10, 15, 10, 5], [10, 15, 20, 15, 10], [15, 20, 25, 20, 15]].map((stairs, i) => [PHASES[i], `Stufenpyramide ${stairs.join('-')}`,
+      [warm(), ...ladder(stairs.map(minutes => [minutes, STAIRS[minutes], `${minutes} min`])), cool()],
+      `${libraryPhases[PHASES[i]].label} Stufenpyramide ${stairs.join('-')} min bei 95–102 % FTP (kürzere Stufen härter), 5 min locker dazwischen.`])),
+  ...family('ride-threshold-broken', 'ride', 'Broken Threshold', ['threshold', 'variable'], 'Schwellenblöcke aus drei Abschnitten bei ~100 % FTP mit je 30 s locker, 5 min Pause zwischen den Blöcken.',
+    [[2, 5], [3, 5], [3, 6]].map(([n, minutes], i) => [PHASES[i], `${n} × (${minutes} + ${minutes} + ${minutes} min) Broken`,
+      [warm(), ...series(n, [reps(2, step('interval', min(minutes), 1, 'Schwelle'), spin(30, 'Kurz locker')), step('interval', min(minutes), 1, 'Schwelle')], spin(min(5)), 'Block'), cool()],
+      `${libraryPhases[PHASES[i]].label} Broken Threshold: ${n} Blöcke aus 3 × ${minutes} min bei ~100 % FTP mit 30 s locker, 5 min zwischen den Blöcken.`])),
+  ...patternFamily('ride-threshold-attack', 'Attack-Schwelle', ['threshold', 'race'], 'Jedes Intervall beginnt mit 15 s Attacke (130–150 % FTP), danach bei 95–100 % FTP weiter Druck fahren. 5 min locker.',
+    minutes => [[15, [1.3, 1.5], 'Attacke'], [minutes * 60 - 15, [0.95, 1], 'Schwelle halten']], [[3, 12], [3, 15], [3, 20]], 'Attack-Schwelle', '15 s Attacke 130–150 %, dann 95–100 % FTP'),
+  ...patternFamily('ride-threshold-finish', 'Schwelle mit Finish', ['threshold', 'race'], 'Schwellenintervall bei ~97 % FTP mit hartem Ende: letzte Minute ~115 % FTP. 5 min locker.',
+    minutes => [[min(minutes - 1), 0.97, 'Schwelle'], [60, 1.15, 'Finish']], [[2, 15], [3, 15], [3, 20]], 'Schwelle mit Finish', 'bei ~97 % FTP, letzte Minute ~115 %'),
+  ...steadyFamily('ride-threshold-lowcad', 'Schwelle niedrige Kadenz', ['threshold', 'strength'], 'Schwelle bei 95–100 % FTP mit 60–75 rpm, 5 min locker. Oberkörper ruhig halten.',
+    [[3, 10, [0.95, 1]], [3, 15, [0.95, 1]], [3, 20, [0.95, 1]]], 'Schwelle · 60–75 rpm'),
+  ...steadyFamily('ride-threshold-highcad', 'Schwelle hohe Kadenz', ['threshold', 'cadence'], 'Schwelle bei 95–100 % FTP mit 100–110 rpm, 5 min locker. Rund treten, nicht hüpfen.',
+    [[3, 10, [0.95, 1]], [3, 12, [0.95, 1]], [3, 15, [0.95, 1]]], 'Schwelle · 100–110 rpm'),
+  ...patternFamily('ride-threshold-cadwaves', 'Kadenz-Waves an der Schwelle', ['threshold', 'cadence', 'variable'], 'Leistung bleibt bei 95–100 % FTP, die Kadenz wechselt: 2 min 85 / 2 min 100 / 2 min 90 rpm. 5 min locker.',
+    [[120, [0.95, 1], '85 rpm'], [120, [0.95, 1], '100 rpm'], [120, [0.95, 1], '90 rpm']], [[3, 12], [3, 15], [3, 20]], 'Kadenz-Waves', 'bei 95–100 % FTP, Kadenz 85 / 100 / 90 rpm je 2 min'),
   ...family('ride-sweetspot', 'ride', 'Sweetspot', ['sweetspot'], 'Intervalle bei ~90 % FTP, 5 min locker. Intervalldauer steigt.', [
     ['start', '3 × 12 min Sweetspot', [warm(), reps(3, step('interval', min(12), 0.9, 'Sweetspot'), spin(min(5))), cool()],
       'Block-Start Sweetspot: 3 × 12 min bei ~90 % FTP, 5 min locker.'],
