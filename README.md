@@ -44,10 +44,11 @@ Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und
   </tr>
   <tr>
     <td><a href="docs/screenshots/workout-editor.png"><img src="docs/screenshots/workout-editor.png" alt="Workout-Editor mit Vorlagen und Leistungsprofil eines Intervall-Workouts"></a><br><b>Workout-Editor:</b> Vorlagen, Intervalle mit Watt-/Pace-/HF-Zielen und die Gesamtübersicht. Direkt als Garmin-FIT-Datei exportierbar.</td>
-    <td><a href="docs/screenshots/import.png"><img src="docs/screenshots/import.png" alt="Importdialog zum Ablegen von Dateien oder ganzen Ordnern"></a><br><b>Import:</b> einzelne Dateien oder einen ganzen Exportordner per Drag &amp; Drop übernehmen.</td>
+    <td><a href="docs/screenshots/workout-vorlagen.png"><img src="docs/screenshots/workout-vorlagen.png" alt="Vorlagen-Bibliothek mit 528 Beispiel-Einheiten, Filtern nach Trainingsart und Blockphase sowie VO2max-Progressionen"></a><br><b>Workout-Vorlagen:</b> über 500 Einheiten für Rad, Lauf und Schwimmen, filterbar nach Trainingsart und Blockphase. Progressionen zeigen Start, Mitte und Ende eines Trainingsblocks.</td>
   </tr>
   <tr>
-    <td colspan="2"><a href="docs/screenshots/ai-coach.png"><img src="docs/screenshots/ai-coach.png" alt="AI Coach mit Trainingsstunden der letzten Wochen und drei Einrichtungsschritten" width="70%"></a><br><b>AI Coach:</b> Überblick über die letzten Wochen und in drei Schritten zum ersten Trainingsblock (Athletenprofil, eigener API-Key, Block planen).</td>
+    <td><a href="docs/screenshots/import.png"><img src="docs/screenshots/import.png" alt="Importdialog zum Ablegen von Dateien oder ganzen Ordnern"></a><br><b>Import:</b> einzelne Dateien oder einen ganzen Exportordner per Drag &amp; Drop übernehmen.</td>
+    <td><a href="docs/screenshots/ai-coach.png"><img src="docs/screenshots/ai-coach.png" alt="AI Coach mit Trainingsstunden der letzten Wochen und drei Einrichtungsschritten"></a><br><b>AI Coach:</b> Überblick über die letzten Wochen und in drei Schritten zum ersten Trainingsblock (Athletenprofil, eigener API-Key, Block planen).</td>
   </tr>
 </table>
 
