@@ -1,7 +1,7 @@
 # Training Plēnum — Training Data Platform
 
-**Deine Trainingsdaten, vollständig, lokal und nachvollziehbar ausgewertet.**
-Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und Laufen, inspiriert von TrainingPeaks: FIT-Dateien importieren, Leistung analysieren, Workouts planen und direkt auf den Garmin bringen. Ohne Abo, ohne Cloud-Zwang, ohne Datenverlust.
+**Deine Trainingsdaten, lokal gespeichert und nachvollziehbar ausgewertet.**
+Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und Laufen. Importiere FIT-Dateien, analysiere Leistung, Puls und Pace, plane strukturierte Workouts (auf Wunsch KI-gestützt) und exportiere sie als FIT-Datei für deinen Garmin. Kein Abo, kein Cloud-Zwang, und die Daten gehören dir. Der optionale KI-Coach plant mit deinem eigenen OpenAI-Key ganze Trainingsblöcke passend zu Ziel und verfügbarer Zeit; übernommen wird nur, was du bestätigst, und deine Rohdaten verlassen nie den Rechner.
 
 ## Warum Training Plēnum?
 
