@@ -114,7 +114,7 @@ function ZoneCard({ type, weeks, threshold, onSettings, year }) {
   </Card>;
 }
 
-export default function Dashboard({ apiBase, activities, loading, onOpenActivity }) {
+export default function Dashboard({ apiBase, activities, loading, onOpenActivity, onSettingsSaved }) {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [sport, setSport] = useState('all');
   const [result, setResult] = useState(null);
@@ -156,6 +156,7 @@ export default function Dashboard({ apiBase, activities, loading, onOpenActivity
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Speichern fehlgeschlagen.');
       setSettingsOpen(false);
+      onSettingsSaved?.(payload);
       setSaveState({ message: 'Analysewerte gespeichert.' });
       setRetry(value => value + 1);
     } catch (error) { setSaveState({ error: error.message }); }
