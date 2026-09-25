@@ -15,6 +15,7 @@ afterEach(() => { act(() => root.unmount()); container.remove(); delete global.I
 const button = text => Array.from(container.querySelectorAll('button')).find(b => b.textContent.includes(text));
 const edit = (label, value) => act(() => Simulate.change(container.querySelector(`[aria-label="${label}"]`), { target: { value } }));
 const render = props => act(() => root.render(<WorkoutEditor apiBase="" date="2026-09-24" onClose={jest.fn()} onSaved={jest.fn()} onDeleted={jest.fn()} {...props} />));
+const longestInterval = spec => Math.max(0, ...spec.flatMap(item => item.repeat ? item.steps : [item]).filter(s => s.intensity === 'interval' && typeof s.duration === 'number').map(s => s.duration));
 const titles = () => Array.from(container.querySelectorAll('.library-card strong')).map(e => e.textContent);
 
 test('every library session is a valid, exportable workout for both athletes with and without settings', () => {
@@ -40,8 +41,10 @@ test('progressions offer start, middle and end of a block with increasing work',
   for (const phases of Object.values(families)) {
     expect(Object.keys(phases).sort()).toEqual(['end', 'mid', 'start']);
     const work = ['start', 'mid', 'end'].map(p => { const w = createLibraryWorkout(phases[p], '2026-09-24', { ftp: 250, maxHr: 190 }); const o = workoutOverview(w); return o.workTime + o.workDistance; });
-    expect(work[0]).toBeLessThan(work[1]);
-    expect(work[1]).toBeLessThan(work[2]);
+    const longest = ['start', 'mid', 'end'].map(p => longestInterval(phases[p].spec));
+    // Work rises, or stays equal while the intervals get longer (e.g. 3 × 20 → 2 × 30 min).
+    expect(work[0] < work[1] || (work[0] === work[1] && longest[0] < longest[1])).toBe(true);
+    expect(work[1] < work[2] || (work[1] === work[2] && longest[1] < longest[2])).toBe(true);
   }
   const vo2 = ['start', 'mid', 'end'].map(p => workoutLibrary.find(e => e.id === `ride-vo2-4-${p}`));
   expect(vo2.map(e => e.spec[1].repeat)).toEqual([3, 4, 6]);
@@ -60,6 +63,28 @@ test('3-series micro interval progressions and multi-part VO2max intervals keep 
   expect(hardStart.steps[1]).toMatchObject({ count: 4, steps: [{ duration: { value: 30 }, target: { low: 405 } }, { duration: { value: 210 }, target: { low: 335 } }, { intensity: 'recovery' }] });
 });
 
+test('threshold progressions fill each interval with their pattern', () => {
+  const entry = id => workoutLibrary.find(e => e.id === id);
+  const titles = key => ['start', 'mid', 'end'].map(p => entry(`${key}-${p}`).title);
+  expect(titles('ride-threshold-10')).toEqual(['3 × 10 min Schwelle', '4 × 10 min Schwelle', '5 × 10 min Schwelle']);
+  expect(titles('ride-threshold-20')).toEqual(['2 × 20 min Schwelle', '3 × 20 min Schwelle', '2 × 30 min Schwelle']);
+  expect(titles('ride-threshold-pyramid')).toEqual(['Schwellen-Pyramide 10-15-10', 'Schwellen-Pyramide 10-15-20-15-10', 'Schwellen-Pyramide 15-20-25-20']);
+  const workTime = id => workoutOverview(createLibraryWorkout(entry(id), '2026-09-24', { ftp: 300 })).workTime;
+  expect(workTime('ride-overunder-start')).toBe(3 * 10 * 60);
+  expect(workTime('ride-threshold-waves-mid')).toBe(3 * 15 * 60);
+  expect(workTime('ride-threshold-cadwaves-end')).toBe(3 * 20 * 60);
+  expect(workTime('ride-threshold-broken-end')).toBe(3 * 18 * 60);
+  const overUnder = createLibraryWorkout(entry('ride-overunder-start'), '2026-09-24', { ftp: 300 });
+  expect(overUnder.steps[1]).toMatchObject({ kind: 'repeat', count: 3, steps: [{ duration: { value: 120 }, target: { low: 285 } }, { duration: { value: 60 }, target: { low: 315 } }] });
+  expect(overUnder.steps[2]).toMatchObject({ duration: { value: 60 }, target: { low: 285 } });
+  const progressive = createLibraryWorkout(entry('ride-threshold-progressive-start'), '2026-09-24', { ftp: 300 });
+  expect(progressive.steps.slice(1, 4).map(s => [s.duration.value, s.target.low])).toEqual([[200, 285], [200, 300], [200, 315]]);
+  const attack = createLibraryWorkout(entry('ride-threshold-attack-end'), '2026-09-24', { ftp: 300 });
+  expect(attack.steps.slice(1, 3).map(s => [s.duration.value, s.target.low, s.target.high])).toEqual([[15, 390, 450], [1185, 285, 300]]);
+  const finish = createLibraryWorkout(entry('ride-threshold-finish-start'), '2026-09-24', { ftp: 300 });
+  expect(finish.steps.slice(1, 3).map(s => [s.duration.value, s.target.low])).toEqual([[840, 290], [60, 345]]);
+});
+
 test('targets scale with FTP and maximum heart rate', () => {
   const entry = workoutLibrary.find(e => e.id === 'ride-vo2-4-start');
   expect(createLibraryWorkout(entry, '2026-09-24', { ftp: 300 }).steps[1].steps[0].target).toEqual({ type: 'power', low: 345, high: 345 });
@@ -71,7 +96,9 @@ test('targets scale with FTP and maximum heart rate', () => {
 
 test('search matches German tags, English synonyms, block phases and compact interval notation', () => {
   const ids = query => searchLibrary({ query }).map(e => e.id);
-  expect(ids('threshold')).toContain('ride-threshold-start');
+  expect(ids('threshold')).toEqual(expect.arrayContaining(['ride-threshold-10-start', 'ride-threshold-waves-mid', 'ride-threshold-lowcad-end']));
+  expect(ids('low cadence threshold')).toEqual(['ride-threshold-lowcad-start', 'ride-threshold-lowcad-mid', 'ride-threshold-lowcad-end']);
+  expect(ids('over/under schwelle block-start')).toEqual(expect.arrayContaining(['ride-overunder-start', 'ride-overunder-31-start', 'ride-overunder-hard-start']));
   expect(ids('base')).toEqual(expect.arrayContaining(['ride-base-start', 'run-long-mid']));
   expect(ids('vo2max block-ende')).toEqual(expect.arrayContaining(['ride-vo2-4-end', 'run-vo2-1000-end']));
   expect(ids('vo2max block-ende')).not.toContain('ride-vo2-4-start');
