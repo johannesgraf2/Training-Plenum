@@ -574,3 +574,23 @@ test('deleting the season asks whether its blocks and workouts go too', async ()
   expect(container.textContent).toContain('Saisonplan und seine Trainingsblöcke gelöscht. 3 Workouts wurden aus dem Kalender entfernt.');
   expect(changed).toHaveBeenCalled();
 });
+
+test('a new tab request opens that tab without reloading the coach', async () => {
+  await render({ initialTab: 'plan', tabVersion: 0 });
+  await render({ initialTab: 'plan', tabVersion: 0 });
+  expect(button('Athletenprofil').getAttribute('aria-current')).toBeNull();
+  await render({ initialTab: 'profile', tabVersion: 1 });
+  expect(button('Athletenprofil').getAttribute('aria-current')).toBe('page');
+  expect(requests.filter(r => r.path === '/api/coach/plan')).toHaveLength(1);
+});
+
+test('the coach reports when it starts and finishes working', async () => {
+  const busyChanges = jest.fn();
+  let resolveProposal;
+  responses['POST /api/coach/proposals'] = () => new Promise(resolve => { resolveProposal = resolve; });
+  await render({ onBusyChange: busyChanges });
+  await startBlock();
+  expect(busyChanges).toHaveBeenLastCalledWith('Der Coach erstellt einen Vorschlag …');
+  await act(async () => resolveProposal({ ok: true, json: async () => blockProposal }));
+  expect(busyChanges).toHaveBeenLastCalledWith('');
+});
