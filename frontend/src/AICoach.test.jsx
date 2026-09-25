@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Simulate } from 'react-dom/test-utils';
-import AICoach, { endsWithRace, fitSeasonWeeks, isoWeek, weekStart } from './AICoach';
+import AICoach, { blockQuestions, designAnswers, endsWithRace, fitSeasonWeeks, isoWeek, weekStart, weeksToGoal } from './AICoach';
 
 const profile = {
   source: 'athlete', goal: { type: 'endurance', name: 'Fit bleiben' },
@@ -85,6 +85,10 @@ test('ISO week dates remain correct at year boundaries', () => {
   expect(weekStart('2026-W53')).toBe('2026-12-28');
   expect(isoWeek('2025-12-29')).toBe('2026-W01');
   expect(weekStart('2026-W01')).toBe('2025-12-29');
+  // 2027 starts on a Friday: every Thursday is a multiple of seven days into the year.
+  expect(isoWeek('2027-01-31')).toBe('2027-W04');
+  expect(isoWeek('2027-09-05')).toBe('2027-W35');
+  expect(weeksToGoal('2026-09-28', '2027-01-31')).toBe(18);
 });
 
 test('a proposal is human-readable and only saves after explicit confirmation', async () => {
@@ -268,7 +272,7 @@ test('a season plan is proposed, adjusted by swapping blocks and confirmed', asy
   await render();
   await change(inputFor('Wunsch für den Saisonplan (optional)'), 'Winter auf der Rolle');
   await click(button('Saisonplan vorschlagen lassen'));
-  expect(requests.find(r => r.path === '/api/coach/proposals').body).toEqual({ kind: 'season', instruction: 'Winter auf der Rolle' });
+  expect(requests.find(r => r.path === '/api/coach/proposals').body).toEqual({ kind: 'season', instruction: 'Winter auf der Rolle', startDate: '2026-09-28' });
   expect(container.textContent).toContain('Lange Saison.');
   expect(container.querySelectorAll('.coach-season-strip')).toHaveLength(2);
   await click(button('Anpassen'));
@@ -326,9 +330,51 @@ test('a saved season plan is edited within the rules and prefills the next block
   await click(button('Saisonplan speichern'));
   expect(requests.find(r => r.path === '/api/coach/season' && r.method === 'PUT').body.segments.map(item => [item.blockType, item.weeks, item.purpose]))
     .toEqual([['grundlage', 8, 'Grundlage-Zweck.'], ['vo2max', 6, ''], ['wettkampfspezifisch', 4, 'Wettkampfspezifisch-Zweck.']]);
-  await click(container.querySelector('.coach-season-next'));
+  // Without a block, the first season block is the next step and opens right away, without asking for type or start.
+  const card = container.querySelector('.coach-jump-card');
+  expect(card.querySelector('h2').textContent).toBe('Block 1 von 3: Grundlage · 8 Wochen');
+  expect(button('Schließen')).toBeUndefined();
+  expect(container.textContent).not.toContain('Neuen Trainingsblock starten');
+  expect(container.querySelector('button.coach-season-segment').getAttribute('aria-pressed')).toBe('true');
+  expect([...card.querySelectorAll('.coach-wizard-steps li')].map(li => li.textContent)).toEqual(['1Ausgangslage', '2Block gestalten', '3Vorschau']);
+  expect(card.textContent).toContain('Start laut Saisonplan: 28. Sept. 2026');
+  expect(card.querySelector('input[type="date"]')).toBeNull();
+  await click(radio('nach_pause'));
+  await click(button('Weiter'));
+  expect(choice('Schlag mir was vor')).toBeUndefined();
+  expect(card.textContent).toContain('Grundlage gestalten');
+  await click(radio('volume-ramp'));
+  await change(inputFor('Erste Woche (h)'), '4');
+  await click(radio('stimulus-sprints'));
   await click(button('Block ausarbeiten lassen'));
-  expect(requests.find(r => r.path === '/api/coach/proposals').body).toMatchObject({ kind: 'block', mode: 'choose', blockType: 'grundlage', weeks: 8, startDate: '2026-09-28' });
+  expect(requests.find(r => r.path === '/api/coach/proposals').body).toMatchObject({ kind: 'block', mode: 'choose', situation: 'nach_pause', blockType: 'grundlage', weeks: 8, startDate: '2026-09-28',
+    design: [{ question: 'Wie soll der Umfang verlaufen?', answer: 'In der ersten Woche mit 4 h beginnen und dann von Woche zu Woche steigern' },
+      { question: 'Welche Reize neben dem lockeren Fahren?', answer: 'Kurze Sprints in lockeren Fahrten einbauen' }] });
+});
+
+test('the season start is set in the season plan and moves the weeks to fill', async () => {
+  responses['GET /api/athlete-profile'] = async () => ({ ok: true, json: async () => seasonProfile });
+  initialPlan = { ...initialPlan, season };
+  responses['PUT /api/coach/season'] = async body => ({ ok: true, json: async () => ({ ...initialPlan, season: { ...season, startDate: body.startDate } }) });
+  await render();
+  expect(container.querySelector('.coach-season-range').textContent).toBe('Start 28. Sept. 2026 · Ziel 31. Jan. 2027 · 18 Wochen');
+  await click(button('Saisonplan bearbeiten'));
+  await change(inputFor('Saisonstart (Montag)'), '2026-10-14');
+  expect(inputFor('Saisonstart (Montag)').value).toBe('2026-10-12');
+  expect(container.textContent).toContain('18 von 16 Wochen verplant · 2 Wochen zu viel');
+  await change(container.querySelector('[aria-label="Block 1 Wochen"]'), '6');
+  await click(button('Saisonplan speichern'));
+  expect(requests.find(r => r.method === 'PUT').body).toMatchObject({ startDate: '2026-10-12' });
+});
+
+test('block questions fit the block type and only send what the athlete answered', () => {
+  const vo2 = blockQuestions('vo2max', profile);
+  expect(vo2.map(q => q.id)).toEqual(['volume', 'intervals']);
+  expect(vo2[0].options.find(o => o.id === 'ramp').input.value).toBe(5);
+  expect(designAnswers(vo2, { volume: { option: 'coach' }, intervals: { option: 'reps', value: '2' } }))
+    .toEqual([{ question: 'Wie steigst du in die VO2max-Intervalle ein?', answer: 'Mit 2 Wiederholungen VO2max-Intervallen (3–5 min) beginnen und dann steigern' }]);
+  expect(blockQuestions('taper', profile).map(q => q.id)).toEqual(['reduction']);
+  expect(designAnswers(blockQuestions('grundlage', profile), {})).toEqual([]);
 });
 
 test('an active block shows the current block week and German planning actions', async () => {
@@ -525,10 +571,18 @@ test('a season block without a plan is created from the season strip, in order',
   await click(segments[2]);
   expect(container.querySelector('.coach-jump-card').textContent).toContain('Als Nächstes kommt VO2max ab 23. Nov.');
   await click(button('Zu VO2max springen'));
-  expect(container.querySelector('.coach-jump-card h2').textContent).toBe('VO2max · 6 Wochen');
+  expect(container.querySelector('.coach-jump-card h2').textContent).toBe('Block 2 von 3: VO2max · 6 Wochen');
   expect(container.querySelectorAll('button.coach-season-segment')[1].getAttribute('aria-pressed')).toBe('true');
-  await click(container.querySelector('.coach-jump-card').querySelector('button.coach-primary'));
+  await click(button('Weiter'));
+  let resolveProposal;
+  responses['POST /api/coach/proposals'] = () => new Promise(resolve => { resolveProposal = resolve; });
+  await click(button('Block ausarbeiten lassen'));
   expect(requests.find(r => r.path === '/api/coach/proposals').body).toMatchObject({ kind: 'block', mode: 'choose', blockType: 'vo2max', weeks: 6, startDate: '2026-11-23' });
+  expect(requests.find(r => r.path === '/api/coach/proposals').body.design).toBeUndefined();
+  // While the coach works, the card says so right below the button, too.
+  expect(container.querySelector('.coach-jump-card .coach-generating').textContent).toContain('Der Coach arbeitet deinen Block aus');
+  await act(async () => resolveProposal({ ok: true, json: async () => blockProposal }));
+  expect(container.querySelector('.coach-generating')).toBeNull();
   // The proposal is shown only in the card that asked for it.
   expect(container.querySelectorAll('.coach-proposal-embedded')).toHaveLength(1);
   expect(container.querySelector('.coach-jump-card .coach-proposal-embedded')).not.toBeNull();
