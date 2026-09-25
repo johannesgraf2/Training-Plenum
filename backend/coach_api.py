@@ -22,10 +22,11 @@ from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, GROUPS, SECONDARY_
                           migrate_plan, new_block, place_block, public_blocks, rule_texts)
 from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
                           CHECK_IN_SCHEMA, apply_patch, complete_profile, day_date, effective_availability, iso_week,
-                          min_ride_minutes, num, obj, response_schemas, text, update_profile, validate, week_start)
+                          min_ride_minutes, num, obj, preferred_hours, response_schemas, rest_day_pairs, text,
+                          update_profile, validate, week_season, week_start)
 from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_order,
                           check_season, first_monday, new_season, public_season, season_frame, typical_season, with_fixed)
-from coach_templates import SESSION_SCHEMA, TemplateError, render_session, template_catalog
+from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, render_session, template_catalog
 
 
 CHECK_IN_KEYS = ('fatigue', 'motivation', 'stress', 'sleepQuality', 'soreness')
@@ -435,7 +436,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             if previous_session.get('locked') and next((s for s in value['sessions'] if s['id'] == identity), None) != previous_session:
                 raise CoachError('Eine gesperrte Einheit wurde verändert.')
         changed = [s for s in value['sessions'] if s != previous.get(s['id'])]
-        minimum = min_ride_minutes(current_profile)
+        sports = {*current_profile['goal']['sports'], 'strength', 'rest'}
+        if any(TEMPLATES[s['template']]['sport'] not in sports for s in changed):
+            raise CoachError('Der Vorschlag enthält eine Sportart, die nicht in deinem Profil steht.')
+        monday = week_start(value['week'])
+        minimum = min_ride_minutes(current_profile, monday)
         if minimum and any(s['template'] in GROUPS['ride'] - {'bike_recovery'} and s['rendered']['durationMin'] < minimum - 0.01
                            for s in changed):
             raise CoachError(f'Radeinheiten dauern mindestens {minimum} Minuten (außer Regeneration).')
@@ -446,6 +451,14 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             earlier = {s['day'] for s in previous.values() if s['template'] != 'rest'} | fixed_days
             if len(days) > days_limit and days - earlier:
                 raise CoachError(f'Höchstens {days_limit} Trainingstage pro Woche.')
+        if current_profile['availability']['noConsecutiveRestDays']:
+            fixed_days = {f['day'] for f in fixed}
+            today = datetime.now(zone()).date()
+            elapsed = [day for index, day in enumerate(DAYS) if monday + timedelta(days=index) < today]
+            pairs = lambda sessions: rest_day_pairs({s['day'] for s in sessions if s['template'] != 'rest'} | fixed_days, limits, elapsed)
+            # A week planned before the rule was set only fails for new gaps.
+            if pairs(value['sessions']) - (pairs(previous.values()) if previous else set()):
+                raise CoachError('Keine zwei Ruhetage hintereinander – so steht es in deinem Profil.')
         for day in DAYS:
             if used[day] > limits[day]['maxMinutes'] + 0.01:
                 raise CoachError(f'{day}: Die Einheiten überschreiten die verfügbare Zeit. Bestehende Einheiten werden mitgezählt.')
@@ -603,6 +616,10 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'Facts are calculated, preferences and symptoms are athlete-reported, your decisions are aiRecommendation. '
         'Missing metrics are unknown. Historical completed volume is not a medical capacity assessment. '
         'Choose periodization, recovery, progression and intensity based on history and goal. Respect absolute weekly maximum and daily minutes. '
+        'goal.type is event (a race or event on goal.date), performance (raise a capacity such as FTP) or fitness; goal.sports '
+        'are the sports the athlete trains. availability.outdoorMonths are the months the athlete trains outside: there '
+        'preferredWeeklyHours is the wished volume, in the other months indoorWeeklyHours (null means the same). Without '
+        'outdoorMonths preferredWeeklyHours applies all year. Plan block and season volumes along these seasonal wishes. '
         'Coaching principles: most volume is easy (LIT) around few focused hard sessions; progression means more time in the target '
         'zone (more reps, sets or longer intervals) rather than higher watts; choose intensity so the last repetition is still '
         'controlled; vary interval formats that serve the same aim; continue the progression chains from blockHistory week by week '
@@ -616,6 +633,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'Week task: available days and minutes are limits, not a request to train every day. Use at most '
         'trainingRules.trainingDaysPerWeek training days and prefer fewer, longer sessions in line with recentPattern. '
         'Every ride except bike_recovery lasts at least trainingRules.minRideMinutes (depends on indoor or outdoor season). '
+        'Plan only the sports in trainingRules.sports (plus strength). With trainingRules.noConsecutiveRestDays two '
+        'neighbouring days of the week are never both without training, unless neither has available time. '
         'Interval rides may set durationMin to embed the intervals in a longer easy ride. '
         'Block task: recommend mode returns 2-3 distinct options (blockType, optional secondaryFocus, length within the type limits), '
         'exactly one recommended; choose mode returns exactly one option with the chosen blockType, secondaryFocus and length and only '
@@ -756,13 +775,16 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                                              'rules': rule_texts(block['blockType'])},
                            blockWeek=block_week, currentPlan=compact_week(before),
                            availability=effective_availability(current_profile, week), fixedSessions=fixed_sessions(week, before),
-                           templates=template_catalog(), thresholds={'source': 'athlete', 'ftp': user().ftp, 'maxHr': user().max_hr},
+                           templates=[t for t in template_catalog()
+                                      if t['sport'] in (*current_profile['goal']['sports'], 'strength', 'rest')], thresholds={'source': 'athlete', 'ftp': user().ftp, 'maxHr': user().max_hr},
                            selfReported={key: current_profile[key] for key in ('goal', 'preferences', 'limitations', 'currentState')},
                            trainingRules={'source': 'athlete',
                                           'trainingDaysPerWeek': current_profile['availability']['trainingDaysPerWeek'],
-                                          'environment': current_profile['preferences']['trainingEnvironment'],
-                                          'minRideMinutes': min_ride_minutes(current_profile)},
-                           preferredWeeklyHours=current_profile['availability']['preferredWeeklyHours'],
+                                          'noConsecutiveRestDays': current_profile['availability']['noConsecutiveRestDays'],
+                                          'sports': current_profile['goal']['sports'],
+                                          'environment': week_season(current_profile, monday) or 'mixed',
+                                          'minRideMinutes': min_ride_minutes(current_profile, monday)},
+                           preferredWeeklyHours=preferred_hours(current_profile, monday),
                            absoluteMaxWeeklyHours=current_profile['availability']['absoluteMaxWeeklyHours'])
             context['selfReported']['checkIns'] = current_profile['checkIns'][-7:]
             context['selfReported']['weeklyNote'] = next((o['note'] for o in current_profile['weeklyOverrides'] if o['week'] == week), '')

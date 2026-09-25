@@ -5,14 +5,27 @@ import './AICoach.css';
 
 const DAYS = [['mon', 'Mo'], ['tue', 'Di'], ['wed', 'Mi'], ['thu', 'Do'], ['fri', 'Fr'], ['sat', 'Sa'], ['sun', 'So']];
 const PHASES = { base: 'Grundlage', build: 'Aufbau', peak: 'Höhepunkt', taper: 'Taper', recovery: 'Erholung' };
-export const GOALS = { cycling_event: 'Radsport-Event', ftp: 'FTP steigern', marathon: 'Marathon', endurance: 'Allgemeine Ausdauer', running_event: 'Laufziel' };
-// The backend default predates the German goal list; both mean the same goal.
-const GOAL_ALIASES = { general_endurance: 'endurance' };
-export const goalLabel = type => GOALS[GOAL_ALIASES[type] || type];
+export const GOALS = { event: 'Wettkampf / Event', performance: 'Leistung steigern', fitness: 'Allgemeine Ausdauer' };
+const GOAL_HINTS = { event: 'Ein Rennen, Marathon oder Event an einem festen Tag.', performance: 'Zum Beispiel FTP, Pace oder Schwelle verbessern.', fitness: 'Regelmäßig und gesund trainieren, ohne festen Termin.' };
+const GOAL_PLACEHOLDERS = { event: 'z. B. Ötztaler Radmarathon', performance: 'z. B. FTP auf 300 W', fitness: 'z. B. fit durch den Winter' };
+// Goal types of earlier profiles, before the goal became sport-neutral.
+const GOAL_ALIASES = { cycling_event: 'event', running_event: 'event', marathon: 'event', ftp: 'performance', endurance: 'fitness', general_endurance: 'fitness' };
+const EVENT_LABELS = { ride: 'Radsport-Event', run: 'Laufwettkampf', swim: 'Schwimmwettkampf' };
+const LEGACY_SPORTS = { cycling_event: ['ride'], running_event: ['run'], marathon: ['run'] };
+// An event is named after its sport, so the goal reads "Radsport-Event" or "Triathlon".
+export function goalLabel(type, sports) {
+  const key = GOAL_ALIASES[type] || type;
+  const chosen = sports?.length ? sports : LEGACY_SPORTS[type] || [];
+  if (key !== 'event') return GOALS[key];
+  return chosen.length === 3 ? 'Triathlon' : chosen.length === 1 ? EVENT_LABELS[chosen[0]] : 'Wettkampf';
+}
+const SPORTS = [['ride', 'Radfahren'], ['run', 'Laufen'], ['swim', 'Schwimmen']];
+const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+// Time a normal day can hold: quarter hours up to 3 h, then half hours.
+const DAY_MINUTES = [...Array.from({ length: 11 }, (_, i) => 30 + i * 15), ...Array.from({ length: 10 }, (_, i) => 210 + i * 30)];
 const PROPOSAL_TITLES = { block: 'Trainingsblock wählen', week: 'Wochenplan prüfen', patch: 'Wochenänderungen prüfen' };
 const SITUATIONS = { nach_pause: 'Nach einer Pause', mitten_im_training: 'Mitten im Training', saison_vorbei: 'Saison vorbei' };
 const SITUATION_HINTS = { nach_pause: 'Du steigst nach Krankheit, Urlaub oder Pause wieder ein.', mitten_im_training: 'Du trainierst regelmäßig und willst gezielt weiter.', saison_vorbei: 'Der Höhepunkt liegt hinter dir, Erholung steht an.' };
-const ENVIRONMENTS = { indoor: 'Winter – Rolle', outdoor: 'Sommer – draußen', mixed: 'Gemischt' };
 const WIZARD_STEPS = ['Ausgangslage', 'Weg', 'Auswahl', 'Vorschau'];
 const SEASON_WIZARD_STEPS = ['Ausgangslage', 'Block gestalten', 'Vorschau'];
 const EMPTY_WORKOUTS = [];
@@ -90,20 +103,66 @@ export function missingSetup(profile) {
 }
 
 function blankProfile(data = {}) {
-  const goal = { type: 'endurance', name: '', date: null, target: null, ...data.goal };
+  const goal = { type: 'fitness', sports: ['ride'], name: '', date: null, target: null, ...data.goal };
   return {
     ...data,
     goal: { ...goal, type: GOAL_ALIASES[goal.type] || goal.type },
-    availability: { preferredWeeklyHours: null, absoluteMaxWeeklyHours: null, trainingDaysPerWeek: null, ...data.availability,
+    availability: { preferredWeeklyHours: null, indoorWeeklyHours: null, absoluteMaxWeeklyHours: null, outdoorMonths: [], trainingDaysPerWeek: null, noConsecutiveRestDays: false, ...data.availability,
       minRideMinutes: { indoor: null, outdoor: null, ...data.availability?.minRideMinutes },
       defaultAvailability: Object.fromEntries(DAYS.map(([day]) => [day, data.availability?.defaultAvailability?.[day] ?? null])) },
-    preferences: { preferredRestDay: null, preferredLongSessionDay: null, indoorPreference: 'neutral', outdoorPreference: 'neutral', gymAvailability: false, trainingEnvironment: 'mixed', ...data.preferences },
+    preferences: { preferredRestDay: null, preferredLongSessionDay: null, gymAvailability: false, ...data.preferences },
     limitations: { notes: '', ...data.limitations }, currentState: { notes: '', ...data.currentState },
   };
 }
 
+// "Apr–Okt" or "Nov–Mär, Jul"; a run may reach over the new year.
+export function monthSpans(months) {
+  const chosen = new Set(months);
+  if (chosen.size === 12) return 'ganzjährig';
+  const gap = MONTHS.findIndex((_, index) => !chosen.has(index + 1)) + 1;
+  const runs = [];
+  let run = null;
+  for (let step = 1; step <= 12; step += 1) {
+    const month = (gap - 1 + step) % 12 + 1;
+    if (!chosen.has(month)) run = null;
+    else if (run) run[1] = month;
+    else runs.push(run = [month, month]);
+  }
+  return runs.map(([from, to]) => from === to ? MONTHS[from - 1] : `${MONTHS[from - 1]}–${MONTHS[to - 1]}`).join(', ');
+}
+
+// The wished volume in the season of the given month; the indoor months may have their own.
+function seasonHours(availability, month) {
+  const { outdoorMonths: months = [], preferredWeeklyHours: outdoor, indoorWeeklyHours: indoor } = availability;
+  return months.length && !months.includes(month) && indoor != null ? indoor : outdoor;
+}
+
+const minutesLabel = minutes => minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}${minutes % 60 ? `:${String(minutes % 60).padStart(2, '0')}` : ''} h`;
+
 function Field({ label, children, hint }) {
   return <label className="coach-field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
+}
+
+// Buttons that switch on and off, such as sports or months.
+function Toggles({ label, items, isOn, onToggle, className = '' }) {
+  return <div className={`coach-toggles ${className}`} role="group" aria-label={label}>{items.map(([key, name]) =>
+    <button type="button" key={key} className="coach-toggle" aria-pressed={isOn(key)} onClick={() => onToggle(key)}>{name}</button>)}</div>;
+}
+
+// Weekly volume and shortest ride per season: outdoor months, the rest indoors, or one value for the whole year.
+function SeasonVolume({ availability, rides, onEdit }) {
+  const months = availability.outdoorMonths;
+  const indoorMonths = MONTHS.map((_, index) => index + 1).filter(month => !months.includes(month));
+  const seasons = !months.length ? [{ key: 'preferredWeeklyHours', title: 'Das ganze Jahr', hours: 'Gewünschter Umfang (h/Woche)', places: ['indoor', 'outdoor'], ride: 'Mindestdauer Radeinheit (min)' }]
+    : [{ key: 'preferredWeeklyHours', title: `Draußen · ${monthSpans(months)}`, hours: 'Umfang draußen (h/Woche)', places: ['outdoor'], ride: 'Mindestdauer Radeinheit draußen (min)' },
+      ...(indoorMonths.length ? [{ key: 'indoorWeeklyHours', title: `Drinnen · ${monthSpans(indoorMonths)}`, hours: 'Umfang drinnen (h/Woche)', places: ['indoor'], ride: 'Mindestdauer Radeinheit drinnen (min)', hint: 'Leer = wie draußen.' }] : [])];
+  // Without seasons one minimum applies to every ride, so it sets both.
+  const shortest = places => { const values = places.map(place => availability.minRideMinutes[place]).filter(value => value != null); return values.length ? Math.min(...values) : ''; };
+  return <div className={`coach-season-volume ${seasons.length > 1 ? 'two' : ''}`}>{seasons.map(season => <div key={season.key}>
+    <h4>{season.title}</h4>
+    <Field label={season.hours} hint={season.hint}><input type="number" min="0" max="60" step="0.5" placeholder={season.hint ? availability.preferredWeeklyHours ?? '' : undefined} value={availability[season.key] ?? ''} onChange={e => onEdit(season.key, number(e.target.value))} /></Field>
+    {rides && <Field label={season.ride} hint="Gilt nicht für Regenerationsfahrten. Leer = keine Vorgabe."><input type="number" min="0" max="600" step="5" value={shortest(season.places)} onChange={e => onEdit('minRideMinutes', { ...availability.minRideMinutes, ...Object.fromEntries(season.places.map(place => [place, number(e.target.value)])) })} /></Field>}
+  </div>)}</div>;
 }
 
 // Live sum of the normal week, plus a note when the wish is far from what was trained recently.
@@ -111,15 +170,20 @@ function WeekSummary({ availability, recentWeeklyHours }) {
   const days = DAYS.map(([day, label]) => [label, availability.defaultAvailability[day]]);
   const open = days.filter(([, minutes]) => minutes == null).map(([label]) => label);
   const available = days.reduce((sum, [, minutes]) => sum + (minutes || 0), 0) / 60;
-  const { preferredWeeklyHours: preferred, absoluteMaxWeeklyHours: maximum } = availability;
+  const { preferredWeeklyHours: outdoor, absoluteMaxWeeklyHours: maximum, outdoorMonths: months } = availability;
+  const split = months.length > 0 && months.length < 12;
+  const indoor = split ? availability.indoorWeeklyHours ?? outdoor : outdoor;
+  const preferred = seasonHours(availability, Number(localDate().slice(5, 7)));
+  const highest = Math.max(outdoor ?? 0, indoor ?? 0);
   const notes = [];
-  if (!open.length && preferred != null && preferred > available + 1e-9) notes.push('Dein Wunschumfang liegt über der Zeit, die du an den einzelnen Tagen angegeben hast. Der Coach plant höchstens die verfügbare Zeit.');
+  if (!open.length && highest > available + 1e-9) notes.push('Dein Wunschumfang liegt über der Zeit, die du an den einzelnen Tagen angegeben hast. Der Coach plant höchstens die verfügbare Zeit.');
   if (recentWeeklyHours != null && preferred) {
     const difference = recentWeeklyHours - preferred;
-    if (Math.abs(difference) >= Math.max(1.5, preferred * 0.3)) notes.push(`In den letzten 4 Wochen hast du im Schnitt ${hours(recentWeeklyHours)} pro Woche trainiert. Dein Wunsch von ${hours(preferred)} liegt deutlich ${difference < 0 ? 'darüber. Plane einen schrittweisen Aufbau ein; der Coach berücksichtigt deinen zuletzt trainierten Umfang.' : 'darunter. Das passt, wenn du bewusst kürzertreten willst.'}`);
+    if (Math.abs(difference) >= Math.max(1.5, preferred * 0.3)) notes.push(`In den letzten 4 Wochen hast du im Schnitt ${hours(recentWeeklyHours)} pro Woche trainiert. Dein Wunsch${split ? ' für diese Jahreszeit' : ''} von ${hours(preferred)} liegt deutlich ${difference < 0 ? 'darüber. Plane einen schrittweisen Aufbau ein; der Coach berücksichtigt deinen zuletzt trainierten Umfang.' : 'darunter. Das passt, wenn du bewusst kürzertreten willst.'}`);
   }
+  const wish = value => value == null ? 'offen' : hours(value);
   return <div className="coach-week-summary" aria-live="polite">
-    <strong>{hours(available)} verfügbar{open.length ? ` (${open.join(', ')} offen)` : ''} · Wunsch {preferred == null ? 'offen' : hours(preferred)} · Obergrenze {maximum == null ? 'offen' : hours(maximum)}</strong>
+    <strong>{hours(available)} verfügbar{open.length ? ` (${open.join(', ')} offen)` : ''} · Wunsch {split ? `draußen ${wish(outdoor)}, drinnen ${wish(indoor)}` : wish(outdoor)} · Obergrenze {wish(maximum)}</strong>
     {notes.map(note => <p key={note}>{note}</p>)}
   </div>;
 }
@@ -139,7 +203,7 @@ function SeasonGoal({ goal }) {
   if (!goal?.date) return null;
   const days = daysBetween(localDate(), goal.date);
   if (days < 0) return null;
-  const name = goal.name?.trim() || goalLabel(goal.type) || 'dein Ziel';
+  const name = goal.name?.trim() || goalLabel(goal.type, goal.sports) || 'dein Ziel';
   const left = days < 7 ? (days === 1 ? 'Noch 1 Tag' : `Noch ${days} Tage`) : `Noch ${Math.floor(days / 7)} ${Math.floor(days / 7) === 1 ? 'Woche' : 'Wochen'}`;
   return <p className="coach-season"><strong>{left}</strong> bis {name} · {dateLabel(goal.date)}</p>;
 }
@@ -762,8 +826,20 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
     if (priorWorkouts.current !== workouts) { priorWorkouts.current = workouts; contextVersion.current += 1; setProposal(null); setFeedback(null); }
   }, [workouts]);
 
+  // A function as value derives the new value from the current one, so quick clicks do not overwrite each other.
   function editProfile(section, key, value) {
-    invalidate('profile'); setProfile(p => ({ ...p, [section]: { ...p[section], [key]: value } }));
+    invalidate('profile'); setProfile(p => ({ ...p, [section]: { ...p[section], [key]: typeof value === 'function' ? value(p[section][key]) : value } }));
+  }
+  function toggleSport(sport) {
+    const all = SPORTS.map(([key]) => key);
+    editProfile('goal', 'sports', sports => {
+      const next = sport === 'tri' ? (all.every(key => sports.includes(key)) ? ['ride'] : all)
+        : all.filter(key => key === sport ? !sports.includes(key) : sports.includes(key));
+      return next.length ? next : sports;  // At least one sport stays chosen.
+    });
+  }
+  function toggleMonth(month) {
+    editProfile('availability', 'outdoorMonths', months => months.includes(month) ? months.filter(m => m !== month) : [...months, month].sort((a, b) => a - b));
   }
   function editWeekly(day, patch) {
     invalidate('weekly'); setWeekly(w => ({ ...w, overrides: { ...w.overrides, [day]: { ...w.overrides[day], ...patch } } }));
@@ -949,6 +1025,15 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
     }
   }
   const openWeeks = stage === 'active' ? openBlockWeeks(block, plan.weeks, today) : [];
+  // Step through the weeks of the shown block; a weekly draft has to be saved first.
+  function goToWeek(key) {
+    if (dirty.weekly) { setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); return; }
+    if (key === week) return;
+    invalidate(); setFeedback(null); setWeek(key);
+  }
+  const inRange = key => !!range && weekStart(key) >= weekStart(isoWeek(range.start)) && weekStart(key) <= range.end;
+  const previousWeek = range && inRange(isoWeek(addDays(weekStart(week), -7))) ? isoWeek(addDays(weekStart(week), -7)) : null;
+  const followingWeek = range && inRange(isoWeek(addDays(weekStart(week), 7))) ? isoWeek(addDays(weekStart(week), 7)) : null;
   const blockWorkouts = weeksIn(block).flatMap(value => value.sessions || []).filter(session => session.rendered?.workout).length;
   async function toggleLock(identity, locked) {
     await run('Einheit wird aktualisiert …', async () => {
@@ -979,7 +1064,7 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
   // With a goal ahead the season plan comes first: a block is shaped only once the plan is set, fits the blocks
   // and is not being proposed anew or edited.
   const seasonFirst = stage !== 'setup' && goalAhead && (!season || !season.aligned || proposal?.kind === 'season' || seasonEditing);
-  const goalName = profile?.goal?.name?.trim() || goalLabel(profile?.goal?.type) || 'deinem Ziel';
+  const goalName = profile?.goal?.name?.trim() || goalLabel(profile?.goal?.type, profile?.goal?.sports) || 'deinem Ziel';
   const seasonWishField = <Field label="Wunsch für den Saisonplan (optional)" hint="z. B. „Im Winter vor allem Rolle, im Frühjahr ein Trainingslager“."><textarea maxLength={1500} value={seasonWish} onChange={e => { invalidate(); setSeasonWish(e.target.value); }} /></Field>;
   // Several wizards can be on screen; a block proposal shows in the one that asked for it.
   const wizardFor = (origin, extra = {}) => <BlockWizard key={origin} catalog={catalog} profile={profile} busy={!!busy} canPlan={canPlan} generating={proposing === 'block' && blockOrigin === origin} proposal={proposal?.kind === 'block' && blockOrigin === origin ? proposal : null}
@@ -1047,22 +1132,33 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
 
     {!loading && profile && tab === 'profile' && <form onSubmit={saveProfile} className="coach-card">
       <fieldset disabled={!!busy}><div className="coach-section-heading"><div><span className="coach-eyebrow">Selbstauskunft · Von dir</span><h2>Wofür trainierst du?</h2></div><span className="coach-badge athlete">Athlet</span></div>
-        <div className="coach-form-grid"><Field label="Zieltyp"><select value={profile.goal.type} onChange={e => editProfile('goal', 'type', e.target.value)}>{Object.entries(GOALS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}{!GOALS[profile.goal.type] && <option value={profile.goal.type}>{profile.goal.type}</option>}</select></Field>
-          <Field label="Ziel / Event"><input maxLength={200} value={profile.goal.name} onChange={e => editProfile('goal', 'name', e.target.value)} placeholder="z. B. Ötztaler Radmarathon" /></Field>
-          <Field label="Zieldatum"><input type="date" value={profile.goal.date || ''} onChange={e => editProfile('goal', 'date', e.target.value || null)} /></Field>
-          <Field label="Konkretes Ziel (optional)"><input maxLength={300} value={profile.goal.target || ''} onChange={e => editProfile('goal', 'target', e.target.value || null)} placeholder="z. B. entspannt finishen" /></Field>
-          <Field label="Gewünschter Umfang (h/Woche)"><input type="number" min="0" max="60" step="0.5" value={profile.availability.preferredWeeklyHours ?? ''} onChange={e => editProfile('availability', 'preferredWeeklyHours', number(e.target.value))} /></Field>
-          <Field label="Absolutes Zeitmaximum (h/Woche)" hint="Dein zeitliches Limit für Ausnahmefälle."><input type="number" min={profile.availability.preferredWeeklyHours || 0} max="60" step="0.5" value={profile.availability.absoluteMaxWeeklyHours ?? ''} onChange={e => editProfile('availability', 'absoluteMaxWeeklyHours', number(e.target.value))} /></Field></div>
-        <h3>Deine normale Woche</h3><p className="coach-muted">Minuten pro Tag. 0 = keine Zeit, leer = noch offen.</p>
+        <h3>Welche Sportarten trainierst du?</h3>
+        <Toggles label="Sportarten" items={[...SPORTS, ['tri', 'Triathlon']]} isOn={key => key === 'tri' ? SPORTS.every(([sport]) => profile.goal.sports.includes(sport)) : profile.goal.sports.includes(key)} onToggle={toggleSport} />
+        {profile.goal.sports.includes('swim') && <p className="coach-muted">Für Schwimmen hat der Coach noch keine Trainingsvorlagen. {profile.goal.sports.length > 1 ? 'Er plant vorerst deine anderen Sportarten.' : 'Wähle zusätzlich Radfahren oder Laufen, damit er planen kann.'}</p>}
+        <h3>Was ist dein Ziel?</h3>
+        <div className="coach-choice-grid" role="radiogroup" aria-label="Was ist dein Ziel?">{Object.entries(GOALS).map(([key, name]) => <label key={key} className={`coach-choice ${profile.goal.type === key ? 'selected' : ''}`}>
+          <input type="radio" name="goal-type" value={key} checked={profile.goal.type === key} onChange={() => editProfile('goal', 'type', key)} /><strong>{name}</strong><small>{GOAL_HINTS[key]}</small></label>)}</div>
+        <div className="coach-form-grid"><Field label="Ziel / Event"><input maxLength={200} value={profile.goal.name} onChange={e => editProfile('goal', 'name', e.target.value)} placeholder={GOAL_PLACEHOLDERS[profile.goal.type] || ''} /></Field>
+          <Field label="Zieldatum" hint={profile.goal.type === 'event' ? 'Der Tag des Events. Saisonplan und Wettkampfblöcke richten sich danach.' : 'Optional: bis wann du dein Ziel erreichen willst.'}><input type="date" value={profile.goal.date || ''} onChange={e => editProfile('goal', 'date', e.target.value || null)} /></Field>
+          <Field label="Konkretes Ziel (optional)"><input maxLength={300} value={profile.goal.target || ''} onChange={e => editProfile('goal', 'target', e.target.value || null)} placeholder="z. B. entspannt finishen" /></Field></div>
+
+        <h3>Wie viel willst du trainieren?</h3>
+        <p className="coach-muted">In welchen Monaten trainierst du draußen? Die übrigen Monate gelten als Wintermonate drinnen, etwa auf der Rolle oder dem Laufband. Ohne Auswahl gilt das ganze Jahr derselbe Umfang.</p>
+        <Toggles label="Monate draußen" className="months" items={MONTHS.map((name, index) => [index + 1, name])} isOn={month => profile.availability.outdoorMonths.includes(month)} onToggle={toggleMonth} />
+        <SeasonVolume availability={profile.availability} rides={profile.goal.sports.includes('ride')} onEdit={(key, value) => editProfile('availability', key, value)} />
+        <div className="coach-form-grid"><Field label="Absolutes Zeitmaximum (h/Woche)" hint="Dein zeitliches Limit für Ausnahmefälle, das ganze Jahr."><input type="number" min={Math.max(profile.availability.preferredWeeklyHours || 0, profile.availability.indoorWeeklyHours || 0)} max="60" step="0.5" value={profile.availability.absoluteMaxWeeklyHours ?? ''} onChange={e => editProfile('availability', 'absoluteMaxWeeklyHours', number(e.target.value))} /></Field>
+          <div><Field label="Trainingstage pro Woche" hint="So oft willst du im Schnitt trainieren. Leer = der Coach entscheidet."><input type="number" min="1" max="7" step="1" value={profile.availability.trainingDaysPerWeek ?? ''} onChange={e => editProfile('availability', 'trainingDaysPerWeek', number(e.target.value))} /></Field>
+            <label className="coach-checkbox"><input type="checkbox" checked={profile.availability.noConsecutiveRestDays} onChange={e => editProfile('availability', 'noConsecutiveRestDays', e.target.checked)} />Keine zwei Ruhetage hintereinander</label>
+            {profile.availability.noConsecutiveRestDays && profile.availability.trainingDaysPerWeek != null && profile.availability.trainingDaysPerWeek < 3 && <p className="coach-muted">Dafür braucht es mindestens 3 Trainingstage pro Woche.</p>}</div></div>
+
+        <h3>An welchen Tagen hast du wie viel Zeit?</h3>
+        <p className="coach-muted">Wähle für jeden Wochentag, wie lange du an einem normalen Tag höchstens trainieren kannst. „Keine Zeit“ heißt: an diesem Tag nie. Das ist dein Zeitrahmen – der Coach plant darin und nutzt nicht jeden Tag.</p>
         <WeekSummary availability={profile.availability} recentWeeklyHours={sourceValue(snapshot?.observed?.currentTraining?.last28Days?.trainingHours) == null ? null : sourceValue(snapshot.observed.currentTraining.last28Days.trainingHours) / 4} />
-        <div className="coach-day-inputs">{DAYS.map(([day, label]) => <Field key={day} label={label}><input aria-label={`${label} Standardverfügbarkeit in Minuten`} type="number" min="0" max="1440" step="5" value={profile.availability.defaultAvailability[day] ?? ''} onChange={e => editProfile('availability', 'defaultAvailability', { ...profile.availability.defaultAvailability, [day]: number(e.target.value) })} /></Field>)}</div>
-        <p className="coach-muted">Die Tage oben sind dein Zeitrahmen. Hier legst du fest, wie oft und wie lange du wirklich trainieren willst.</p>
-        <div className="coach-form-grid"><Field label="Trainingstage pro Woche" hint="Leer = keine Vorgabe."><input type="number" min="1" max="7" step="1" value={profile.availability.trainingDaysPerWeek ?? ''} onChange={e => editProfile('availability', 'trainingDaysPerWeek', number(e.target.value))} /></Field>
-          <Field label="Saison" hint="Bestimmt, welche Mindestdauer gilt."><select value={profile.preferences.trainingEnvironment} onChange={e => editProfile('preferences', 'trainingEnvironment', e.target.value)}>{Object.entries(ENVIRONMENTS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>
-          {[['indoor', 'Mindestdauer Rad auf der Rolle (min)'], ['outdoor', 'Mindestdauer Rad draußen (min)']].map(([place, label]) => <Field key={place} label={label} hint="Gilt nicht für Regenerationsfahrten. Leer = keine Vorgabe."><input type="number" min="0" max="600" step="5" value={profile.availability.minRideMinutes[place] ?? ''} onChange={e => editProfile('availability', 'minRideMinutes', { ...profile.availability.minRideMinutes, [place]: number(e.target.value) })} /></Field>)}</div>
-        <div className="coach-form-grid">{[['preferredRestDay', 'Bevorzugter Ruhetag'], ['preferredLongSessionDay', 'Tag für lange Einheiten']].map(([key, label]) => <Field key={key} label={label}><select value={profile.preferences[key] || ''} onChange={e => editProfile('preferences', key, e.target.value || null)}><option value="">Keine Präferenz</option>{DAYS.map(([day, name]) => <option value={day} key={day}>{name}</option>)}</select></Field>)}
-          {[['indoorPreference', 'Indoor'], ['outdoorPreference', 'Outdoor']].map(([key, label]) => <Field label={label} key={key}><select value={profile.preferences[key]} onChange={e => editProfile('preferences', key, e.target.value)}><option value="neutral">Neutral</option><option value="prefer">Bevorzugt</option><option value="avoid">Vermeiden</option></select></Field>)}
-        </div>
+        <div className="coach-day-inputs">{DAYS.map(([day, label]) => { const value = profile.availability.defaultAvailability[day]; return <Field key={day} label={label}><select aria-label={`${label} Standardverfügbarkeit`} value={value ?? ''} onChange={e => editProfile('availability', 'defaultAvailability', { ...profile.availability.defaultAvailability, [day]: number(e.target.value) })}>
+          <option value="">Offen</option><option value="0">Keine Zeit</option>{[...new Set([...DAY_MINUTES, value])].filter(minutes => minutes > 0).sort((a, b) => a - b).map(minutes => <option key={minutes} value={minutes}>{minutesLabel(minutes)}</option>)}</select></Field>; })}</div>
+        <div className="coach-form-grid">{[['preferredRestDay', 'Bevorzugter Ruhetag'], ['preferredLongSessionDay', 'Tag für lange Einheiten']].map(([key, label]) => <Field key={key} label={label}><select value={profile.preferences[key] || ''} onChange={e => editProfile('preferences', key, e.target.value || null)}><option value="">Keine Präferenz</option>{DAYS.map(([day, name]) => <option value={day} key={day}>{name}</option>)}</select></Field>)}</div>
+
+        <h3>Sonst noch wichtig</h3>
         <label className="coach-checkbox"><input type="checkbox" checked={profile.preferences.gymAvailability} onChange={e => editProfile('preferences', 'gymAvailability', e.target.checked)} />Fitnessstudio verfügbar</label>
         <div className="coach-form-grid"><Field label="Einschränkungen"><textarea maxLength={2000} value={profile.limitations.notes} onChange={e => editProfile('limitations', 'notes', e.target.value)} placeholder="Verletzungen, Einschränkungen oder Dinge, die berücksichtigt werden sollen" /></Field><Field label="Aktueller Zustand"><textarea maxLength={2000} value={profile.currentState.notes} onChange={e => editProfile('currentState', 'notes', e.target.value)} placeholder="Was sollte der Coach über deine aktuelle Situation wissen?" /></Field></div>
         <div className="coach-actions"><button className="coach-primary" type="submit">Athletenprofil speichern</button>{dirty.profile && <small className="coach-muted">Ungespeicherte Angaben</small>}</div>
@@ -1117,7 +1213,11 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
           <div className="coach-actions"><button className="coach-danger" disabled={!!busy} onClick={() => deleteBlock(block)}>Endgültig löschen</button><button disabled={!!busy} onClick={() => setConfirmDelete(null)}>Abbrechen</button></div>
         </div> : <div className="coach-actions"><button className="coach-danger" disabled={!!busy || planning} onClick={() => setConfirmDelete(`block-${block.id}`)}>Block löschen</button></div>}
       </section>
-      <section className="coach-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">{weekStart(week) >= range.start && weekStart(week) <= range.end ? `Woche ${blockWeek(range, weekStart(week))} von ${range.weeks}` : 'Außerhalb des Blocks'}</span><h2>Deine Trainingswoche</h2></div><Field label="Kalenderwoche"><input aria-label="Planungswoche" type="week" min={isoWeek(range.start)} max={isoWeek(range.end)} value={week} disabled={!!busy} onChange={e => { if (e.target.value && !dirty.weekly) { invalidate(); setFeedback(null); setWeek(e.target.value); } else if (dirty.weekly) setError('Speichere zuerst die Verfügbarkeit dieser Woche.'); }} /></Field></div>
+      <section className="coach-card"><div className="coach-section-heading"><div><span className="coach-eyebrow">{weekStart(week) >= range.start && weekStart(week) <= range.end ? `Woche ${blockWeek(range, weekStart(week))} von ${range.weeks}` : 'Außerhalb des Blocks'}</span><h2>Deine Trainingswoche</h2></div><div className="coach-week-nav">
+          <button type="button" className="coach-week-step" aria-label="Vorherige Woche" title="Vorherige Woche" disabled={!!busy || !previousWeek} onClick={() => goToWeek(previousWeek)}><Icon name="chevron" size={16} className="coach-flip" /></button>
+          <Field label="Kalenderwoche"><input aria-label="Planungswoche" type="week" min={isoWeek(range.start)} max={isoWeek(range.end)} value={week} disabled={!!busy} onChange={e => { if (e.target.value) goToWeek(e.target.value); }} /></Field>
+          <button type="button" className="coach-week-step" aria-label="Nächste Woche" title="Nächste Woche" disabled={!!busy || !followingWeek} onClick={() => goToWeek(followingWeek)}><Icon name="chevron" size={16} /></button>
+        </div></div>
         <p className="coach-muted">{dateLabel(weekStart(week))} – {dateLabel(weekEnd(week))} · {week}</p>
         <WeekSessions value={currentWeek} own={ownWorkouts} workoutsById={workoutsById} busy={!!busy} onLock={toggleLock} onOpen={onOpenWorkout} />
         <details className="coach-details"><summary>Ausnahme für diese Woche {dirty.weekly ? '· ungespeichert' : ''}</summary><p className="coach-muted">Geplant wird mit deiner Standardwoche aus dem Athletenprofil. Nur wenn {week} anders aussieht (Urlaub, Termine), hier abweichen und die Woche danach anpassen lassen.</p><form onSubmit={event => { event.preventDefault(); run('Wochenverfügbarkeit wird gespeichert …', async () => {

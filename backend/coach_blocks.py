@@ -9,7 +9,8 @@ import copy
 import uuid
 from datetime import timedelta
 
-from coach_domain import BLOCK_WEEKS_SCHEMA, HINWEISE_SCHEMA, CoachError, day_date, iso_week, obj, text, week_start
+from coach_domain import (BLOCK_WEEKS_SCHEMA, HINWEISE_SCHEMA, CoachError, day_date, iso_week, obj, preferred_hours, text,
+                          week_start)
 from coach_templates import TEMPLATES, flat_steps
 
 DELOAD_PHASES = {'recovery', 'taper'}
@@ -207,6 +208,8 @@ def check_block(identity, secondary, weeks, *, start, profile):
         raise CoachError('Unbekannter Nebenschwerpunkt.')
     if secondary == 'kraft' and not profile['preferences']['gymAvailability']:
         raise CoachError('Kraft als Nebenschwerpunkt benötigt die hinterlegte Krafttraining-Verfügbarkeit.')
+    if secondary == 'laufen' and 'run' not in profile['goal']['sports']:
+        raise CoachError('Laufen als Nebenschwerpunkt braucht Laufen bei deinen Sportarten im Profil.')
     name = spec['name']
     if not spec['minWeeks'] <= len(weeks) <= spec['maxWeeks']:
         raise CoachError(f"Ein Block „{name}“ dauert {spec['minWeeks']}–{spec['maxWeeks']} Wochen.")
@@ -233,10 +236,10 @@ def check_block(identity, secondary, weeks, *, start, profile):
         peak = max(w['targetHours'] for w in weeks[:-1])
         if weeks[-1]['targetHours'] > peak * (1 - spec['taperDrop']) + 1e-9:
             raise CoachError(f"Die letzte Woche braucht mindestens {round(spec['taperDrop'] * 100)} % weniger Umfang.")
-    preferred = profile['availability']['preferredWeeklyHours']
-    if spec['maxPreferredShare'] and preferred is not None and \
-            any(w['targetHours'] > preferred * spec['maxPreferredShare'] + 1e-9 for w in weeks):
-        raise CoachError(f"Ein Block „{name}“ bleibt unter {round(spec['maxPreferredShare'] * 100)} % des Wunschumfangs.")
+    for w in weeks if spec['maxPreferredShare'] else []:
+        preferred = preferred_hours(profile, start + timedelta(weeks=w['week'] - 1))
+        if preferred is not None and w['targetHours'] > preferred * spec['maxPreferredShare'] + 1e-9:
+            raise CoachError(f"Ein Block „{name}“ bleibt unter {round(spec['maxPreferredShare'] * 100)} % des Wunschumfangs.")
 
 
 def check_week_rules(block, block_week, sessions):
