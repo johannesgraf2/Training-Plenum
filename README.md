@@ -99,7 +99,9 @@ Es zählen nur echte, zusammenhängende Aufzeichnungen. Lücken über 30 Sekunde
 
 ## Dashboard
 
-Das **Dashboard** zeigt für ein Jahr oder **All-Time**:
+Ganz oben steht deine **Fitness**: wie fit du heute bist, über alle Sportarten, mit Veränderung und Verlauf für 1 Monat bis 2 Jahre (ähnlich wie bei Strava).
+
+Außerdem zeigt das **Dashboard** für ein Jahr oder **All-Time**:
 
 - Anteil der Sportarten an deiner Trainingszeit
 - Rad-Kilometer und Höhenmeter im Jahresvergleich
@@ -109,7 +111,7 @@ Das **Dashboard** zeigt für ein Jahr oder **All-Time**:
 
 Jedes Diagramm zeigt die genauen Werte und hat eine aufklappbare Tabelle. Darunter steht die Liste aller Aktivitäten.
 
-**FTP und maximale Herzfrequenz** trägst du unter **FTP & Zonen** ein. Ohne diese Werte können Zonen und TSS nicht berechnet werden.
+**FTP und maximale Herzfrequenz** trägst du unter **FTP & Zonen** ein. Ohne diese Werte können Fitness, Zonen und TSS nicht berechnet werden.
 
 ## Workouts planen und auf den Garmin bringen
 
@@ -207,6 +209,7 @@ Alle Formeln sind offen im Code nachlesbar. Die wichtigsten:
 
 - **Normalized Power (NP):** berechnet aus dem gleitenden 30-Sekunden-Durchschnitt der Leistung, nach der [Methode von TrainingPeaks](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
 - **TSS (Rad):** `Stunden × (NP / FTP)² × 100`. Nur für Radfahrten, bei denen fast die ganze Zeit Leistung aufgezeichnet wurde. Sonst bleibt der Wert leer statt geschätzt.
+- **Fitness (CTL):** über 42 Tage gewichteter Durchschnitt der Tagesbelastung: `Fitness heute = Fitness gestern + (Belastung heute − Fitness gestern) / 42`. Belastung ist der Leistungs-TSS einer Radfahrt, sonst ein Puls-TSS: `Stunden × (Puls / Schwellen-HF)² × 100` mit Schwellen-HF = 90 % der HFmax. Einheiten, bei denen der Puls weniger als die halbe Zeit aufgezeichnet wurde, zählen nicht.
 - **Pulszonen (5):** Grenzen bei 60, 70, 80 und 90 % der maximalen Herzfrequenz.
 - **Leistungszonen (7):** Grenzen bei 55, 75, 90, 105, 120 und 150 % der FTP.
 - **Lücken:** Fehlende Werte werden nie als Null gezählt. Lücken über 30 Sekunden und Sportwechsel trennen die Daten.

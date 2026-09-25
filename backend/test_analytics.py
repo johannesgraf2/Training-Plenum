@@ -2,7 +2,7 @@ import unittest
 from datetime import date, datetime
 from types import SimpleNamespace
 from dateutil.tz import gettz
-from analytics import activity_summary, aggregate, sensor_summary, zones, POWER_LIMITS, HR_LIMITS
+from analytics import activity_summary, aggregate, fitness, sensor_summary, zones, POWER_LIMITS, HR_LIMITS
 
 
 def summary(points=None, **kwargs):
@@ -128,6 +128,31 @@ class AnalyticsTests(unittest.TestCase):
         result = report(rows, year='all')
         self.assertEqual([r['key'] for r in result['cyclingYears']], ['2022', '2024'])
         self.assertEqual(result['years'], [2026, 2024, 2022])
+
+
+    def test_fitness_is_42_day_weighted_load_from_power_or_heart_rate(self):
+        zone = gettz('Europe/Berlin')
+        result = fitness(summary(), zone, ftp=200, max_hr=200, today=date(2026, 1, 1))
+        self.assertEqual(len(result['days']), 730)
+        self.assertEqual(result['days'][-1], {'key': '2026-01-01', 'value': round(100 / 42, 1), 'load': 100})
+        self.assertEqual(result['days'][0]['value'], 0)
+        self.assertEqual(result['activities'], {'power': 1, 'hr': 0, 'missing': 0})
+        later = fitness(summary(), zone, ftp=200, max_hr=200, today=date(2026, 2, 12))
+        self.assertAlmostEqual(later['value'], round(100 / 42 * (41 / 42) ** 42, 1))
+        # Without FTP the same ride counts via heart rate: 140 bpm / 180 bpm threshold for one hour.
+        by_hr = fitness(summary(), zone, max_hr=200, today=date(2026, 1, 1))
+        self.assertEqual(by_hr['activities'], {'power': 0, 'hr': 1, 'missing': 0})
+        self.assertAlmostEqual(by_hr['days'][-1]['load'], round((140 / 180) ** 2 * 100, 1))
+        self.assertEqual(by_hr['thresholdHr'], 180)
+
+    def test_fitness_skips_future_and_unmeasured_activities(self):
+        zone = gettz('Europe/Berlin')
+        rows = summary([]) + summary(date=datetime(2026, 3, 1))
+        result = fitness(rows, zone, ftp=200, max_hr=200, today=date(2026, 1, 15))
+        self.assertIsNone(result['value'])
+        self.assertEqual(result['days'], [])
+        self.assertEqual(result['activities']['missing'], 1)
+        self.assertIsNone(fitness(summary(), zone, today=date(2026, 1, 15))['value'])
 
 
 if __name__ == '__main__':
