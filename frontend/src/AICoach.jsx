@@ -379,7 +379,7 @@ function BlockWizard({ catalog, profile, busy, canPlan, proposal, seasonNext, pr
         {fromSeason && type ? <><h3>Block laut Saisonplan: {type.name}</h3><p className="coach-muted">{type.summary} · Start am {dateLabel(startDate)}</p></> : <>
         <h3>Blocktyp wählen</h3><p className="coach-muted">{SITUATIONS[situation]} · Start am {dateLabel(startDate)}</p>
         <div className="coach-choice-grid types" role="radiogroup" aria-label="Blocktyp">{types.map(item => {
-          const blocked = item.id === 'wettkampfspezifisch' && !profile.goal.date;
+          const blocked = item.endsByGoal && !profile.goal.date;
           return <label key={item.id} className={`coach-choice ${choice.blockType === item.id ? 'selected' : ''} ${blocked ? 'disabled' : ''}`}>
             <input type="radio" name="block-type" value={item.id} disabled={blocked} checked={choice.blockType === item.id} onChange={() => edit(() => setChoice(c => ({ ...c, blockType: item.id, weeks: item.defaultWeeks })))} />
             <strong>{item.name}</strong><small>{item.summary}</small><small className="coach-choice-meta">{item.minWeeks}–{item.maxWeeks} Wochen{blocked ? ' · braucht ein Zieldatum im Athletenprofil' : ''}</small>
@@ -438,6 +438,33 @@ function SeasonList({ segments }) {
 }
 
 // Reorder, change or add blocks; the same rules as on the server are shown while editing.
+// The season ends with Wettkampfspezifisch, optionally followed directly by a short taper.
+export const endsWithRace = types => types.at(-1) === 'wettkampfspezifisch' || (types.at(-1) === 'taper' && types.at(-2) === 'wettkampfspezifisch');
+// Weeks for each block so the season reaches exactly the goal week: lengths go into their type limits first, then
+// the difference goes week by week to the training blocks, relative to each type's usual length (the one furthest
+// below it grows, the one furthest above it shrinks). Taper and
+// Wiedereinstieg keep their length unless nothing else can change. Stops when every block is at its limit.
+export function fitSeasonWeeks(items, typeOf, target) {
+  const range = item => [typeOf(item.blockType)?.minWeeks ?? 1, typeOf(item.blockType)?.maxWeeks ?? 12];
+  const next = items.map(item => {
+    const [low, high] = range(item), weeks = Number(item.weeks);
+    return { ...item, weeks: Math.min(Math.max(Number.isInteger(weeks) ? weeks : low, low), high) };
+  });
+  let diff = target - next.reduce((sum, item) => sum + item.weeks, 0);
+  while (diff !== 0) {
+    const step = Math.sign(diff);
+    const movable = next.map((item, index) => ({ item, index })).filter(({ item }) => { const [low, high] = range(item); return item.weeks + step >= low && item.weeks + step <= high; });
+    const training = movable.filter(({ item }) => !['taper', 'wiedereinstieg'].includes(item.blockType));
+    const pool = training.length ? training : movable;
+    if (!pool.length) break;
+    const share = ({ item }) => item.weeks / (typeOf(item.blockType)?.defaultWeeks || 1);
+    const { index } = pool.reduce((best, c) => (step > 0 ? share(c) < share(best) : share(c) > share(best)) ? c : best);
+    next[index] = { ...next[index], weeks: next[index].weeks + step };
+    diff -= step;
+  }
+  return next;
+}
+
 function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, saveLabel, onSave, onCancel }) {
   const nextKey = useRef(initial.length);
   const [items, setItems] = useState(() => initial.map((segment, key) => ({ key, blockType: segment.blockType, secondaryFocus: segment.secondaryFocus ?? null, weeks: segment.weeks, purpose: segment.purpose || '' })));
@@ -455,13 +482,17 @@ function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, 
       const type = typeOf(item.blockType), weeks = Number(item.weeks);
       return type && Number.isInteger(weeks) && weeks >= type.minWeeks && weeks <= type.maxWeeks ? [] : [`Block ${fixed.length + i + 1}: ${type?.name} dauert ${type?.minWeeks}–${type?.maxWeeks} Wochen`];
     }),
-    ...(items.at(-1)?.blockType !== 'wettkampfspezifisch' ? ['der letzte Block vor dem Ziel ist wettkampfspezifisch'] : []),
+    ...(!endsWithRace([...fixed, ...items].map(item => item.blockType)) ? ['der Saisonplan endet mit Wettkampfspezifisch, danach höchstens ein Taper'] : []),
   ];
+  const fitted = fitSeasonWeeks(items, typeOf, remainingWeeks);
+  const fittable = fitted.some((item, i) => item.weeks !== items[i].weeks);
   const update = (index, patch) => setItems(list => list.map((item, i) => i === index ? { ...item, ...patch } : item));
   const move = (index, delta) => setItems(list => { const next = [...list]; [next[index], next[index + delta]] = [next[index + delta], next[index]]; return next; });
   const add = () => setItems(list => {
     const item = { key: nextKey.current++, blockType: 'grundlage', secondaryFocus: null, weeks: typeOf('grundlage')?.defaultWeeks || 6, purpose: '' };
-    const at = list.at(-1)?.blockType === 'wettkampfspezifisch' ? list.length - 1 : list.length;
+    // New blocks go before the closing Wettkampfspezifisch (and its taper).
+    const tail = list.at(-1)?.blockType === 'taper' && list.at(-2)?.blockType === 'wettkampfspezifisch' ? 2 : list.at(-1)?.blockType === 'wettkampfspezifisch' ? 1 : 0;
+    const at = list.length - tail;
     return [...list.slice(0, at), item, ...list.slice(at)];
   });
   return <div className="coach-season-editor">
@@ -472,7 +503,7 @@ function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, 
       <small>Bereits geplant, {seasonDate(segment.startDate)} – {seasonDate(segment.endDate)}. Bleibt unverändert.</small>
     </li>)}{items.map((item, i) => { const n = fixed.length + i + 1; const type = typeOf(item.blockType); return <li key={item.key}>
       <span className="coach-step" aria-hidden="true">{n}</span>
-      <select aria-label={`Block ${n} Typ`} value={item.blockType} disabled={busy} onChange={e => update(i, { blockType: e.target.value, weeks: typeOf(e.target.value)?.defaultWeeks || item.weeks, purpose: '' })}>{types.map(t => <option key={t.id} value={t.id} disabled={t.id === 'wettkampfspezifisch' && !profile.goal.date}>{t.name}</option>)}</select>
+      <select aria-label={`Block ${n} Typ`} value={item.blockType} disabled={busy} onChange={e => update(i, { blockType: e.target.value, weeks: typeOf(e.target.value)?.defaultWeeks || item.weeks, purpose: '' })}>{types.map(t => <option key={t.id} value={t.id} disabled={t.endsByGoal && !profile.goal.date}>{t.name}</option>)}</select>
       <input aria-label={`Block ${n} Wochen`} type="number" min={type?.minWeeks} max={type?.maxWeeks} value={item.weeks} disabled={busy} onChange={e => update(i, { weeks: e.target.value === '' ? '' : Number(e.target.value) })} />
       <select aria-label={`Block ${n} Nebenschwerpunkt`} value={item.secondaryFocus || ''} disabled={busy} onChange={e => update(i, { secondaryFocus: e.target.value || null })}><option value="">Kein Nebenschwerpunkt</option>{(catalog?.secondaryFocus || []).map(f => <option key={f.id} value={f.id} disabled={f.id === 'kraft' && !profile.preferences.gymAvailability}>+ {f.name}</option>)}</select>
       <span className="coach-season-move">
@@ -482,7 +513,8 @@ function SeasonEditor({ initial, fixed, catalog, profile, remainingWeeks, busy, 
       </span>
       {item.purpose && <small>{item.purpose}</small>}
     </li>; })}</ol>
-    <div className="coach-actions"><button type="button" disabled={busy} onClick={add}>Block hinzufügen</button><p className={`coach-season-sum ${problems.length ? '' : 'ok'}`}><strong>{total} von {remainingWeeks} {fixed.length ? 'freien ' : ''}Wochen verplant</strong>{problems.map(problem => ` · ${problem}`).join('')}</p></div>
+    <div className="coach-actions"><button type="button" disabled={busy} onClick={add}>Block hinzufügen</button>
+      <button type="button" disabled={busy || !fittable} title="Verteilt die fehlenden oder überzähligen Wochen auf die Blöcke, innerhalb ihrer Mindest- und Höchstlängen." onClick={() => setItems(list => fitSeasonWeeks(list, typeOf, remainingWeeks))}>Wochen angleichen</button><p className={`coach-season-sum ${problems.length ? '' : 'ok'}`}><strong>{total} von {remainingWeeks} {fixed.length ? 'freien ' : ''}Wochen verplant</strong>{problems.map(problem => ` · ${problem}`).join('')}</p></div>
     <div className="coach-actions"><button type="button" className="coach-primary" disabled={busy || problems.length > 0} onClick={() => onSave(items.map(({ key, ...item }) => ({ ...item, weeks: Number(item.weeks) })))}>{saveLabel}</button><button type="button" disabled={busy} onClick={onCancel}>Abbrechen</button></div>
   </div>;
 }

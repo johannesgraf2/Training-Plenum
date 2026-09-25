@@ -41,12 +41,12 @@ GROUP_NAMES = {
 
 def _block(name, summary, default, low, high, *, forbidden=(), max_per_week=None, min_per_load_week=None,
            easy_share=None, last_week_deload=True, rhythm=True, taper_drop=None, max_preferred_share=None,
-           ends_by_goal=False, guidance='', selectable=True):
+           ends_by_goal=False, deload_only=False, guidance='', selectable=True):
     return {'name': name, 'summary': summary, 'defaultWeeks': default, 'minWeeks': low, 'maxWeeks': high,
             'forbidden': list(forbidden), 'maxPerWeek': max_per_week or {}, 'minPerLoadWeek': min_per_load_week or {},
             'easyShare': easy_share, 'lastWeekDeload': last_week_deload, 'rhythm': rhythm, 'taperDrop': taper_drop,
-            'maxPreferredShare': max_preferred_share, 'endsByGoal': ends_by_goal, 'guidance': guidance,
-            'selectable': selectable}
+            'maxPreferredShare': max_preferred_share, 'endsByGoal': ends_by_goal, 'deloadOnly': deload_only,
+            'guidance': guidance, 'selectable': selectable}
 
 
 BLOCK_TYPES = {
@@ -82,6 +82,13 @@ BLOCK_TYPES = {
                                   guidance='Rehearse race demands with long rides at race intensity and race-like efforts '
                                            '(for example 4x16 min at tempo or threshold inside a long ride), then taper; keep short '
                                            'intense touches during the taper. The last week must end in the goal week.'),
+    # Taper right before the goal: a short block after Wettkampfspezifisch, only lighter weeks.
+    'taper': _block('Taper', 'Vor dem Wettkampf Umfang senken und frisch werden, kurze intensive Reize bleiben.', 1, 1, 3,
+                    max_per_week={'quality': 2}, rhythm=False, max_preferred_share=.7, ends_by_goal=True, deload_only=True,
+                    guidance='Every week has phase taper. Cut volume clearly below the weeks before (about 40-60 % less) '
+                             'while keeping short race-pace or VO2 touches with full recovery (for example 3x3 min or '
+                             'a few 30 s efforts) so the legs stay sharp; no long threshold work. The last week must end '
+                             'in the goal week.'),
     'uebergang': _block('Übergang', 'Aktive Erholung nach der Saison oder einem Höhepunkt.', 2, 1, 4,
                         forbidden=('quality',), last_week_deload=False, rhythm=False, max_preferred_share=.6,
                         guidance='Only recovery, easy endurance, strength or rest; well below usual volume.'),
@@ -124,7 +131,9 @@ def rule_texts(identity):
         texts.append(f"Mindestens {round(spec['easyShare'] * 100)} % der Rad-/Laufzeit locker (Z1–2)")
     if spec['rhythm']:
         texts.append(f'Höchstens {MAX_LOAD_STREAK} Belastungswochen am Stück')
-    if spec['lastWeekDeload']:
+    if spec['deloadOnly']:
+        texts.append('Jede Woche Entlastung (Taper)')
+    elif spec['lastWeekDeload']:
         texts.append('Letzte Woche Entlastung')
     if spec['taperDrop']:
         texts.append(f"Letzte Woche mindestens {round(spec['taperDrop'] * 100)} % weniger Umfang")
@@ -137,7 +146,8 @@ def rule_texts(identity):
 
 def catalog():
     return {'blockTypes': [{'id': key, 'name': spec['name'], 'summary': spec['summary'], 'defaultWeeks': spec['defaultWeeks'],
-                            'minWeeks': spec['minWeeks'], 'maxWeeks': spec['maxWeeks'], 'rules': rule_texts(key),
+                            'minWeeks': spec['minWeeks'], 'maxWeeks': spec['maxWeeks'], 'endsByGoal': spec['endsByGoal'],
+                            'rules': rule_texts(key),
                             'suggestedRhythm': suggested_rhythm(spec['defaultWeeks'], key),
                             'rhythms': {str(n): suggested_rhythm(n, key) for n in range(spec['minWeeks'], spec['maxWeeks'] + 1)}}
                            for key, spec in BLOCK_TYPES.items() if spec['selectable']],
@@ -147,6 +157,8 @@ def catalog():
 def suggested_rhythm(weeks, identity):
     """Load/deload pattern as booleans (True = deload): 3:1, shorter cycles for short blocks."""
     spec = block_type(identity)
+    if spec['deloadOnly']:
+        return [True] * weeks
     if not spec['rhythm']:
         return [False] * weeks
     cycles = -(-weeks // (MAX_LOAD_STREAK + 1))
@@ -201,12 +213,14 @@ def check_block(identity, secondary, weeks, *, start, profile):
     if spec['endsByGoal']:
         goal = profile['goal']['date']
         if not goal:
-            raise CoachError('Für einen wettkampfspezifischen Block bitte ein Zieldatum im Profil speichern.')
+            raise CoachError(f'Für einen Block „{name}“ bitte ein Zieldatum im Profil speichern.')
         goal_day = day_date(goal)
         # Blocks run Monday to Sunday, so an event on a Saturday still ends its block that week.
         if start + timedelta(weeks=len(weeks)) - timedelta(days=1) > goal_day + timedelta(days=6 - goal_day.weekday()):
-            raise CoachError('Der wettkampfspezifische Block muss spätestens in der Woche des Zieldatums enden.')
+            raise CoachError(f'Der Block „{name}“ muss spätestens in der Woche des Zieldatums enden.')
     deloads = [w['phase'] in DELOAD_PHASES for w in weeks]
+    if spec['deloadOnly'] and not all(deloads):
+        raise CoachError(f'Im Block „{name}“ ist jede Woche eine Entlastungswoche.')
     if spec['lastWeekDeload'] and not deloads[-1]:
         raise CoachError(f'Ein Block „{name}“ endet mit einer Entlastungswoche.')
     if spec['rhythm']:
