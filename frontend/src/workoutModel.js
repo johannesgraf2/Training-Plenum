@@ -19,9 +19,13 @@ export const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.round
 export const newStep = (intensity = 'active', seconds = 300) => ({ kind: 'step', name: '', intensity, duration: { type: 'time', value: seconds }, target: { type: 'none' } });
 export const powerStep = (intensity, seconds, watts) => ({ ...newStep(intensity, seconds), target: { type: 'power', low: watts, high: watts } });
 export const newWorkout = date => ({ version: 1, name: '', sport: 'ride', date, steps: [powerStep('active', 1800, 180)] });
+export const distanceStep = (intensity, metres, name = '') => ({ ...newStep(intensity), name, duration: { type: 'distance', value: metres } });
 export const intervalBlock = (sport = 'ride') => ({ kind: 'repeat', count: 5, steps: sport === 'ride'
   ? [powerStep('interval', 240, 330), powerStep('recovery', 240, 120)]
+  : sport === 'swim' ? [distanceStep('interval', 100), { ...newStep('recovery', 20), name: 'Pause' }]
   : [newStep('interval', 240), newStep('recovery', 240)] });
+// Targets that make sense per sport; swimming only by heart rate or without a target.
+export const sportTargets = { ride: Object.keys(targetLabels), run: Object.keys(targetLabels), swim: ['none', 'heart_rate'] };
 export const exampleWorkout = date => ({ version: 1, name: '5 × 1000 m Intervalle', sport: 'run', date, steps: [
   newStep('warmup', 900),
   { kind: 'repeat', count: 5, steps: [
@@ -57,6 +61,12 @@ export function shortCyclingIntervals(date) {
   return { version: 1, name: '3 × 7 × 40/20 s', sport: 'ride', date, steps };
 }
 
+const swimSet = (date, name, count, metres, rest) => ({ version: 1, name, sport: 'swim', date, steps: [
+  distanceStep('warmup', 400, 'Einschwimmen'),
+  { kind: 'repeat', count, steps: [distanceStep('interval', metres), { ...newStep('recovery', rest), name: 'Pause' }] },
+  distanceStep('cooldown', 200, 'Ausschwimmen'),
+] });
+
 export const workoutTemplates = [
   { id: 'steady30', sport: 'ride', title: '30 min konstant', subtitle: '30 min · 180 W', bars: [4, 4, 4, 4, 4, 4],
     create: date => ({ ...newWorkout(date), name: '30 min konstant' }) },
@@ -68,6 +78,10 @@ export const workoutTemplates = [
   { id: 'short4020', sport: 'ride', title: '3 × 7 × 40/20 s', subtitle: '330 / 120 W · 5 min Serienpause', bars: [6, 2, 6, 2, 1, 6, 2, 6], create: shortCyclingIntervals },
   { id: 'run400', sport: 'run', title: '10 × 400 m', subtitle: '400 m zügig / 200 m Trabpause', bars: [5, 2, 5, 2, 5, 2, 5, 2], create: date => runningIntervals(date, 400, 10, 200) },
   { id: 'run1000', sport: 'run', title: '5 × 1 km', subtitle: '1 km zügig / 400 m Trabpause', bars: [5, 5, 2, 5, 5, 2], create: date => runningIntervals(date, 1000, 5, 400) },
+  { id: 'swim100', sport: 'swim', title: '10 × 100 m', subtitle: '100 m zügig / 15 s Pause', bars: [5, 1, 5, 1, 5, 1, 5, 1], create: date => swimSet(date, '10 × 100 m', 10, 100, 15) },
+  { id: 'swim200', sport: 'swim', title: '6 × 200 m', subtitle: '200 m gleichmäßig / 20 s Pause', bars: [5, 5, 1, 5, 5, 1, 5, 5], create: date => swimSet(date, '6 × 200 m', 6, 200, 20) },
+  { id: 'swim1500', sport: 'swim', title: '1500 m am Stück', subtitle: 'Ruhige Grundlage', bars: [3, 3, 3, 3, 3, 3],
+    create: date => ({ version: 1, name: '1500 m am Stück', sport: 'swim', date, steps: [distanceStep('active', 1500, 'Grundlage')] }) },
   { id: 'run2000', sport: 'run', title: '3 × 2 km', subtitle: '2 km zügig / 600 m Trabpause', bars: [5, 5, 5, 2, 5, 5, 5, 2], create: date => runningIntervals(date, 2000, 3, 600) },
 ];
 

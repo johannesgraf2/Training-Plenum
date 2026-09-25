@@ -49,13 +49,15 @@ export default function WorkoutLibrary({ sport: initialSport, date, ftp, maxHr, 
     <div className="library-controls">
       <label className="library-search">Suchen<input ref={searchRef} type="search" aria-label="Vorlagen durchsuchen" value={query} placeholder="z. B. vo2max, threshold, base, 4x4, Block-Ende" onChange={e => setQuery(e.target.value)} /></label>
       <div className="library-sport" role="group" aria-label="Sportart der Vorlagen">
-        {[['ride', 'Rad'], ['run', 'Laufen']].map(([value, label]) => <button type="button" key={value} aria-pressed={sport === value} onClick={() => { setSport(value); setTag(''); }}>{label} ({workoutLibrary.filter(e => e.sport === value).length})</button>)}
+        {[['ride', 'Rad'], ['run', 'Laufen'], ['swim', 'Schwimmen']].map(([value, label]) => <button type="button" key={value} aria-pressed={sport === value} onClick={() => { setSport(value); setTag(''); }}>{label} ({workoutLibrary.filter(e => e.sport === value).length})</button>)}
       </div>
-      {sport === 'ride'
+      {sport === 'swim' ? null : sport === 'ride'
         ? <label className="library-athlete">FTP (W)<input type="number" min="50" max="1000" aria-label="FTP für Vorlagen" value={ftpInput} placeholder={String(DEFAULT_FTP)} onChange={e => setFtpInput(e.target.value)} /></label>
         : <label className="library-athlete">HFmax (bpm)<input type="number" min="100" max="240" aria-label="HFmax für Vorlagen" value={hrInput} placeholder="z. B. 190" onChange={e => setHrInput(e.target.value)} /></label>}
     </div>
-    <p className="library-athlete-note">{sport === 'ride'
+    <p className="library-athlete-note">{sport === 'swim'
+      ? 'Schwimmziele beziehen sich auf dein CSS-Tempo (Critical Swim Speed): „CSS +5 s“ heißt 5 s pro 100 m langsamer. Die Vorgabe steht im Schrittnamen, die Uhr zeigt keine Pace an. Bahnlänge: 25 m.'
+      : sport === 'ride'
       ? Number(ftpInput) > 0 ? `Watt werden aus ${Number(ftpInput)} W FTP berechnet.` : `Keine FTP hinterlegt: Watt werden mit ${DEFAULT_FTP} W FTP berechnet. Trag deine FTP ein, um sie anzupassen.`
       : Number(hrInput) > 0 ? `Herzfrequenzziele werden aus ${Number(hrInput)} bpm HFmax berechnet.` : 'Ohne HFmax werden Läufe ohne Herzfrequenzziel angelegt.'}</p>
     <div className="library-chips" role="group" aria-label="Nach Tag filtern">

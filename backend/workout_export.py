@@ -21,6 +21,10 @@ INTENSITIES = {'warmup', 'active', 'interval', 'recovery', 'cooldown'}
 LIMITS = {'pace': (60, 3600), 'speed': (0.1, 150), 'heart_rate': (30, 250),
           'power': (1, 3000), 'cadence': (1, 250)}
 MAX_STEPS = 50
+# Garmin sport per model sport; swimming is exported as pool swimming on a 25 m lane.
+FIT_SPORTS = {'run': {'sport': 'running'}, 'ride': {'sport': 'cycling'},
+              'swim': {'sport': 'swimming', 'sub_sport': 'lap_swimming', 'pool_length': 25, 'pool_length_unit': 'metric'}}
+SWIM_TARGETS = ('none', 'heart_rate')
 
 
 def number(value, label, low, high, integer=False):
@@ -50,8 +54,8 @@ def validate_workout(data):
     if data.get('version', 1) != 1:
         raise WorkoutError('Diese Workout-Version wird nicht unterstützt.')
     sport = data.get('sport')
-    if sport not in ('run', 'ride'):
-        raise WorkoutError('Bitte Laufen oder Radfahren auswählen.')
+    if sport not in FIT_SPORTS:
+        raise WorkoutError('Bitte Laufen, Radfahren oder Schwimmen auswählen.')
     day = data.get('date')
     if not isinstance(day, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', day):
         raise WorkoutError('Bitte ein gültiges Trainingsdatum auswählen.')
@@ -79,6 +83,8 @@ def validate_workout(data):
         if not isinstance(target, dict) or target.get('type') not in ('none', *LIMITS):
             raise WorkoutError('Bitte ein gültiges Trainingsziel auswählen.')
         kind = target['type']
+        if sport == 'swim' and kind not in SWIM_TARGETS:
+            raise WorkoutError('Beim Schwimmen sind nur Herzfrequenz oder kein Ziel möglich.')
         if kind == 'none':
             target = {'type': 'none'}
         else:
@@ -124,8 +130,10 @@ def workout_messages(workout):
     def append_step(step):
         duration, target = step['duration'], step['target']
         kind = target['type']
+        # A timed pause in a pool workout is a rest step, so the watch counts it down between lengths.
+        rest = workout['sport'] == 'swim' and step['intensity'] == 'recovery' and duration['type'] == 'time' and kind == 'none'
         message = {'message_index': len(messages), 'wkt_step_name': step['name'] or step['intensity'],
-                   'intensity': step['intensity'], 'duration_type': duration['type'],
+                   'intensity': 'rest' if rest else step['intensity'], 'duration_type': duration['type'],
                    'duration_value': round(duration.get('value', 0) * {'time': 1000, 'distance': 100, 'open': 0}[duration['type']]),
                    'target_type': {'none': 'open', 'pace': 'speed'}.get(kind, kind), 'target_value': 0}
         if kind != 'none':
@@ -168,8 +176,7 @@ def export_workout(data):
         'serial_number': serial, 'time_created': datetime.now(timezone.utc),
     })
     # Prefix the actual on-device name, not just the downloaded filename.
-    header = {'wkt_name': garmin_workout_name(workout), 'sport': 'running' if workout['sport'] == 'run' else 'cycling',
-              'num_valid_steps': len(steps)}
+    header = {'wkt_name': garmin_workout_name(workout), **FIT_SPORTS[workout['sport']], 'num_valid_steps': len(steps)}
     if workout.get('notes'):
         header['wkt_description'] = workout['notes']
     encoder.on_mesg(Profile['mesg_num']['WORKOUT'], header)

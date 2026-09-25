@@ -84,6 +84,19 @@ class WorkoutExportTests(unittest.TestCase):
         self.assertEqual((steps[3]['custom_target_speed_low'], steps[3]['custom_target_speed_high']), (7, 10))
         self.assertEqual(steps[4]['target_type'], 'open')
 
+    def test_swimming_becomes_a_pool_workout_with_rest_steps(self):
+        workout = {**example(), 'sport': 'swim', 'name': '10 × 100 m CSS', 'steps': [
+            step('distance', 400), {'kind': 'repeat', 'count': 10, 'steps': [
+                step('distance', 100, intensity='interval'), step('time', 15, intensity='recovery')]},
+            step('distance', 200, target='heart_rate', low=120, high=140, intensity='cooldown')]}
+        messages = self.decode(workout)
+        header = messages['workout_mesgs'][0]
+        self.assertEqual((header['sport'], header['sub_sport'], header['pool_length'], header['pool_length_unit']),
+                         ('swimming', 'lap_swimming', 25, 'metric'))
+        steps = messages['workout_step_mesgs']
+        self.assertEqual([s['intensity'] for s in steps if 'intensity' in s], ['warmup', 'interval', 'rest', 'cooldown'])
+        self.assertEqual((steps[1]['duration_distance'], steps[2]['duration_time']), (100, 15))
+
     def test_multiple_repeat_blocks_reference_their_own_start(self):
         workout = example()
         workout['steps'].append(copy.deepcopy(workout['steps'][1]))
@@ -93,7 +106,8 @@ class WorkoutExportTests(unittest.TestCase):
     def test_invalid_models_are_rejected(self):
         bad = [None, [], {}, {**example(), 'name': ''}, {**example(), 'name': 'x\x00y'},
                {**example(), 'name': 'ä' * 41}, {**example(), 'date': '2026-02-30'},
-               {**example(), 'sport': 'swim'}, {**example(), 'steps': []},
+               {**example(), 'sport': 'skate'}, {**example(), 'sport': 'swim'},  # swimming has no pace target
+               {**example(), 'steps': []},
                {**example(), 'steps': [step('time', float('nan'))]},
                {**example(), 'steps': [step('time', True)]},
                {**example(), 'steps': [step('time', 10 ** 400)]},

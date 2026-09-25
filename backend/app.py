@@ -498,8 +498,8 @@ def download_workout():
 def download_workout_range():
     start, end = date_range(request.args.get('start'), request.args.get('end'))
     sport = request.args.get('sport', 'all')
-    if sport not in ('all', 'ride', 'run'):
-        raise WorkoutError('Bitte alle Sportarten, Radfahren oder Laufen auswählen.')
+    if sport not in ('all', 'ride', 'run', 'swim'):
+        raise WorkoutError('Bitte alle Sportarten, Radfahren, Laufen oder Schwimmen auswählen.')
     selected = sorted((row.to_dict() for row in PlannedWorkout.query.filter_by(user_id=DEMO_USER_ID).all()),
                       key=lambda w: (w['date'], w['name'], w['id']))
     selected = [w for w in selected if start <= w['date'] <= end and (sport == 'all' or w['sport'] == sport)]
