@@ -27,6 +27,32 @@ Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und
 
 **Schnell loslegen:** [Start unter Windows](#start-on-windows) · [Start mit Docker](#mit-docker-empfohlen) · [AI Coach einrichten](AI-COACH.md)
 
+## So sieht es aus
+
+> Alle Screenshots zeigen erfundene Demo-Daten („Demo Athlet“), keine echten Aufzeichnungen. Zum Vergrößern ein Bild anklicken.
+
+**Startseite:** Datum, Wettkampfziel mit Countdown, das heutige Workout als Leistungsprofil, Wochenumfang, Bestwerte und die letzten Aktivitäten.
+
+[![Startseite mit Wettkampfziel, heutigem Workout, Wochenumfang und Bestwerten](docs/screenshots/startseite.png)](docs/screenshots/startseite.png)
+
+<table>
+  <tr>
+    <td width="50%"><a href="docs/screenshots/kalender.png"><img src="docs/screenshots/kalender.png" alt="Monatskalender mit absolvierten und geplanten Einheiten sowie Wochensummen"></a><br><b>Kalender:</b> absolvierte und geplante Einheiten (gestrichelt), rechts die Wochensummen je Sportart. Geplante Workouts lassen sich per Drag &amp; Drop verschieben.</td>
+    <td width="50%"><a href="docs/screenshots/aktivitaet.png"><img src="docs/screenshots/aktivitaet.png" alt="Aktivitätsdetails mit Kennzahlen und Verlaufsdiagrammen für Herzfrequenz, Leistung, Geschwindigkeit und Kadenz"></a><br><b>Aktivität:</b> Kennzahlen, erkannte Sensoren und der komplette Verlauf von Puls, Leistung, Tempo, Kadenz und Höhe. Darüber liegt die interaktive Karte.</td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/dashboard.png"><img src="docs/screenshots/dashboard.png" alt="Dashboard mit Jahreskennzahlen, Sportarten-Mix, Jahresvergleich, Bestwerten und Trainingsumfang"></a><br><b>Dashboard:</b> Jahreszahlen, Sportarten-Mix, Jahresvergleich, Bestwerte und der Wochenumfang.</td>
+    <td><a href="docs/screenshots/dashboard-wochen.png"><img src="docs/screenshots/dashboard-wochen.png" alt="Wöchentliche Diagramme für Kalorien, TSS, Herzfrequenz- und Leistungszonen"></a><br><b>Trainingswochen:</b> Kalorien, TSS sowie die Zeit in Herzfrequenz- und Leistungszonen pro Woche.</td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/workout-editor.png"><img src="docs/screenshots/workout-editor.png" alt="Workout-Editor mit Vorlagen und Leistungsprofil eines Intervall-Workouts"></a><br><b>Workout-Editor:</b> Vorlagen, Intervalle mit Watt-/Pace-/HF-Zielen und die Gesamtübersicht. Direkt als Garmin-FIT-Datei exportierbar.</td>
+    <td><a href="docs/screenshots/import.png"><img src="docs/screenshots/import.png" alt="Importdialog zum Ablegen von Dateien oder ganzen Ordnern"></a><br><b>Import:</b> einzelne Dateien oder einen ganzen Exportordner per Drag &amp; Drop übernehmen.</td>
+  </tr>
+  <tr>
+    <td colspan="2"><a href="docs/screenshots/ai-coach.png"><img src="docs/screenshots/ai-coach.png" alt="AI Coach mit Trainingsstunden der letzten Wochen und drei Einrichtungsschritten" width="70%"></a><br><b>AI Coach:</b> Überblick über die letzten Wochen und in drei Schritten zum ersten Trainingsblock (Athletenprofil, eigener API-Key, Block planen).</td>
+  </tr>
+</table>
+
 
 ## FIT import — files and folders
 
@@ -242,6 +268,8 @@ Unterstützte Formate:
 trainhub/
 ├── docker-compose.yml
 ├── README.md
+├── docs/
+│   └── screenshots/        # Bilder für diese README (Demo-Daten)
 ├── nginx/
 │   └── nginx.conf
 ├── backend/
