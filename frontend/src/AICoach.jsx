@@ -406,11 +406,7 @@ export function blockQuestions(blockType, profile) {
     answer: v => `Mit ${fmt(v)} ${v === 1 ? 'Wiederholung' : 'Wiederholungen'} ${what} beginnen und dann steigern` });
   const extra = {
     wiedereinstieg: [],
-    grundlage: [longRideQuestion('Wie lang soll die längste Ausfahrt am Ende werden?', 3),
-      { id: 'stimulus', label: 'Welche Reize neben dem lockeren Fahren?', options: [COACH_DECIDES,
-        { id: 'easy', label: 'Nur locker', hint: 'Keine Intervalle in diesem Block.', answer: () => 'Nur lockeres Fahren, keine Intervalle' },
-        { id: 'sprints', label: 'Kurze Sprints', hint: 'Eingebaut in lockere Fahrten.', answer: () => 'Kurze Sprints in lockeren Fahrten einbauen' },
-        { id: 'tempo', label: 'Einmal Tempo pro Woche', hint: 'Tempo oder Sweetspot.', answer: () => 'Einmal pro Woche eine Tempo- oder Sweetspot-Einheit' }] }],
+    grundlage: [longRideQuestion('Wie lang soll die längste Ausfahrt am Ende werden?', 3)],
     vo2max: [{ id: 'intervals', label: 'Wie steigst du in die VO2max-Intervalle ein?', options: [COACH_DECIDES,
       { ...repsStart('reps', 'Wenige Wiederholungen, dann steigern', 'VO2max-Intervallen (3–5 min)'), hint: 'z. B. erst 2 × 4 min, dann mehr.' },
       { id: 'short', label: 'Erst kurze Intervalle', hint: '30/15 zuerst, später längere Intervalle.', answer: () => 'Mit kurzen Intervallen (30/15) beginnen, später zu längeren Intervallen wechseln' },
@@ -496,7 +492,7 @@ function BlockWizard({ catalog, profile, busy, canPlan, generating, proposal, pr
     onPropose(path === 'recommend' ? { ...base, mode: 'recommend' }
       : { ...base, mode: 'choose', blockType: choice.blockType, secondaryFocus: choice.secondaryFocus, weeks, ...(design.length ? { design } : {}) });
   }
-  const wishField = <Field label="Wunsch (optional)" hint="Präzisiert die Anfrage, z. B. „Samstags lange Ausfahrten“. Der Blocktyp bleibt maßgeblich."><textarea maxLength={1500} value={wish} onChange={e => edit(() => setWish(e.target.value))} /></Field>;
+  const wishField = <Field label="Wunsch (optional)" hint="Präzisiert die Anfrage, z. B. „Einheiten mit hoher Kadenz einbauen“ oder „Einzelne lockere Ausfahrten nüchtern“. Der Blocktyp bleibt maßgeblich."><textarea maxLength={1500} value={wish} onChange={e => edit(() => setWish(e.target.value))} /></Field>;
   const generatingNote = generating && <Generating text={path === 'recommend' ? 'Der Coach erstellt Vorschläge für deinen Block … Das kann bis zu einer Minute dauern.' : 'Der Coach arbeitet deinen Block aus … Das kann bis zu einer Minute dauern.'} />;
   return <div className="coach-wizard">
     <ol className="coach-wizard-steps">{steps.map((label, i) => <li key={label} className={i === current ? 'current' : i < current ? 'done' : ''} aria-current={i === current ? 'step' : undefined}><span>{i + 1}</span>{label}</li>)}</ol>
@@ -537,14 +533,14 @@ function BlockWizard({ catalog, profile, busy, canPlan, generating, proposal, pr
         })}</div>
         {type && <BlockQuestions questions={questions} answers={answers} onAnswer={(key, value) => edit(() => setAnswers(a => ({ ...a, [key]: value })))} />}</>}
         {type && <div className="coach-type-detail">
-          {preset && <><h4>Länge und Nebenschwerpunkt</h4><p className="coach-muted">So steht der Block im Saisonplan. Änderst du die Länge, passt du den Saisonplan danach an.</p></>}
-          <div className="coach-inline-form">
+          {/* A season block takes length and secondary focus from the season plan. */}
+          {!preset && <div className="coach-inline-form">
             <Field label="Wochen"><input type="number" min={type.minWeeks} max={type.maxWeeks} value={choice.weeks} onChange={e => edit(() => setChoice(c => ({ ...c, weeks: e.target.value })))} /></Field>
             <Field label="Nebenschwerpunkt"><select value={choice.secondaryFocus || ''} onChange={e => edit(() => setChoice(c => ({ ...c, secondaryFocus: e.target.value || null })))}><option value="">Keiner</option>{(catalog.secondaryFocus || []).map(item => {
               const blocked = item.id === 'kraft' && !profile.preferences.gymAvailability;
               return <option key={item.id} value={item.id} disabled={blocked}>{item.name}{blocked ? ' (Fitnessstudio im Profil fehlt)' : ''}</option>;
             })}</select></Field>
-          </div>
+          </div>}
           {!weeksValid && <p className="coach-muted">Ein Block „{type.name}“ dauert {type.minWeeks}–{type.maxWeeks} Wochen.</p>}
           {weeksValid && <RhythmStrip pattern={type.rhythms?.[String(weeks)]} />}
           <ul className="coach-rules">{type.rules.map(rule => <li key={rule}>{rule}</li>)}</ul>

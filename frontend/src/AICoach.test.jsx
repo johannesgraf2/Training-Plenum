@@ -396,11 +396,15 @@ test('a saved season plan is edited within the rules and prefills the next block
   expect(card.textContent).toContain('Grundlage gestalten');
   await click(radio('volume-ramp'));
   await change(inputFor('Erste Woche (h)'), '4');
-  await click(radio('stimulus-sprints'));
+  expect(radio('stimulus-sprints')).toBeNull();
+  // A season block keeps length and secondary focus from the season plan; rhythm and rules stay visible.
+  expect(inputFor('Wochen')).toBeUndefined();
+  expect(inputFor('Nebenschwerpunkt')).toBeUndefined();
+  expect(card.querySelector('.coach-rhythm')).not.toBeNull();
+  expect(card.querySelector('.coach-rules')).not.toBeNull();
   await click(button('Block ausarbeiten lassen'));
   expect(requests.find(r => r.path === '/api/coach/proposals').body).toMatchObject({ kind: 'block', mode: 'choose', situation: 'nach_pause', blockType: 'grundlage', weeks: 8, startDate: '2026-09-28',
-    design: [{ question: 'Wie soll der Umfang verlaufen?', answer: 'In der ersten Woche mit 4 h beginnen und dann von Woche zu Woche steigern' },
-      { question: 'Welche Reize neben dem lockeren Fahren?', answer: 'Kurze Sprints in lockeren Fahrten einbauen' }] });
+    design: [{ question: 'Wie soll der Umfang verlaufen?', answer: 'In der ersten Woche mit 4 h beginnen und dann von Woche zu Woche steigern' }] });
 });
 
 test('the season start is set in the season plan and moves the weeks to fill', async () => {
