@@ -7,15 +7,12 @@ Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und
 
 | Vorteil | Was das konkret bedeutet |
 |---------|--------------------------|
-| 🔒 **Deine Daten bleiben bei dir** | Läuft lokal auf dem eigenen Rechner (Windows-Launcher oder Docker). Aufzeichnungen, Datenbank und Originaldateien liegen auf deiner Festplatte und werden nicht versioniert. Die Karte wird im Browser gezeichnet, es gehen keine Tracks oder FIT-Dateien an einen Kartendienst. |
-| 📦 **Kompletter Umzug in Minuten** | Einen entpackten TrainingPeaks-Export als ganzen Ordner per Drag & Drop importieren. FIT, FIT.GZ, GPX und TCX werden der Reihe nach verarbeitet, Duplikate automatisch übersprungen, fehlerhafte Dateien einzeln gemeldet, ohne dass die Warteschlange abbricht. |
-| 🎯 **Ehrliche Zahlen statt geschönter Werte** | Jeder Messpunkt bleibt mit echtem UTC-Zeitstempel erhalten. Lücken, fehlende Sensoren und Pausen werden als solche erkannt, nie zu Nullen umgedeutet oder überbrückt. Fehlen Daten, steht ein Strich statt einer erfundenen Zahl. |
-| 📈 **Analysen wie bei den Profis** | Bestwerte (Leistung 30 s – 60 min, Laufzeiten 400 m – 21 km), Normalized Power und TSS, Zeit in HF- und Leistungszonen, Wochenumfänge, Sportarten-Mix und Jahresvergleiche. Jedes Diagramm zeigt exakte Werte und eine aufklappbare Datentabelle. |
-| 🗺️ **Route und Daten verbunden** | Interaktive OpenStreetMap-Route pro Aktivität: Mit der Maus über das Diagramm fahren und die Position mit Tempo, Puls und Watt auf der Karte sehen. |
-| 🚴 **Vom Plan direkt auf den Garmin** | Workouts mit Intervallen, Wiederholungen und Watt-/Pace-/HF-Zielen im Editor bauen oder aus Vorlagen wählen, im Kalender einplanen, per Drag & Drop verschieben und als validierte Garmin-FIT-Datei exportieren. Per USB kopieren, fertig. Auf dem Edge 1050 getestet. |
-| 🤖 **KI-Coach mit Kontrolle** | Der AI Coach plant Makrozyklen und Wochen anhand von Zielen, Verfügbarkeit und Check-ins, mit eigenem OpenAI-Key (BYOK). Nichts wird ohne ausdrückliche Bestätigung übernommen, fixierte Einheiten bleiben unangetastet, und rohe Sensordaten verlassen nie den Rechner. |
-| ⚡ **Schnell, auch mit Jahren an Daten** | Versionierte SQLite-Caches speichern Berechnungen pro Aktivität. Filter- und Jahreswechsel laufen ohne erneutes Einlesen der Sensorstreams; FTP-Änderungen klassifizieren nur den Cache neu. |
-| 🧪 **Getestet und transparent** | Offene Formeln mit Quellenangaben, automatisierte Backend- und Frontend-Tests und jede exportierte FIT-Datei wird vor dem Download erneut dekodiert und geprüft. |
+| 🔒 **Deine Daten bleiben bei dir** | Läuft auf deinem Rechner, per Windows-Launcher oder Docker. Datenbank und Originaldateien liegen auf deiner Festplatte. Tracks und FIT-Dateien gehen an keinen Kartendienst, die Route wird im Browser gezeichnet. |
+| 📦 **Umzug von TrainingPeaks oder Garmin Connect in Minuten** | Den entpackten Export als ganzen Ordner per Drag & Drop importieren. FIT, FIT.GZ, GPX und TCX werden nacheinander verarbeitet, Duplikate übersprungen und fehlerhafte Dateien einzeln gemeldet, ohne dass der Import abbricht. |
+| 📈 **Die Kennzahlen, die du kennst** | Bestwerte (Leistung 30 s bis 60 min, Laufzeiten 400 m bis 21 km), Normalized Power und TSS, Zeit in HF- und Leistungszonen, Wochenumfänge, Sportarten-Mix und Jahresvergleiche. Jedes Diagramm zeigt exakte Werte und eine aufklappbare Tabelle. |
+| 🤖 **KI-Coach, aber du entscheidest** | Optional plant ein KI-Coach ganze Trainingsblöcke und Wochen nach Ziel, verfügbarer Zeit und deinen Check-ins, mit deinem eigenen OpenAI-Key. Übernommen wird nur, was du bestätigst. Fixierte Einheiten bleiben unangetastet, und Rohdaten verlassen nie den Rechner. |
+| ⚡ **Schnell, auch mit Jahren an Daten** | Berechnungen werden pro Aktivität zwischengespeichert. Filter und Jahreswechsel reagieren sofort. Nach einer FTP-Änderung werden nur die Zonen neu berechnet, ohne alle Dateien erneut einzulesen. |
+| 🧪 **Nachvollziehbar und getestet** | Alle Formeln sind offen und mit Quellen belegt. Automatische Tests prüfen Backend und Frontend, und jede exportierte FIT-Datei wird vor dem Download noch einmal eingelesen und geprüft. |
 
 ### Für wen?
 
