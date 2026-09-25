@@ -39,6 +39,9 @@
   --danger-line: #e4b7aa;
   --warning: #8a5a12;
   --warning-bg: #f5e9cf;
+  --zone-sweetspot: #d9a21b;
+  --zone-threshold: #d0351f;
+  --zone-vo2: #7c1a12;
   --sport-ride: var(--blue);
   --sport-run: var(--green);
   --sport-swim: var(--teal);
@@ -247,6 +250,9 @@
   --danger-line: #5f2f25;
   --warning: #e5ba6e;
   --warning-bg: #372b17;
+  --zone-sweetspot: #e6bf4e;
+  --zone-threshold: #ee6a4e;
+  --zone-vo2: #b3322a;
   --planned: #8a8273;
   --card: #1f1c18;
   --card-line: #322d27;

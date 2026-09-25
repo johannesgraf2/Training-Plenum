@@ -3,7 +3,7 @@ import { DEFAULT_FTP, createLibraryWorkout, libraryKeyTarget, libraryPhases, lib
 
 function Profile({ entry }) {
   return <svg className="library-profile" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
-    {libraryProfile(entry).map((segment, index) => <rect key={index} className={segment.intensity} x={segment.x * 100} width={Math.max(segment.width * 100, 0.4)} y={24 - segment.level * 24} height={segment.level * 24} />)}
+    {libraryProfile(entry).map((segment, index) => <rect key={index} className={[segment.intensity, segment.zone && `zone-${segment.zone}`].filter(Boolean).join(' ')} x={segment.x * 100} width={Math.max(segment.width * 100, 0.4)} y={24 - segment.level * 24} height={segment.level * 24} />)}
   </svg>;
 }
 
