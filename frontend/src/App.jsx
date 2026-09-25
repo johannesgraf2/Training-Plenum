@@ -731,6 +731,12 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [profileVersion, setProfileVersion] = useState(0);
   const [coachTab, setCoachTab] = useState({ tab: 'plan', version: 0 });
+  // The coach stays mounted once opened, so a running proposal or week planning goes on while the athlete
+  // looks at other pages. The nav shows that it is working, and that a result waits once it is done.
+  const [coachOpened, setCoachOpened] = useState(false);
+  const [coachBusy, setCoachBusy] = useState('');
+  const [coachDone, setCoachDone] = useState(false);
+  const coachVisible = page === 'coach' && !selected;
 
   const handleUpload = (act, existing = false) => {
     setActivities(prev => [act, ...prev.filter(a => a.id !== act.id)].sort((a, b) => new Date(b.date) - new Date(a.date)));
@@ -821,6 +827,13 @@ export default function App() {
       setMoveError(`„${workout.name}“ konnte nicht verschoben werden. ${error.message}`);
     }
   };
+  useEffect(() => { if (coachVisible) { setCoachOpened(true); setCoachDone(false); } }, [coachVisible]);
+  const coachVisibleRef = useRef(coachVisible);
+  coachVisibleRef.current = coachVisible;
+  const coachBusyChanged = label => {
+    setCoachBusy(label);
+    if (!label && !coachVisibleRef.current) setCoachDone(true);
+  };
   const openCoachProfile = () => { setCoachTab(t => ({ tab: 'profile', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
 
   const todayStr = new Date().toDateString();
@@ -896,7 +909,10 @@ export default function App() {
           <nav aria-label="Hauptnavigation" className="app-nav">
             {[['home', 'Startseite'], ['calendar', 'Kalender'], ['dashboard', 'Dashboard'], ['coach', 'AI Coach']].map(([id, label]) => (
               <button key={id} type="button" aria-current={page === id && !selected ? 'page' : undefined}
-                onClick={() => { setPage(id); setSelected(null); window.location.hash = ''; }}>{label}</button>
+                onClick={() => { setPage(id); setSelected(null); window.location.hash = ''; }}>{label}
+                {id === 'coach' && coachBusy && !coachVisible && <span className="app-nav-status busy" role="img" title={coachBusy} aria-label={`Läuft: ${coachBusy}`} />}
+                {id === 'coach' && !coachBusy && coachDone && <span className="app-nav-status done" role="img" title="Der Coach ist fertig" aria-label="Der Coach ist fertig" />}
+              </button>
             ))}
           </nav>
         </div>
@@ -1045,10 +1061,7 @@ export default function App() {
               </div>
             ))}
           </div>
-        ) : page === 'coach' ? (
-          <AICoach key={coachTab.version} initialTab={coachTab.tab} apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
-            onWorkoutsChanged={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })} />
-        ) : page === 'dashboard' ? (
+        ) : page === 'coach' ? null : page === 'dashboard' ? (
           <div className="dashboard-page">
             <Dashboard key={profileVersion} apiBase={API} activities={activities} loading={loading} onOpenActivity={openActivity} />
 
@@ -1074,6 +1087,11 @@ export default function App() {
             </section>
           </div>
         ) : null}
+        {coachOpened && <div hidden={!coachVisible}>
+          <AICoach initialTab={coachTab.tab} tabVersion={coachTab.version} apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
+            onBusyChange={coachBusyChanged}
+            onWorkoutsChanged={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })} />
+        </div>}
       </main>
 
       {/* Upload Modal */}
