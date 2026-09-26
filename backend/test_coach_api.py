@@ -226,6 +226,29 @@ class CoachAPITests(unittest.TestCase):
         self.assertNotIn('hinweise', proposal['after'])
         self.assertEqual(len(self.confirm(proposal)['weeks'][self.week]['sessions']), 2)
 
+    def test_chosen_interval_formats_bind_the_vo2_sessions_of_the_block(self):
+        three = ('build', 'build', 'recovery')
+        body = {'kind': 'block', 'mode': 'choose', 'blockType': 'vo2max', 'secondaryFocus': None,
+                'startDate': self.start.isoformat(), 'weeks': 3}
+        decision = {'options': [self.option(block_type='vo2max', phases=three)], 'hinweise': []}
+        for formats in (['ride-threshold-10'], ['ride-vo2-4', 'ride-vo2-4']):
+            _, provider = self.propose({**body, 'formats': formats}, decision, expected=400)
+            provider.generate.assert_not_called()
+        self.propose({**body, 'mode': 'recommend', 'situation': 'mitten_im_training', 'formats': ['ride-vo2-4']}, decision, expected=400)
+        proposal, provider = self.propose({**body, 'formats': ['ride-vo2-4', 'ride-vo2-3015']}, decision)
+        chosen = provider.generate.call_args.args[3]['athleteDesign']['intervalFormats']
+        self.assertEqual([f['name'] for f in chosen], ['VO2max 4 min', 'VO2max 30/15'])
+        self.assertEqual(self.confirm(proposal)['blocks'][0]['formats'], ['ride-vo2-4', 'ride-vo2-3015'])
+        vo2 = lambda identity, day, **params: {**self.session(identity, day, template='bike_vo2'),
+                                               'params': {**dict.fromkeys(PARAM_NAMES), **params}}
+        week = {'week': self.week, 'targetHours': 56 * 2 / 60, 'focus': 'VO2max', 'hinweise': [], 'sessions': [vo2('a', 'tue'), vo2('b', 'thu')]}
+        response, provider = self.propose({'kind': 'week', 'week': self.week}, week, expected=400)
+        self.assertIn('VO2max 4 min, VO2max 30/15', response['error'])
+        self.assertEqual(provider.generate.call_args.args[3]['block']['intervalFormats'][0]['params'], {'workMin': 4, 'recoveryMin': 4})
+        four = dict(intervals=5, workMin=4, recoveryMin=4)
+        proposal, _ = self.propose({'kind': 'week', 'week': self.week}, {**week, 'sessions': [vo2('a', 'tue', **four), vo2('b', 'thu', **four)]})
+        self.assertEqual(len(self.confirm(proposal)['weeks'][self.week]['sessions']), 2)
+
     def test_a_pending_legacy_macro_proposal_expires(self):
         with self.backend.app.app_context():
             row = self.Proposal(user_id=self.backend.DEMO_USER_ID, kind='macro', fingerprint='x', definition='{}')

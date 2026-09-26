@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Icon } from './icons';
 import { localDate, summary as workoutSummary } from './workoutModel';
+import { workoutLibrary } from './workoutLibraryData';
 import './AICoach.css';
 
 const DAYS = [['mon', 'Mo'], ['tue', 'Di'], ['wed', 'Mi'], ['thu', 'Do'], ['fri', 'Fr'], ['sat', 'Sa'], ['sun', 'So']];
@@ -231,6 +232,7 @@ function BlockOverview({ value, chart }) {
   const max = Math.max(...value.weeks.map(w => Number(w.targetHours) || 0), 1);
   const type = [value.typeName, value.secondaryName && `+ ${value.secondaryName}`].filter(Boolean).join(' ');
   return <><p className="coach-muted">{type && <strong className="coach-block-type">{type}</strong>}{type && ' · '}{dateLabel(range.start)} – {dateLabel(range.end)} · {range.weeks} {range.weeks === 1 ? 'Woche' : 'Wochen'}</p>
+    {value.formats?.length > 0 && <p className="coach-muted">Intervallformen: {value.formats.map(formatTitle).join(', ')}</p>}
     {chart || <>
     <div className="coach-macro" aria-label="Wochenvolumen und Trainingsphasen">{value.weeks.map((w, i) =>
       <div key={w.week ?? i} className="coach-macro-week" title={`Woche ${w.week}: ${PHASES[w.phase] || w.phase}, ${hours(w.targetHours)}. ${w.focus || ''}`}>
@@ -409,8 +411,9 @@ export function blockQuestions(blockType, profile) {
     grundlage: [longRideQuestion('Wie lang soll die längste Ausfahrt am Ende werden?', 3)],
     vo2max: [{ id: 'intervals', label: 'Wie steigst du in die VO2max-Intervalle ein?', options: [COACH_DECIDES,
       { ...repsStart('reps', 'Wenige Wiederholungen, dann steigern', 'VO2max-Intervallen (3–5 min)'), hint: 'z. B. erst 2 × 4 min, dann mehr.' },
-      { id: 'short', label: 'Erst kurze Intervalle', hint: '30/15 zuerst, später längere Intervalle.', answer: () => 'Mit kurzen Intervallen (30/15) beginnen, später zu längeren Intervallen wechseln' },
-      { id: 'long', label: 'Gleich lange Intervalle', hint: '4–5 min von Anfang an.', answer: () => 'Von Anfang an lange VO2max-Intervalle (4–5 min)' }] }],
+      { id: 'long', label: 'Gleich lange Intervalle', hint: '4–5 min von Anfang an.', answer: () => 'Von Anfang an lange VO2max-Intervalle (4–5 min)' },
+      { id: 'formats', label: 'Aus den Workout-Vorlagen wählen', hint: 'Du wählst die Intervallformen, der Coach Anzahl und Steigerung.', formats: true,
+        answer: ids => `Für die VO2max-Einheiten nur diese Intervallformen aus den Workout-Vorlagen: ${ids.map(formatTitle).join(', ')}` }] }],
     schwelle: [{ id: 'intervals', label: 'Wie steigst du in die Schwellenarbeit ein?', options: [COACH_DECIDES,
       { ...repsStart('reps', 'Wenige Wiederholungen, dann steigern', 'Schwellenintervallen (ca. 10 min)'), hint: 'z. B. erst 2 × 10 min, dann mehr.' },
       { id: 'sweetspot', label: 'Erst Sweetspot', hint: 'Später näher an die Schwelle.', answer: () => 'Mit Sweetspot beginnen und später an die Schwelle gehen' },
@@ -433,18 +436,27 @@ export function blockQuestions(blockType, profile) {
   if (!(blockType in extra)) return [];
   return ['taper', 'uebergang'].includes(blockType) ? extra[blockType] : [volume, ...extra[blockType]];
 }
+// Interval formats are families of the workout library; the catalog names the ones a block type can use.
+const formatTitle = id => workoutLibrary.find(entry => entry.family === id)?.familyTitle || id;
+const chosenOption = (question, answers) => question.options.find(o => o.id === answers[question.id]?.option);
 // Only answers the athlete gave; questions left to the coach are not sent.
 export function designAnswers(questions, answers) {
   return questions.flatMap(question => {
     const answer = answers[question.id];
-    const option = question.options.find(o => o.id === answer?.option);
-    if (!option || option.id === 'coach') return [];
-    const value = option.input ? (Number.isFinite(Number(answer.value)) && answer.value !== '' ? Number(answer.value) : option.input.value) : null;
+    const option = chosenOption(question, answers);
+    if (!option || option.id === 'coach' || (option.formats && !answer.value?.length)) return [];
+    const value = option.formats ? answer.value
+      : option.input ? (Number.isFinite(Number(answer.value)) && answer.value !== '' ? Number(answer.value) : option.input.value) : null;
     return [{ question: question.label, answer: option.answer(value) }];
   });
 }
+// Formats chosen from the workout library: null when no question asks for them, [] when none is picked yet.
+export function designFormats(questions, answers) {
+  const question = questions.find(q => chosenOption(q, answers)?.formats);
+  return question ? answers[question.id].value || [] : null;
+}
 
-function BlockQuestions({ questions, answers, onAnswer }) {
+function BlockQuestions({ questions, answers, formats = [], onAnswer }) {
   const id = useId();
   return <div className="coach-block-questions">{questions.map(question => {
     const answer = answers[question.id] || { option: 'coach' };
@@ -452,11 +464,22 @@ function BlockQuestions({ questions, answers, onAnswer }) {
     return <div key={question.id} className="coach-question">
       <h4>{question.label}</h4>
       <div className="coach-choice-grid" role="radiogroup" aria-label={question.label}>{question.options.map(o => <label key={o.id} className={`coach-choice ${answer.option === o.id ? 'selected' : ''}`}>
-        <input type="radio" name={`${id}-${question.id}`} value={`${question.id}-${o.id}`} checked={answer.option === o.id} onChange={() => onAnswer(question.id, { option: o.id, value: o.input?.value ?? null })} />
+        <input type="radio" name={`${id}-${question.id}`} value={`${question.id}-${o.id}`} checked={answer.option === o.id} onChange={() => onAnswer(question.id, { option: o.id, value: o.formats ? [] : o.input?.value ?? null })} />
         <strong>{o.label}</strong>{o.hint && <small>{o.hint}</small>}
       </label>)}</div>
       {option?.input && <div className="coach-inline-form"><Field label={option.input.label}><input type="number" min={option.input.min} max={option.input.max} step={option.input.step} value={answer.value ?? ''}
         onChange={e => onAnswer(question.id, { ...answer, value: e.target.value })} /></Field></div>}
+      {option?.formats && <>
+        <div className="coach-choice-grid types" role="group" aria-label="Intervallformen aus den Workout-Vorlagen">{formats.map(format => {
+          const entry = workoutLibrary.find(item => item.family === format);
+          const on = answer.value.includes(format);
+          return <label key={format} className={`coach-choice ${on ? 'selected' : ''}`}>
+            <input type="checkbox" checked={on} onChange={() => onAnswer(question.id, { ...answer, value: on ? answer.value.filter(f => f !== format) : [...answer.value, format] })} />
+            <strong>{formatTitle(format)}</strong>{entry && <small>{entry.note}</small>}
+          </label>;
+        })}</div>
+        <p className="coach-muted">{answer.value.length ? `${answer.value.length} gewählt. Der Coach nutzt nur diese Formen und legt Wiederholungen und Steigerung fest.` : 'Wähle mindestens eine Intervallform.'}</p>
+      </>}
     </div>;
   })}</div>;
 }
@@ -484,13 +507,15 @@ function BlockWizard({ catalog, profile, busy, canPlan, generating, proposal, pr
   const weeks = Number(choice.weeks);
   const weeksValid = !!type && Number.isInteger(weeks) && weeks >= type.minWeeks && weeks <= type.maxWeeks;
   const questions = useMemo(() => blockQuestions(choice.blockType, profile), [choice.blockType, profile]);
+  const formats = designFormats(questions, answers);
   const steps = preset ? SEASON_WIZARD_STEPS : WIZARD_STEPS;
   const current = proposal ? steps.length - 1 : preset && step === 2 ? 1 : step;
   function submit() {
     const base = { kind: 'block', situation, startDate, ...(wish.trim() ? { instruction: wish.trim() } : {}) };
     const design = designAnswers(questions, answers);
     onPropose(path === 'recommend' ? { ...base, mode: 'recommend' }
-      : { ...base, mode: 'choose', blockType: choice.blockType, secondaryFocus: choice.secondaryFocus, weeks, ...(design.length ? { design } : {}) });
+      : { ...base, mode: 'choose', blockType: choice.blockType, secondaryFocus: choice.secondaryFocus, weeks, ...(design.length ? { design } : {}),
+        ...(formats?.length ? { formats } : {}) });
   }
   const wishField = <Field label="Wunsch (optional)" hint="Präzisiert die Anfrage, z. B. „Einheiten mit hoher Kadenz einbauen“ oder „Einzelne lockere Ausfahrten nüchtern“. Der Blocktyp bleibt maßgeblich."><textarea maxLength={1500} value={wish} onChange={e => edit(() => setWish(e.target.value))} /></Field>;
   const generatingNote = generating && <Generating text={path === 'recommend' ? 'Der Coach erstellt Vorschläge für deinen Block … Das kann bis zu einer Minute dauern.' : 'Der Coach arbeitet deinen Block aus … Das kann bis zu einer Minute dauern.'} />;
@@ -522,7 +547,7 @@ function BlockWizard({ catalog, profile, busy, canPlan, generating, proposal, pr
       </>}
       {step === 2 && path === 'choose' && <>
         {preset && type ? <><h3>{type.name} gestalten</h3><p className="coach-muted">{SITUATIONS[situation]} · {type.summary} Beantworte nur, was dir wichtig ist, den Rest entscheidet der Coach.</p>
-          <BlockQuestions questions={questions} answers={answers} onAnswer={(key, value) => edit(() => setAnswers(a => ({ ...a, [key]: value })))} /></> : <>
+          <BlockQuestions questions={questions} answers={answers} formats={type.formats} onAnswer={(key, value) => edit(() => setAnswers(a => ({ ...a, [key]: value })))} /></> : <>
         <h3>Blocktyp wählen</h3><p className="coach-muted">{SITUATIONS[situation]} · Start am {dateLabel(startDate)}</p>
         <div className="coach-choice-grid types" role="radiogroup" aria-label="Blocktyp">{types.map(item => {
           const blocked = item.endsByGoal && !profile.goal.date;
@@ -531,7 +556,7 @@ function BlockWizard({ catalog, profile, busy, canPlan, generating, proposal, pr
             <strong>{item.name}</strong><small>{item.summary}</small><small className="coach-choice-meta">{item.minWeeks}–{item.maxWeeks} Wochen{blocked ? ' · braucht ein Zieldatum im Athletenprofil' : ''}</small>
           </label>;
         })}</div>
-        {type && <BlockQuestions questions={questions} answers={answers} onAnswer={(key, value) => edit(() => setAnswers(a => ({ ...a, [key]: value })))} />}</>}
+        {type && <BlockQuestions questions={questions} answers={answers} formats={type.formats} onAnswer={(key, value) => edit(() => setAnswers(a => ({ ...a, [key]: value })))} />}</>}
         {type && <div className="coach-type-detail">
           {/* A season block takes length and secondary focus from the season plan. */}
           {!preset && <div className="coach-inline-form">
@@ -546,7 +571,7 @@ function BlockWizard({ catalog, profile, busy, canPlan, generating, proposal, pr
           <ul className="coach-rules">{type.rules.map(rule => <li key={rule}>{rule}</li>)}</ul>
         </div>}
         {wishField}
-        <div className="coach-actions"><button type="button" className="coach-primary" disabled={!canPlan || !weeksValid} onClick={submit}>Block ausarbeiten lassen</button><button type="button" onClick={() => setStep(preset ? 0 : 1)}>Zurück</button></div>
+        <div className="coach-actions"><button type="button" className="coach-primary" disabled={!canPlan || !weeksValid || formats?.length === 0} onClick={submit}>Block ausarbeiten lassen</button><button type="button" onClick={() => setStep(preset ? 0 : 1)}>Zurück</button></div>
         {generatingNote}
       </>}
     </fieldset>}
