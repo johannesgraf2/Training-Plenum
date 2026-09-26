@@ -260,7 +260,6 @@ export default function Dashboard({ apiBase, activities, loading, onOpenActivity
         ['Distanz', `${number(data.totals.distance, 1)} km`, 'distance'],
         ['Höhenmeter', `${number(data.totals.elevation)} m`, 'elevation'],
       ].map(([label, value, key]) => <div key={key}><span>{label}</span><strong>{value}</strong><small>{scope} · {sportName}{key !== 'count' && data.totals.known[key] < data.totals.count ? ' · teilweise erfasst' : ''}</small></div>)}</div>
-      <FitnessCard fitness={data.fitness} settings={data.settings} onSettings={openSettings} />
       {!data.totals.count && <p className="analysis-empty-banner">Keine Aktivitäten für diese Auswahl. Wähle ein anderes Jahr oder importiere deine Trainingsdateien.</p>}
       <div className="analysis-overview-grid">
         <Card title="Dein Sportarten-Mix" eyebrow={`Zeitanteil · ${scope}`} extra={<span className="analysis-badge">alle Sportarten</span>}><SportShare rows={data.sportShare} /></Card>
@@ -276,6 +275,7 @@ export default function Dashboard({ apiBase, activities, loading, onOpenActivity
           <p className="analysis-note">{year === 'all' ? 'Der gesamte gespeicherte Zeitraum' : `Januar bis Dezember ${year}`} · ein Balken pro Kalenderwoche. Genaue Wochenwerte findest du am Balken und in der Tabelle.</p>
         </Card>
       </div>
+      <FitnessCard fitness={data.fitness} settings={data.settings} onSettings={openSettings} />
       <div className="analysis-week-toolbar"><div><h3>Deine Trainingswochen</h3><p>{sportName} · {scope} · Montag bis Sonntag · {timezone}</p></div><span className="analysis-badge">{weeks.length} Kalenderwochen im Überblick</span></div>
       <div className="analysis-week-grid">
         <Card title="Verbrauchte Kalorien" eyebrow="Energie · pro Woche" extra={<span className="analysis-badge">kcal</span>}>
