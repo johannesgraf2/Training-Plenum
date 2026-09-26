@@ -106,6 +106,38 @@ SECONDARY_FOCUS = {
 }
 
 
+# Interval formats of the workout library (keyed by its family id) that a template can build. The athlete picks
+# formats for a block; every session of that kind in the block then uses one of them, with these params fixed.
+# The coach still decides repetitions, sets, intensity and progression.
+_vo2 = lambda name, work, rest: {'name': name, 'blockTypes': ['vo2max'], 'template': 'bike_vo2',
+                                 'params': {'workMin': work, 'recoveryMin': rest}}
+_micro = lambda name, work, rest: {'name': name, 'blockTypes': ['vo2max'], 'template': 'bike_vo2_micro',
+                                   'params': {'workSec': work, 'restSec': rest}}
+INTERVAL_FORMATS = {
+    'ride-vo2-3': _vo2('VO2max 3 min', 3, 3),
+    'ride-vo2-4': _vo2('VO2max 4 min', 4, 4),
+    'ride-vo2-5': _vo2('VO2max 5 min', 5, 5),
+    'ride-vo2-6': _vo2('VO2max 6 min', 6, 5),
+    'ride-vo2-11': _micro('VO2max 1/1', 60, 60),
+    'ride-vo2-3015': _micro('VO2max 30/15', 30, 15),
+    'ride-vo2-4020': _micro('VO2max 40/20', 40, 20),
+    'ride-vo2-4515': _micro('VO2max 45/15', 45, 15),
+    'ride-vo2-2010': _micro('VO2max 20/10', 20, 10),
+    'ride-vo2-1515': _micro('VO2max 15/15', 15, 15),
+}
+
+
+def interval_formats(identities):
+    """The chosen formats as the AI sees them."""
+    return [{'id': key, **{k: copy.deepcopy(INTERVAL_FORMATS[key][k]) for k in ('name', 'template', 'params')}} for key in identities]
+
+
+def check_formats(identity, formats):
+    if len(set(formats)) != len(formats) or any(identity not in INTERVAL_FORMATS.get(key, {}).get('blockTypes', ())
+                                                for key in formats):
+        raise CoachError('Bitte nur Intervallformen wählen, die zu diesem Blocktyp passen.')
+
+
 SITUATIONS = {'nach_pause': 'Nach einer Pause', 'mitten_im_training': 'Mitten im Training', 'saison_vorbei': 'Saison vorbei'}
 SELECTABLE = [key for key, spec in BLOCK_TYPES.items() if spec['selectable']]
 BLOCK_RESPONSE_SCHEMA = obj({
@@ -152,7 +184,8 @@ def catalog():
                             'minWeeks': spec['minWeeks'], 'maxWeeks': spec['maxWeeks'], 'endsByGoal': spec['endsByGoal'],
                             'rules': rule_texts(key),
                             'suggestedRhythm': suggested_rhythm(spec['defaultWeeks'], key),
-                            'rhythms': {str(n): suggested_rhythm(n, key) for n in range(spec['minWeeks'], spec['maxWeeks'] + 1)}}
+                            'rhythms': {str(n): suggested_rhythm(n, key) for n in range(spec['minWeeks'], spec['maxWeeks'] + 1)},
+                            'formats': [f for f, value in INTERVAL_FORMATS.items() if key in value['blockTypes']]}
                            for key, spec in BLOCK_TYPES.items() if spec['selectable']],
             'secondaryFocus': [{'id': key, 'name': value['name']} for key, value in SECONDARY_FOCUS.items()]}
 
@@ -264,6 +297,12 @@ def check_week_rules(block, block_week, sessions):
         focus = SECONDARY_FOCUS.get(block.get('secondaryFocus'))
         if focus and not count(focus['group']):
             raise CoachError(f"Der Nebenschwerpunkt {focus['name']} braucht mindestens eine {GROUP_NAMES[focus['group']]} pro Belastungswoche.")
+    formats = [INTERVAL_FORMATS[key] for key in block.get('formats', [])]
+    for template in {f['template'] for f in formats}:
+        allowed = [f['params'] for f in formats if f['template'] == template]
+        if any(s['template'] == template and not any(all(s['params'].get(k) == v for k, v in p.items()) for p in allowed)
+               for s in sessions):
+            raise CoachError(f"Im Block „{name}“ nur die gewählten Intervallformen: {', '.join(f['name'] for f in formats)}.")
     if spec['easyShare']:
         endurance = [s for s in sessions if s['template'] in GROUPS['ride'] | GROUPS['run']]
         total = sum(s['rendered']['durationMin'] or 0 for s in endurance)
@@ -282,9 +321,10 @@ def _end(start, weeks):
     return (day_date(start) + timedelta(weeks=weeks) - timedelta(days=1)).isoformat()
 
 
-def new_block(identity, secondary, start, weeks, source='aiRecommendation', key=None):
-    return {'id': key or str(uuid.uuid4()), 'blockType': identity, 'secondaryFocus': secondary, 'status': 'active',
-            'startDate': start, 'endDate': _end(start, len(weeks)), 'weeks': weeks, 'review': None, 'source': source}
+def new_block(identity, secondary, start, weeks, source='aiRecommendation', key=None, formats=()):
+    block = {'id': key or str(uuid.uuid4()), 'blockType': identity, 'secondaryFocus': secondary, 'status': 'active',
+             'startDate': start, 'endDate': _end(start, len(weeks)), 'weeks': weeks, 'review': None, 'source': source}
+    return block | ({'formats': list(formats)} if formats else {})
 
 
 def migrate_plan(plan):

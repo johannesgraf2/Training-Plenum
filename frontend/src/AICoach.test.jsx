@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Simulate } from 'react-dom/test-utils';
-import AICoach, { blockQuestions, designAnswers, endsWithRace, fitSeasonWeeks, isoWeek, monthSpans, weekStart, weeksToGoal } from './AICoach';
+import AICoach, { blockQuestions, designAnswers, designFormats, endsWithRace, fitSeasonWeeks, isoWeek, monthSpans, weekStart, weeksToGoal } from './AICoach';
 
 const profile = {
   source: 'athlete', goal: { type: 'endurance', name: 'Fit bleiben' },
@@ -467,6 +467,14 @@ test('block questions fit the block type and only send what the athlete answered
   expect(vo2[0].options.find(o => o.id === 'ramp').input.value).toBe(5);
   expect(designAnswers(vo2, { volume: { option: 'coach' }, intervals: { option: 'reps', value: '2' } }))
     .toEqual([{ question: 'Wie steigst du in die VO2max-Intervalle ein?', answer: 'Mit 2 Wiederholungen VO2max-Intervallen (3–5 min) beginnen und dann steigern' }]);
+  expect(vo2[1].options.map(o => o.id)).toEqual(['coach', 'reps', 'long', 'formats']);
+  expect(designFormats(vo2, { intervals: { option: 'reps', value: 2 } })).toBeNull();
+  expect(designFormats(vo2, { intervals: { option: 'formats', value: [] } })).toEqual([]);
+  expect(designAnswers(vo2, { intervals: { option: 'formats', value: [] } })).toEqual([]);
+  const formats = { intervals: { option: 'formats', value: ['ride-vo2-4', 'ride-vo2-3015'] } };
+  expect(designFormats(vo2, formats)).toEqual(['ride-vo2-4', 'ride-vo2-3015']);
+  expect(designAnswers(vo2, formats)).toEqual([{ question: 'Wie steigst du in die VO2max-Intervalle ein?',
+    answer: 'Für die VO2max-Einheiten nur diese Intervallformen aus den Workout-Vorlagen: VO2max 4 min, VO2max 30/15' }]);
   expect(blockQuestions('taper', profile).map(q => q.id)).toEqual(['reduction']);
   expect(designAnswers(blockQuestions('grundlage', profile), {})).toEqual([]);
 });

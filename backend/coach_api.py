@@ -18,8 +18,8 @@ from ai_provider import (DEFAULT_MODEL, REASONING_EFFORTS, ProviderError, decryp
                          get_provider, key_file, validate_model, validate_reasoning_effort)
 from athlete_context import build_snapshot, session_pattern, summarize_period
 from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, GROUPS, SECONDARY_FOCUS, SITUATIONS, block_for_week, block_status,
-                          catalog as block_catalog, check_block, check_choice, check_options, check_week_rules,
-                          migrate_plan, new_block, place_block, public_blocks, rule_texts)
+                          catalog as block_catalog, check_block, check_choice, check_formats, check_options, check_week_rules,
+                          interval_formats, migrate_plan, new_block, place_block, public_blocks, rule_texts)
 from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
                           CHECK_IN_SCHEMA, apply_patch, complete_profile, day_date, effective_availability, iso_week,
                           min_ride_minutes, num, obj, preferred_hours, response_schemas, rest_day_pairs, text,
@@ -644,6 +644,10 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'athleteDesign lists the athlete answers to questions about this block (start volume, long ride, how intervals '
         'begin and progress); shape volume and focus texts to follow them within the block rules and limits, and when a rule '
         'or the available time prevents an answer say so in hinweise. Questions without an answer are yours to decide. '
+        'athleteDesign.intervalFormats are the interval formats the athlete chose for this block; mention them in the focus texts. '
+        'Week task: block.intervalFormats (when not empty) are the only formats for sessions with their template: use '
+        'exactly their params and decide repetitions, sets, intensity and progression yourself; alternate between them '
+        'across the block. '
         'If seasonPlan exists the athlete agreed to it: prefer the block it schedules at startDate unless recent training argues '
         'otherwise, and then say why in hinweise. '
         'Season task: return 2-3 distinct season plans, exactly one recommended. segments are the new consecutive blocks from '
@@ -690,13 +694,17 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                       'secondaryFocus': {'enum': [*SECONDARY_FOCUS, None]}, 'startDate': text(10), 'weeks': num(1, 12, integer=True),
                       'week': text(8), 'instruction': text(1500), 'feedbackWeek': text(8),
                       'missedSessions': {'type': 'array', 'maxItems': 21, 'items': text(80)},
-                      'design': {'type': 'array', 'maxItems': 8, 'items': obj({'question': text(200), 'answer': text(300)})}})
+                      'design': {'type': 'array', 'maxItems': 8, 'items': obj({'question': text(200), 'answer': text(300)})},
+                      'formats': {'type': 'array', 'minItems': 1, 'maxItems': 12, 'items': text(40)}})
         schema['required'] = ['kind']
         data = validate(request.get_json(silent=True), schema)
         kind = data['kind']
         plan, current_profile = current_plan(), profile()
         base = fingerprint()
         before, reported = None, None
+        formats = data.get('formats', [])
+        if formats and (kind != 'block' or data.get('mode') != 'choose'):
+            raise CoachError('Intervallformen lassen sich nur für einen selbst gewählten Block festlegen.')
         context = {'task': kind, 'instruction': data.get('instruction', '')}
         if kind == 'season':
             today = datetime.now(zone()).date()
@@ -738,6 +746,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             else:
                 choice = {'blockType': data.get('blockType'), 'secondaryFocus': data.get('secondaryFocus'), 'weeks': data.get('weeks')}
                 check_choice(choice['blockType'], choice['secondaryFocus'], choice['weeks'], start=start, profile=current_profile)
+                check_formats(choice['blockType'], formats)
                 _, replaced = place_block(plan['blocks'], plan['weeks'], start, choice['weeks'])
             before = next((b for b in plan['blocks'] if b['id'] in replaced), None)
             rows = load_rows()
@@ -747,7 +756,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             del context['instruction']  # The free-text wish only refines the structured request.
             context.update(mode=mode, situation=data.get('situation'), choice=choice, startDate=start.isoformat(),
                            athleteWish={'source': 'athlete', 'text': data.get('instruction', '')},
-                           athleteDesign={'source': 'athlete', 'answers': data.get('design', [])},
+                           athleteDesign={'source': 'athlete', 'answers': data.get('design', []),
+                                          **({'intervalFormats': interval_formats(formats)} if formats else {})},
                            blockCatalog=catalog, snapshot=snapshot(),
                            previousBlocks=[previous_block(b, plan, rows, today) for b in plan['blocks'][-3:]],
                            seasonPlan=compact_season(plan, today))
@@ -772,7 +782,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             spec = BLOCK_TYPES[block['blockType']]
             context.update(week=week, block={'type': block['blockType'], 'name': spec['name'], 'secondaryFocus': block.get('secondaryFocus'),
                                              'weekNumber': number, 'totalWeeks': len(block['weeks']), 'guidance': spec['guidance'],
-                                             'rules': rule_texts(block['blockType'])},
+                                             'rules': rule_texts(block['blockType']),
+                                             'intervalFormats': interval_formats(block.get('formats', []))},
                            blockWeek=block_week, currentPlan=compact_week(before),
                            availability=effective_availability(current_profile, week), fixedSessions=fixed_sessions(week, before),
                            templates=[t for t in template_catalog()
@@ -849,7 +860,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                 options.append({'id': option['id'], 'recommended': option['recommended'] or mode == 'choose',
                                 'rationale': option['rationale'], 'typeName': spec['name'],
                                 'secondaryName': SECONDARY_FOCUS.get(option['secondaryFocus'], {}).get('name'),
-                                'block': new_block(option['blockType'], option['secondaryFocus'], start.isoformat(), option['weeks'])})
+                                'block': new_block(option['blockType'], option['secondaryFocus'], start.isoformat(), option['weeks'],
+                                                   formats=formats)})
             after = {'mode': mode, 'options': options}
         else:
             if decision['week'] != data['week']:
