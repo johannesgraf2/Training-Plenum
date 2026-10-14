@@ -89,7 +89,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
     @app.before_request
     def protect_coach():
-        sensitive = request.path.startswith(('/api/coach/', '/api/ai-provider', '/api/athlete-', '/api/whoop')) or request.path.endswith('/lock')
+        sensitive = request.path.startswith(('/api/coach/', '/api/ai-provider', '/api/athlete-', '/api/whoop', '/api/garmin')) or request.path.endswith('/lock')
         if not sensitive:
             return None
         allowed = {'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5000', 'http://127.0.0.1:5000',
@@ -107,7 +107,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
     @app.after_request
     def private_coach_response(response):
-        if request.path.startswith(('/api/coach/', '/api/ai-provider', '/api/athlete-', '/api/whoop')):
+        if request.path.startswith(('/api/coach/', '/api/ai-provider', '/api/athlete-', '/api/whoop', '/api/garmin')):
             response.headers['Cache-Control'] = 'no-store'
         return response
 

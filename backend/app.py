@@ -170,6 +170,7 @@ def initialize_database():
             if 'ai_provider_settings' in inspect(connection).get_table_names() and 'reasoning_effort' not in {
                     column['name'] for column in inspect(connection).get_columns('ai_provider_settings')}:
                 connection.execute(text('ALTER TABLE ai_provider_settings ADD COLUMN reasoning_effort VARCHAR(20)'))
+            upgrade_garmin_tables(connection)
 
 
 @app.errorhandler(413)
@@ -743,6 +744,88 @@ def update_activity(activity_id):
     return jsonify(a.to_dict())
 
 
+class ImportRejected(Exception):
+    def __init__(self, message, status, existing_id=None):
+        super().__init__(message)
+        self.status = status
+        self.existing_id = existing_id
+
+
+def import_recording(filepath, original_name, sport='run', title=''):
+    """Store a saved recording as an activity; removes the file again when it is rejected."""
+    ext = 'fit' if original_name.lower().endswith('.fit.gz') else original_name.rsplit('.', 1)[-1].lower() if '.' in original_name else ''
+
+    # Duplicate detection
+    try:
+        file_hash = hashlib.sha256(read_fit_bytes(filepath)).hexdigest() if ext == 'fit' else compute_file_hash(filepath)
+    except FitImportError as exc:
+        os.remove(filepath)
+        raise ImportRejected(str(exc), 422) from None
+    existing = Activity.query.filter_by(user_id=DEMO_USER_ID, file_hash=file_hash).first()
+    if existing:
+        os.remove(filepath)
+        raise ImportRejected('Diese Datei wurde bereits importiert.', 409, existing.id)
+
+    # Parse
+    parser = PARSERS.get(ext)
+    if not parser:
+        os.remove(filepath)
+        raise ImportRejected('No parser available', 400)
+
+    try:
+        session_data, time_series = parser(filepath)
+    except FitImportError as e:
+        os.remove(filepath)
+        raise ImportRejected(str(e), 422) from None
+    except Exception:
+        os.remove(filepath)
+        app.logger.exception('Activity import failed')
+        raise ImportRejected('Die Datei konnte nicht gelesen werden. Bitte das Dateiformat prüfen.', 422) from None
+
+    if not session_data:
+        os.remove(filepath)
+        raise ImportRejected('Could not extract data from file', 422)
+
+    details = session_data.get('fit_details', {})
+    if details:
+        details['sourceFilename'] = original_name
+    default_title = original_name.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
+    if details:
+        sport_name = {'ride': 'Radfahren', 'run': 'Laufen', 'swim': 'Schwimmen', 'multisport': 'Multisport'}.get(session_data['sport'], session_data['sport'])
+        default_title = f"{sport_name} · {session_data['date']:%d.%m.%Y}"
+    # Create activity
+    activity = Activity(
+        user_id=DEMO_USER_ID,
+        title=title or default_title,
+        sport=session_data.get('sport', sport),
+        date=session_data.get('date', datetime.utcnow()),
+        duration=session_data.get('duration'),
+        distance=session_data.get('distance'),
+        hr_avg=session_data.get('hr_avg'),
+        hr_max=session_data.get('hr_max'),
+        power_avg=session_data.get('power_avg'),
+        cadence_avg=session_data.get('cadence_avg'),
+        elevation=session_data.get('elevation'),
+        calories=session_data.get('calories'),
+        speed_avg=session_data.get('speed_avg'),
+        source_file=os.path.basename(filepath),
+        source_type='.fit.gz' if original_name.lower().endswith('.fit.gz') else f'.{ext}',
+        file_hash=file_hash,
+        time_series=json.dumps(time_series),
+        fit_details=json.dumps(details),
+        tags='[]',
+        notes='',
+    )
+    db.session.add(activity)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        os.remove(filepath)
+        raise
+    return activity
+
+
 @app.route('/api/upload', methods=['POST'])
 def upload_activity():
     sport = request.form.get('sport', 'run')
@@ -763,74 +846,13 @@ def upload_activity():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    # Duplicate detection
     try:
-        file_hash = hashlib.sha256(read_fit_bytes(filepath)).hexdigest() if ext == 'fit' else compute_file_hash(filepath)
-    except FitImportError as exc:
-        os.remove(filepath)
-        return jsonify({'error': str(exc)}), 422
-    existing = Activity.query.filter_by(user_id=DEMO_USER_ID, file_hash=file_hash).first()
-    if existing:
-        os.remove(filepath)
-        return jsonify({'error': 'Diese Datei wurde bereits importiert.', 'existing_id': existing.id}), 409
-
-    # Parse
-    parser = PARSERS.get(ext)
-    if not parser:
-        os.remove(filepath)
-        return jsonify({'error': 'No parser available'}), 400
-
-    try:
-        session_data, time_series = parser(filepath)
-    except FitImportError as e:
-        os.remove(filepath)
-        return jsonify({'error': str(e)}), 422
-    except Exception:
-        os.remove(filepath)
-        app.logger.exception('Activity import failed')
-        return jsonify({'error': 'Die Datei konnte nicht gelesen werden. Bitte das Dateiformat prüfen.'}), 422
-
-    if not session_data:
-        os.remove(filepath)
-        return jsonify({'error': 'Could not extract data from file'}), 422
-
-    details = session_data.get('fit_details', {})
-    if details:
-        details['sourceFilename'] = file.filename
-    default_title = file.filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ')
-    if details:
-        sport_name = {'ride': 'Radfahren', 'run': 'Laufen', 'swim': 'Schwimmen', 'multisport': 'Multisport'}.get(session_data['sport'], session_data['sport'])
-        default_title = f"{sport_name} · {session_data['date']:%d.%m.%Y}"
-    # Create activity
-    activity = Activity(
-        user_id=DEMO_USER_ID,
-        title=title or default_title,
-        sport=session_data.get('sport', sport),
-        date=session_data.get('date', datetime.utcnow()),
-        duration=session_data.get('duration'),
-        distance=session_data.get('distance'),
-        hr_avg=session_data.get('hr_avg'),
-        hr_max=session_data.get('hr_max'),
-        power_avg=session_data.get('power_avg'),
-        cadence_avg=session_data.get('cadence_avg'),
-        elevation=session_data.get('elevation'),
-        calories=session_data.get('calories'),
-        speed_avg=session_data.get('speed_avg'),
-        source_file=filename,
-        source_type='.fit.gz' if file.filename.lower().endswith('.fit.gz') else f'.{ext}',
-        file_hash=file_hash,
-        time_series=json.dumps(time_series),
-        fit_details=json.dumps(details),
-        tags='[]',
-        notes='',
-    )
-    db.session.add(activity)
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        os.remove(filepath)
-        raise
+        activity = import_recording(filepath, file.filename, sport, title)
+    except ImportRejected as rejected:
+        body = {'error': str(rejected)}
+        if rejected.existing_id:
+            body['existing_id'] = rejected.existing_id
+        return jsonify(body), rejected.status
 
     # Batch imports only need a lightweight list row; detail requests retain all data.
     return jsonify(activity.to_dict(include_ts=request.args.get('summary') != '1')), 201
@@ -1006,12 +1028,15 @@ def load_effort_rows():
 from coach_api import register_coach
 from appearance import register_appearance
 from whoop_sync import register_whoop, start_whoop_worker
+from garmin_sync import register_garmin, start_garmin_worker, upgrade_garmin_tables
 register_coach(app, db, User, Activity, PlannedWorkout, DEMO_USER_ID, load_analytics_rows, load_effort_rows)
 register_appearance(app)
 register_whoop(app, db, User, DEMO_USER_ID)
+register_garmin(app, db, Activity, PlannedWorkout, DEMO_USER_ID, import_recording, ImportRejected)
 
 
 if __name__ == '__main__':
     initialize_database()
     start_whoop_worker(app)
+    start_garmin_worker(app)
     app.run(host='0.0.0.0', port=5000, debug=os.environ.get('FLASK_DEBUG') == '1')
