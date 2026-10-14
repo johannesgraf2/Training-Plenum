@@ -2,7 +2,7 @@
 
 Dieser Ordner enthält alles, um die WHOOP-4.0-Anbindung an Training Plenum an einem anderen Rechner bzw. Account weiterzuführen.
 
-**Stand:** Phase 1 ist im Code umgesetzt und mit Tests und einem simulierten Strap geprüft, aber **noch nicht mit dem echten Strap**. Nächster Schritt ist der Test auf dem Mac (siehe `whoop-bridge/README.md`, Abschnitt „Erster Test“), danach Phase 2.
+**Stand:** Phase 1 (Rohdaten) und Phase 2 (Auswertung) sind im Code umgesetzt und mit Tests, simulierten Nächten und einem simulierten Strap geprüft, aber **noch nicht mit dem echten Strap**. Nächster Schritt ist der Test auf dem Mac (siehe `whoop-bridge/README.md`, Abschnitt „Erster Test“), danach Phase 3 (Planungs-UI).
 
 ### Abweichungen vom Plan in Phase 1
 - `whoop_hour` speichert die **Schwerkraftvektoren** (1/10000 g) statt eines fertigen Bewegungswerts. So lassen sich Chunks in beliebiger Reihenfolge zusammenführen; Phase 2 berechnet die Bewegung aus aufeinanderfolgenden Vektoren (`whoop_sync.hour_view`).
@@ -11,6 +11,18 @@ Dieser Ordner enthält alles, um die WHOOP-4.0-Anbindung an Training Plenum an e
 - Heartbeat alle 30 s statt 60 s, damit „Jetzt synchronisieren“ schneller ankommt.
 - Kommando 96 steht zusätzlich auf der Sperrliste („Never 96“ aus der Recherche).
 - Spalte `retention_days` entfällt; die Aufbewahrung kommt nur aus `WHOOP_RAW_RETENTION_DAYS`.
+### Abweichungen und Festlegungen in Phase 2
+- `whoop_day` speichert `nightly` (Schlaf, HRV, Ruhepuls, Strain) und `scores` (Baselines, Readiness, Schlafschuld) als JSON statt als Einzelspalten, damit spätere Kennzahlen keine Migration brauchen.
+- Zwei Stufen: `nightly` wird nur für Tage neu berechnet, deren Stunden sich seit dem letzten Lauf geändert haben (eine Stunde markiert ihren Tag und beide Nachbartage), `scores` immer über alle Tage. Ändert sich HFmax im Profil, wird alles neu berechnet.
+- Als Schlaf zählen nur stille Zeiten **mit Hautkontakt und Herzfrequenz**; ein Strap auf dem Tisch ist sonst auch „still“.
+- Die Baseline startet mit dem einfachen Mittel und der mittleren Abweichung der ersten vier Nächte; danach winsorisierte EWMA wie geplant. z-Werte werden auf ±3 begrenzt.
+- Readiness braucht HRV oder Ruhepuls; Schlaf allein ergibt keine Zahl. Die Kalibrierung zählt Nächte mit gültiger HRV.
+- Strain ohne HFmax im Profil nutzt Tanaka (208 − 0,7 × Alter). Ruhepuls dafür aus der Nacht, sonst das 10. Perzentil des Tages.
+- Zeitzone für die Zuordnung der Nächte: `TRAINHUB_TIMEZONE` (Standard `Europe/Berlin`).
+- `POST /api/whoop/recompute` liest die aufbewahrten Rohdaten neu ein und berechnet danach alle Tage neu.
+- Behoben: Das Zusammenführen von R-R-Werten in Phase 1 war quadratisch langsam.
+
+### Repo-Stand
 - Das GitHub-Repo war älter als die Mac-Kopie (kein `garmin_sync.py`, `wsgi.py`, `backup.py`). Phase 1 baut auf dem Repo-Stand auf; beim Zusammenführen mit der Mac-Kopie gehören `start_whoop_worker(app)` zusätzlich in `wsgi.py` und `/api/whoop` in die Garmin-erweiterte Guard-Liste in `coach_api.py`.
 
 ## Dateien

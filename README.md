@@ -151,7 +151,8 @@ Alle Details zur Einrichtung: [AI-COACH.md](AI-COACH.md)
 
 Training Plēnum liest einen **WHOOP 4.0** direkt aus, ohne WHOOP-App. Eine kleine Bridge auf dem Mac hält die Bluetooth-Verbindung und schickt die Rohdaten an Training Plēnum; Einrichtung und Status findest du im Menü oben rechts unter **WHOOP-Strap verbinden**.
 
-- **Stand (Phase 1):** Herzfrequenz, R-R-Abstände, Bewegung und Rohwerte für Hauttemperatur und Atmung kommen an und werden gespeichert. Erholung, HRV, Ruhepuls, Schlaf und Belastung folgen in den nächsten Phasen, dann auch in Kalender, Startseite, Dashboard und KI-Coach.
+- **Stand (Phase 2):** Herzfrequenz, R-R-Abstände und Bewegung kommen an. Daraus berechnet Training Plēnum pro Tag Schlafdauer, nächtliche HRV (RMSSD), Ruhepuls, eine Readiness von 0 bis 100 gegenüber deiner persönlichen Baseline, Strain (0–21) und Schlafschuld. Die Readiness erscheint nach 4 Nächten (vorläufig) und ist ab 14 Nächten verlässlich. Bisher zeigt das WHOOP-Fenster die letzte Nacht; Kalender, Startseite, Dashboard und KI-Coach folgen.
+- Alle Werte sind eigene Näherungen, keine offiziellen WHOOP-Scores und kein Medizinprodukt. Methoden: [RESEARCH-ANALYTICS.md](docs/whoop-integration/RESEARCH-ANALYTICS.md).
 - Der Strap muss dafür von der WHOOP-App getrennt werden. Danach erhalten WHOOP-App und WHOOP-Cloud keine Daten mehr.
 - Die Rohdaten jedes Uploads bleiben 30 Tage erhalten (`WHOOP_RAW_RETENTION_DAYS`), damit Decoder-Korrekturen per **Rohdaten neu einlesen** nachträglich greifen.
 
@@ -268,7 +269,8 @@ Die Tests nutzen eine temporäre Datenbank und verändern keine eigenen Aktivit�
 | GET / DELETE | `/api/whoop` | WHOOP-Status; trennen (`?deleteData=1` löscht auch die Daten) |
 | POST | `/api/whoop/token` | Bridge-Token erzeugen oder erneuern (wird nur einmal angezeigt) |
 | POST | `/api/whoop/sync` | Bridge um sofortigen Sync bitten |
-| POST | `/api/whoop/recompute` | Gespeicherte Rohdaten neu dekodieren |
+| POST | `/api/whoop/recompute` | Rohdaten neu dekodieren und alle Tage neu berechnen |
+| GET | `/api/whoop/days?from=&to=` | Tageswerte: Schlaf, HRV, Ruhepuls, Readiness, Strain, Schlafschuld |
 | POST | `/api/whoop/bridge/heartbeat`, `/api/whoop/bridge/frames` | Nur für die Bridge (Bearer-Token) |
 
 Die Endpunkte des KI-Coachs stehen in [AI-COACH.md](AI-COACH.md).
@@ -279,7 +281,7 @@ Die Endpunkte des KI-Coachs stehen in [AI-COACH.md](AI-COACH.md).
 - [ ] Coach-Accounts mit Zugriff auf Athleten
 - [ ] Erweiterte Analysen (Leistungskurve, Zonentabellen)
 - [ ] Anbindungen an Garmin Connect und Strava
-- [ ] WHOOP 4.0: Rohdaten per Bridge ✓, Erholung/HRV/Schlaf/Belastung, Planungshinweise, Coach-Kontext
+- [ ] WHOOP 4.0: Rohdaten per Bridge ✓, Erholung/HRV/Schlaf/Belastung ✓, Planungshinweise, Coach-Kontext
 - [x] TSS fürs Radfahren mit einstellbarer FTP (TSS fürs Laufen folgt)
 - [ ] Trainingsplan-Builder
 - [ ] Benutzeranmeldung (JWT)

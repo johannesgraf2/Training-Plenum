@@ -12,6 +12,9 @@
 .whoop-row dd { margin: 3px 0 0; font-size: 13px; font-weight: 500; color: var(--fg-243248); }
 .whoop-row dd.whoop-ok { color: var(--success); }
 .whoop-row dd.whoop-bad { color: var(--danger); }
+.whoop-row dd.whoop-warn { color: var(--warning); }
+.whoop-recovery h3 { font-size: 15px; font-weight: 600; }
+.whoop-recovery .batch-help { margin: 2px 0 8px; }
 .whoop-warning { padding: 10px; font-size: 12px; border-radius: 2px; background: var(--warning-bg); color: var(--warning); }
 .whoop-confirm { padding: 14px; border: 1px solid var(--danger-line); border-radius: 2px; background: var(--danger-bg); font-size: 13px; display: flex; flex-direction: column; gap: 10px; }
 .whoop-confirm label { display: flex; gap: 8px; align-items: center; }

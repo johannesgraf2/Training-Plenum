@@ -7,8 +7,12 @@ Decoded samples go into one gzip JSON chunk per user and UTC hour (whoop_hour):
 history samples (ts, HR, gravity, skin contact, raw skin temperature and
 respiration), R-R intervals as (ts, arrival order, ms) and realtime HR. Gravity
 is kept instead of a derived motion value so chunks can merge in any order;
-motion is the gravity change between consecutive samples. A chunk's updated_at
-tells later analytics which days need recomputing.
+motion is the gravity change between consecutive samples.
+
+Daily metrics (whoop_analytics.py) live in whoop_day: `nightly` holds what one
+day's samples give (sleep, HRV, RHR, strain) and is recomputed only for days
+whose hours changed since the last run (whoop_hour.updated_at); `scores` holds
+baselines, readiness and sleep debt, recomputed over all days on every run.
 """
 import base64
 import binascii
@@ -22,14 +26,17 @@ import secrets
 import threading
 import time
 import zlib
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
+from dateutil.tz import gettz
 from flask import jsonify, request
 
+import whoop_analytics as wa
 import whoop_protocol as wp
 
 MAX_DECODED = 8 * 1024 * 1024
 MAX_FRAMES = 20000
+MAX_RR_PER_RECORD = 4  # R-R slots in a v24 record
 ONLINE_SECONDS = 180
 EARLIEST = 1577836800  # 2020-01-01: older timestamps come from a strap that lost its clock.
 BRIDGE_FIELDS = ('bridgeVersion', 'strapConnected', 'strapName', 'strapError', 'connectedAt', 'battery', 'firmware',
@@ -50,6 +57,10 @@ def utc(value):
 
 def from_unix(seconds):
     return datetime.fromtimestamp(seconds, timezone.utc).replace(tzinfo=None)
+
+
+def local_zone():
+    return gettz(os.environ.get('TRAINHUB_TIMEZONE', 'Europe/Berlin')) or timezone.utc
 
 
 def retention_days():
@@ -159,8 +170,8 @@ def merge_records(hour, records, realtime, replace=False):
         added += ts not in hour['samples']
         gravity = tuple(round(value * 10000) for value in record['gravity']) if record['gravity'] else (None, None, None)
         hour['samples'][ts] = [record['hr'], *gravity, record['contact'], record['skinRaw'], record['respRaw']]
-        for key in [key for key in hour['rr'] if key[0] == ts]:
-            del hour['rr'][key]
+        for order in range(MAX_RR_PER_RECORD):
+            hour['rr'].pop((ts, order), None)
         for order, ms in enumerate(record['rr']):
             hour['rr'][(ts, order)] = ms
     for ts, hr in realtime:
@@ -203,15 +214,20 @@ class WhoopState:
         self.wake = threading.Event()
         self.reprocess_requested = False
         self.reprocessing = False
+        self.recompute_requested = False
+        self.computing = False
         self.thread = None
         self.worker = False
         self.app = None
         self.maintain = None
 
-    def trigger(self, reprocess=False):
+    def trigger(self, reprocess=False, recompute=False):
         if reprocess:
             self.reprocess_requested = True
             self.reprocessing = True
+        if recompute:
+            self.recompute_requested = True
+            self.computing = True
         if self.worker:
             self.wake.set()
         elif self.thread is None or not self.thread.is_alive():
@@ -231,6 +247,7 @@ def register_whoop(app, db, User, user_id):
         data_through = db.Column(db.DateTime, nullable=True)
         stats = db.Column(db.Text, nullable=False, default='{}')
         last_error = db.Column(db.Text, nullable=True)
+        analytics_at = db.Column(db.DateTime, nullable=True)
 
     class WhoopRawBatch(db.Model):
         __tablename__ = 'whoop_raw_batch'
@@ -249,10 +266,19 @@ def register_whoop(app, db, User, user_id):
         data = db.Column(db.LargeBinary, nullable=False)
         updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
 
+    class WhoopDay(db.Model):
+        __tablename__ = 'whoop_day'
+        user_id = db.Column(db.String(36), db.ForeignKey('user.id'), primary_key=True)
+        date = db.Column(db.String(10), primary_key=True)
+        version = db.Column(db.Integer, nullable=False)
+        nightly = db.Column(db.Text, nullable=False)
+        scores = db.Column(db.Text, nullable=False, default='{}')
+        computed_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
     state = WhoopState()
     state.app = app
     app.extensions['whoop'] = state
-    app.extensions['whoop_models'] = (WhoopAccount, WhoopRawBatch, WhoopHour)
+    app.extensions['whoop_models'] = (WhoopAccount, WhoopRawBatch, WhoopHour, WhoopDay)
 
     @app.errorhandler(WhoopError)
     def whoop_error(error):
@@ -265,10 +291,25 @@ def register_whoop(app, db, User, user_id):
     def stats_of(row):
         return json.loads(row.stats or '{}')
 
+    def day_body(row):
+        nightly, scores = json.loads(row.nightly), json.loads(row.scores or '{}')
+        sleep = nightly.get('sleep')
+        if sleep:
+            sleep = {**sleep, 'start': wa.utc_iso(sleep['start']), 'end': wa.utc_iso(sleep['end'])}
+        return {'date': row.date, **nightly, 'sleep': sleep, **scores}
+
+    def analytics_body(row):
+        latest = WhoopDay.query.filter_by(user_id=user_id).order_by(WhoopDay.date.desc()).first()
+        scored = latest and json.loads(latest.scores or '{}')
+        return {'computing': state.computing, 'computedAt': utc(row.analytics_at) if row else None,
+                'nights': scored.get('nights', 0) if scored else 0, 'provisionalAt': wa.PROVISIONAL, 'solidAt': wa.SOLID,
+                'latest': day_body(latest) if latest else None}
+
     def status_body():
         row = account()
         if row is None or row.token_hash is None:
-            return {'connected': False, 'reprocessing': state.reprocessing, 'rawRetentionDays': retention_days()}
+            return {'connected': False, 'reprocessing': state.reprocessing, 'rawRetentionDays': retention_days(),
+                    'analytics': analytics_body(row)}
         seen = row.bridge_last_seen
         age = (datetime.utcnow() - seen).total_seconds() if seen else None
         return {'connected': True, 'tokenCreatedAt': utc(row.token_created_at), 'syncRequested': row.sync_requested,
@@ -277,7 +318,7 @@ def register_whoop(app, db, User, user_id):
                            'offlineHours': None if age is None else round(age / 3600, 1)},
                 'dataThrough': utc(row.data_through), 'stats': stats_of(row), 'lastError': row.last_error,
                 'hours': WhoopHour.query.filter_by(user_id=user_id).count(),
-                'reprocessing': state.reprocessing, 'rawRetentionDays': retention_days()}
+                'reprocessing': state.reprocessing, 'rawRetentionDays': retention_days(), 'analytics': analytics_body(row)}
 
     def bridge_account():
         header = request.headers.get('Authorization', '')
@@ -355,6 +396,7 @@ def register_whoop(app, db, User, user_id):
         if request.args.get('deleteData') == '1':
             WhoopHour.query.filter_by(user_id=user_id).delete()
             WhoopRawBatch.query.filter_by(user_id=user_id).delete()
+            WhoopDay.query.filter_by(user_id=user_id).delete()
         db.session.commit()
         return jsonify(status_body())
 
@@ -369,10 +411,25 @@ def register_whoop(app, db, User, user_id):
 
     @app.route('/api/whoop/recompute', methods=['POST'])
     def whoop_recompute():
-        if not WhoopRawBatch.query.filter_by(user_id=user_id).count():
-            raise WhoopError('Keine Rohdaten zum Neueinlesen vorhanden.', 409)
-        state.trigger(reprocess=True)
+        raw = WhoopRawBatch.query.filter_by(user_id=user_id).count()
+        if not raw and not WhoopHour.query.filter_by(user_id=user_id).count():
+            raise WhoopError('Noch keine WHOOP-Daten zum Neuberechnen vorhanden.', 409)
+        state.trigger(reprocess=bool(raw), recompute=True)
         return jsonify(status_body()), 202
+
+    @app.route('/api/whoop/days', methods=['GET'])
+    def whoop_days():
+        try:
+            last = date.fromisoformat(request.args['to']) if request.args.get('to') else datetime.now(local_zone()).date()
+            first = date.fromisoformat(request.args['from']) if request.args.get('from') else last - timedelta(days=89)
+        except ValueError:
+            raise WhoopError('from und to müssen Daten im Format JJJJ-MM-TT sein.') from None
+        if first > last or (last - first).days > 400:
+            raise WhoopError('Der Zeitraum muss zwischen 1 und 400 Tagen liegen.')
+        rows = WhoopDay.query.filter(WhoopDay.user_id == user_id, WhoopDay.date >= first.isoformat(),
+                                     WhoopDay.date <= last.isoformat()).order_by(WhoopDay.date).all()
+        return jsonify(days=[day_body(row) for row in rows], timezone=os.environ.get('TRAINHUB_TIMEZONE', 'Europe/Berlin'),
+                       disclaimer='Eigene Näherungen aus den Rohdaten, keine offiziellen WHOOP-Scores, kein Medizinprodukt.')
 
     # Bridge routes (bearer token; exempt from the JSON and 64 KB checks)
 
@@ -415,6 +472,8 @@ def register_whoop(app, db, User, user_id):
             db.session.add(WhoopRawBatch(batch_id=batch_id, user_id=user_id, sha256=digest, frame_count=counts['frames'],
                                          blob=gzip.compress(data, mtime=0)))
             db.session.commit()
+        if added and state.worker:
+            state.wake.set()  # recompute the affected days now rather than at the next hourly run
         return jsonify(batchId=batch_id, duplicate=False, accepted=counts['frames'], records=len(records),
                        added=added, undecoded=counts['undecoded'], invalid=counts['invalid'], realtime=len(realtime))
 
@@ -436,32 +495,127 @@ def register_whoop(app, db, User, user_id):
             replayed += 1
         return replayed
 
+    def load_series(start, end, cache):
+        """Sorted sample columns in [start, end); unpacked hours are reused across neighbouring days."""
+        first = start // 3600 * 3600
+        missing = [hour for hour in range(first, end, 3600) if hour not in cache]
+        if missing:
+            for hour in missing:
+                cache[hour] = None
+            for row in WhoopHour.query.filter(WhoopHour.user_id == user_id, WhoopHour.hour_ts >= missing[0],
+                                              WhoopHour.hour_ts <= missing[-1]).all():
+                if row.hour_ts in cache and cache[row.hour_ts] is None:
+                    cache[row.hour_ts] = hour_view(row.data)
+        for hour in [hour for hour in cache if hour < first]:
+            del cache[hour]
+        series = {'ts': [], 'hr': [], 'gravity': [], 'contact': [], 'rr': []}
+        for hour in range(first, end, 3600):
+            view = cache.get(hour)
+            if not view:
+                continue
+            for index, moment in enumerate(view['ts']):
+                if start <= moment < end:
+                    series['ts'].append(moment)
+                    series['hr'].append(view['hr'][index])
+                    series['gravity'].append(view['gravity'][index])
+                    series['contact'].append(view['contact'][index])
+            series['rr'].extend(beat for beat in view['rr'] if start <= beat[0] < end)
+        return series
+
+    def days_to_compute(row, maximum):
+        """Local dates whose samples changed since the last run (all of them after a reset or an HFmax change)."""
+        zone = local_zone()
+        stats = stats_of(row)
+        everything = state.recompute_requested or row.analytics_at is None or stats.get('analyticsHrMax') != maximum
+        query = db.session.query(WhoopHour.hour_ts).filter(WhoopHour.user_id == user_id)
+        if not everything:
+            query = query.filter(WhoopHour.updated_at > row.analytics_at)
+        hours = [hour for hour, in query.all()]
+        if not hours:
+            return [], everything
+        today = datetime.now(zone).date()
+        if everything:
+            first = datetime.fromtimestamp(min(hours), zone).date() - timedelta(days=1)
+            last = datetime.fromtimestamp(max(hours) + 3599, zone).date() + timedelta(days=1)
+            dates = {first + timedelta(days=offset) for offset in range((last - first).days + 1)}
+        else:
+            dates = set()
+            for hour in hours:
+                for moment in (hour, hour + 3599):
+                    local = datetime.fromtimestamp(moment, zone).date()
+                    dates.update(local + timedelta(days=offset) for offset in (-1, 0, 1))
+        return sorted(day for day in dates if day <= today), everything
+
+    def compute_analytics():
+        """Stage 1 for changed days, then stage 2 over all days. Returns the number of days recomputed."""
+        row = account()
+        if row is None:
+            return 0
+        user = db.session.get(User, user_id)
+        maximum = wa.hr_max(user.max_hr, user.age) if user else None
+        started = datetime.utcnow()
+        dates, everything = days_to_compute(row, maximum)
+        state.recompute_requested = False
+        zone, cache = local_zone(), {}
+        if everything:
+            WhoopDay.query.filter(WhoopDay.user_id == user_id,
+                                  WhoopDay.date.notin_([day.isoformat() for day in dates])).delete(synchronize_session=False)
+        for day in dates:
+            start, end = wa.analysis_window(day, zone)
+            nightly = wa.nightly_metrics(day, zone, load_series(start, end, cache), maximum)
+            existing = db.session.get(WhoopDay, (user_id, day.isoformat()))
+            if nightly is None:
+                if existing is not None:
+                    db.session.delete(existing)
+                continue
+            if existing is None:
+                existing = WhoopDay(user_id=user_id, date=day.isoformat())
+                db.session.add(existing)
+            existing.version, existing.nightly, existing.computed_at = wa.VERSION, json.dumps(nightly), started
+        db.session.flush()
+        rows = WhoopDay.query.filter_by(user_id=user_id).all()
+        scores = wa.score_days({date.fromisoformat(day.date): json.loads(day.nightly) for day in rows})
+        for day in rows:
+            day.scores = json.dumps(scores[date.fromisoformat(day.date)])
+        stats = stats_of(row)
+        stats['analyticsHrMax'] = maximum
+        row.stats, row.analytics_at = json.dumps(stats), started
+        db.session.commit()
+        return len(dates)
+
     def maintain():
         with app.app_context():
+            step = 'Aufräumen'
             try:
                 cutoff = datetime.utcnow() - timedelta(days=retention_days())
                 WhoopRawBatch.query.filter(WhoopRawBatch.received_at < cutoff).delete()
                 db.session.commit()
                 if state.reprocess_requested:
+                    step = 'Neueinlesen'
                     state.reprocess_requested = False
                     reprocess()
+                state.reprocessing = state.reprocess_requested
+                step = 'Berechnen'
+                state.computing = True
+                compute_analytics()
             except Exception as error:  # noqa: BLE001 - reported in the status, the worker keeps running
                 db.session.rollback()
                 app.logger.exception('WHOOP maintenance failed')
                 row = account()
                 if row is not None:
-                    row.last_error = f'Neueinlesen fehlgeschlagen: {error}'
+                    row.last_error = f'{step} fehlgeschlagen: {error}'
                     db.session.commit()
             finally:
                 state.reprocessing = state.reprocess_requested
+                state.computing = state.recompute_requested
                 db.session.remove()
 
     state.maintain = maintain
-    return WhoopAccount, WhoopRawBatch, WhoopHour
+    return WhoopAccount, WhoopRawBatch, WhoopHour, WhoopDay
 
 
 def start_whoop_worker(app, interval=3600):
-    """Hourly pruning in one daemon thread; /recompute wakes it early."""
+    """Hourly pruning and analytics in one daemon thread; uploads and /recompute wake it early."""
     state = app.extensions['whoop']
     if state.worker:
         return
