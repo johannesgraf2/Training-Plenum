@@ -32,6 +32,10 @@ class GarminConnectNotFoundError(Exception):
     pass
 
 
+class GarminConnectTooManyRequestsError(Exception):
+    pass
+
+
 class Rejected(Exception):
     response = SimpleNamespace(status_code=400)
 
@@ -69,10 +73,14 @@ class FakeGarmin:
 
     def get_activities_by_date(self, start, end, sortorder=None):
         self.world.ranges.append((start, end, sortorder))
-        return self.world.activities
+        if not self.world.by_date:
+            return self.world.activities
+        return [item for item in self.world.activities if start <= item['startTimeGMT'][:10] <= end]
 
     def download_activity(self, garmin_id, dl_fmt):
         assert dl_fmt == 'original'
+        if self.world.limit is not None and len(self.world.downloads) >= self.world.limit:
+            raise GarminConnectTooManyRequestsError('429')
         self.world.downloads.append(garmin_id)
         return self.world.files[garmin_id]
 
@@ -135,18 +143,23 @@ class GarminAPITests(unittest.TestCase):
             self.backend.db.session.commit()
         self.world = SimpleNamespace(mfa=False, expired=False, token='first', logins=[], loaded=[], ranges=[], downloads=[],
                                      activities=[{'activityId': 101, 'startTimeGMT': '2026-10-01 06:00:00'}],
-                                     files={'101': zipped(fit_fixture())}, next_id=1000, workouts={}, calendar={}, deleted=[])
+                                     files={'101': zipped(fit_fixture())}, next_id=1000, workouts={}, calendar={}, deleted=[],
+                                     by_date=False, limit=None)
         self.state.make_client = lambda email=None, password=None: FakeGarmin(self.world, email, password)
         self.state.pending = None
         self.state.wanted.clear()
         self.state.disconnect_after_cleanup = False
+        self.state.history_stop = False
         self.state.push_enabled = False
         self.state.start = self.state.loop  # jobs run inside the request, so tests see their result
         self.pause = patch.object(garmin_sync, 'PAUSE_SECONDS', 0)
         self.pause.start()
+        self.history_pause = patch.object(garmin_sync, 'HISTORY_PAUSE_SECONDS', 0)
+        self.history_pause.start()
 
     def tearDown(self):
         self.pause.stop()
+        self.history_pause.stop()
 
     def post(self, path, payload=None):
         return self.client.post(f'/api/garmin{path}', json=payload or {})
@@ -164,7 +177,7 @@ class GarminAPITests(unittest.TestCase):
         self.assertEqual(self.world.downloads, ['101'])
         self.assertEqual(self.world.ranges[0][2], 'asc')
         [activity] = self.activities()
-        self.assertEqual((activity['sport'], activity['source']), ('ride', '.fit'))
+        self.assertEqual((activity['sport'], activity['source'], activity['origin']), ('ride', '.fit', 'garmin'))
         with sqlite3.connect(self.database) as connection:
             stored = ' '.join(str(value) for row in connection.execute('SELECT * FROM garmin_account') for value in row)
         for secret in ('right', 'refresh', 'first', 'refreshed'):
@@ -234,6 +247,103 @@ class GarminAPITests(unittest.TestCase):
         response = self.client.get('/api/garmin', headers={'Origin': 'http://evil.example'})
         self.assertEqual(response.status_code, 403)
 
+
+    # ─── loading older activities ───
+
+    def history_world(self, *days_ago):
+        # One activity per offset, each a different FIT file, started at 06:00 (never the fixture's start time).
+        self.world.by_date = True
+        self.world.activities, self.world.files = [], {}
+        for index, days in enumerate(days_ago):
+            garmin_id = str(201 + index)
+            start = today_local() - timedelta(days=days)
+            self.world.activities.append({'activityId': int(garmin_id), 'startTimeGMT': f'{start.isoformat()} 06:00:00'})
+            self.world.files[garmin_id] = zipped(fit_fixture(count=3 + index))
+        return [str(201 + index) for index in range(len(days_ago))]
+
+    def history(self, years):
+        response = self.post('/history', {'years': years})
+        self.assertEqual(response.status_code, 202, response.get_json())
+        return self.client.get('/api/garmin').get_json()['history']
+
+    def test_older_activities_load_backwards_in_chunks_and_continue_where_they_stopped(self):
+        recent, last_year, two_years, old = self.history_world(10, 200, 500, 2000)
+        self.connect()
+        self.assertEqual(self.world.downloads, [recent])  # the first sync covers 90 days
+
+        self.world.ranges.clear()
+        history = self.history(1)
+        self.assertTrue(history['complete'])
+        self.assertFalse(history['running'])
+        self.assertEqual(history['target'], garmin_sync.years_before(today_local(), 1).isoformat())
+        self.assertEqual(history['through'], history['target'])
+        self.assertEqual(history['result'], {'imported': 1, 'duplicate': 0, 'skipped': 0, 'failed': 0})
+        self.assertEqual(self.world.downloads, [recent, last_year])  # the known one is not downloaded again
+        # The chunks cover the year without gaps or overlaps, newest first.
+        for (start, _, _), (_, end, _) in zip(self.world.ranges, self.world.ranges[1:]):
+            self.assertEqual(garmin_sync.date.fromisoformat(end), garmin_sync.date.fromisoformat(start) - timedelta(days=1))
+        self.assertEqual(self.world.ranges[0][1], today_local().isoformat())
+        self.assertEqual(self.world.ranges[-1][0], history['target'])
+
+        # Two years continue below the first year and count from zero.
+        self.world.ranges.clear()
+        history = self.history(2)
+        self.assertTrue(history['complete'])
+        self.assertEqual(history['result']['imported'], 1)
+        self.assertEqual(self.world.downloads, [recent, last_year, two_years])
+        self.assertLess(self.world.ranges[0][1], garmin_sync.years_before(today_local(), 1).isoformat())
+
+        # Everything reaches back to 2000; years without activities go in growing steps.
+        self.world.ranges.clear()
+        history = self.history(None)
+        self.assertTrue(history['complete'])
+        self.assertEqual(history['target'], '2000-01-01')
+        self.assertEqual(self.world.downloads, [recent, last_year, two_years, old])
+        self.assertLess(len(self.world.ranges), 40)
+        self.assertEqual(len(self.activities()), 4)
+
+    def test_too_many_requests_pause_the_history_and_it_resumes_later(self):
+        self.history_world(200, 210, 220)
+        self.connect()
+        self.world.limit = 1
+        history = self.history(1)
+        self.assertFalse(history['complete'])
+        self.assertFalse(history['running'])
+        self.assertIn('zu viele Anfragen', history['error'])
+        self.assertEqual(history['result']['imported'], 1)
+        self.assertEqual(len(self.activities()), 1)
+        self.world.limit = None
+        history = self.history(1)
+        self.assertTrue(history['complete'])
+        self.assertIsNone(history['error'])
+        self.assertEqual(history['result']['imported'], 3)  # same range: the count goes on
+        self.assertEqual(len(self.activities()), 3)
+
+    def test_a_stopped_history_keeps_its_place(self):
+        self.history_world(100, 300)
+        self.connect()
+        original = self.state.request
+
+        def stop_after_first_chunk(*jobs):
+            if 'history' in jobs and self.state.job == 'history':
+                self.client.delete('/api/garmin/history')
+            return original(*jobs)
+        with patch.object(self.state, 'request', side_effect=stop_after_first_chunk):
+            history = self.history(1)
+        self.assertFalse(history['complete'])
+        self.assertFalse(history['running'])
+        # The first chunk ends today, so it reaches HISTORY_CHUNK_DAYS - 1 days back.
+        self.assertEqual(history['through'], (today_local() - timedelta(days=garmin_sync.HISTORY_CHUNK_DAYS - 1)).isoformat())
+        history = self.history(1)
+        self.assertTrue(history['complete'])
+        self.assertEqual(history['result']['imported'], 2)
+
+    def test_history_needs_a_connection_and_a_known_range(self):
+        self.assertEqual(self.post('/history', {'years': 1}).status_code, 409)
+        self.connect()
+        self.assertEqual(self.post('/history', {'years': 4}).status_code, 400)
+        self.assertEqual(self.post('/history', {'years': '1'}).status_code, 400)
+        self.assertIsNone(self.client.get('/api/garmin').get_json()['history']['target'])
 
     # ─── planned workouts to the Garmin calendar ───
 

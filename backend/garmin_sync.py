@@ -4,6 +4,9 @@ Garmin has no free API for private use, so this relies on the unofficial garminc
 library (MIT, needs Python 3.12+). The password is only used for the login; afterwards
 just the session tokens are kept, encrypted with the server key of the AI coach.
 
+Older activities can be loaded on request: the history job walks backwards in chunks,
+remembers how far it got and leaves room for the regular sync and workout pushes in between.
+
 Planned workouts from today on go to the Garmin Connect calendar, from where Garmin
 syncs them to the device. Only workouts created here are ever changed or deleted.
 """
@@ -32,7 +35,12 @@ OVERLAP_DAYS = 2  # Garmin lists late uploads under their start date
 SAME_START_SECONDS = 120  # the same ride imported from another export
 MFA_SECONDS = 600
 PAUSE_SECONDS = 0.5  # between downloads, to stay a polite client
-JOBS = ('cleanup', 'activities', 'workouts')  # run one at a time, in this order
+HISTORY_PAUSE_SECONDS = 1.0  # gentler while loading years of history
+HISTORY_CHUNK_DAYS = 30  # one job run; empty stretches double up to a year
+HISTORY_MAX_CHUNK_DAYS = 365
+HISTORY_EARLIEST = date(2000, 1, 1)  # "everything": older than any Garmin Connect account
+HISTORY_YEARS = (1, 2, 3, 5)
+JOBS = ('cleanup', 'activities', 'workouts', 'history')  # run one at a time, in this order
 UNAVAILABLE = 'Garmin Connect braucht Python 3.12 oder neuer und das Paket garminconnect (pip install -r requirements.txt).'
 
 
@@ -109,6 +117,13 @@ def fit_payload(data):
     return None
 
 
+def years_before(day, years):
+    try:
+        return day.replace(year=day.year - years)
+    except ValueError:  # 29 February
+        return day.replace(year=day.year - years, day=28)
+
+
 def start_of(item):
     try:
         return datetime.strptime(item['startTimeGMT'], '%Y-%m-%d %H:%M:%S')
@@ -128,7 +143,9 @@ def upgrade_garmin_tables(connection):
         return
     columns = {column['name'] for column in inspect(connection).get_columns('garmin_account')}
     for name, ddl in (('push_workouts', 'BOOLEAN NOT NULL DEFAULT 1'), ('last_push_at', 'DATETIME'),
-                      ('last_push_result', "TEXT NOT NULL DEFAULT '{}'"), ('last_push_error', 'TEXT')):
+                      ('last_push_result', "TEXT NOT NULL DEFAULT '{}'"), ('last_push_error', 'TEXT'),
+                      ('history_target', 'DATE'), ('history_through', 'DATE'),
+                      ('history_result', "TEXT NOT NULL DEFAULT '{}'"), ('history_error', 'TEXT')):
         if name not in columns:
             connection.execute(text(f'ALTER TABLE garmin_account ADD COLUMN {name} {ddl}'))
 
@@ -144,6 +161,8 @@ class GarminState:
         self.job = None
         self.progress = None
         self.disconnect_after_cleanup = False
+        self.history_stop = False
+        self.history_span = HISTORY_CHUNK_DAYS
         self.push_enabled = False  # cached, so saving a workout never waits for the database
         self.worker = False
         self.run_job = None
@@ -196,6 +215,11 @@ def register_garmin(app, db, Activity, PlannedWorkout, user_id, import_recording
         last_push_at = db.Column(db.DateTime, nullable=True)
         last_push_result = db.Column(db.Text, nullable=False, default='{}')
         last_push_error = db.Column(db.Text, nullable=True)
+        # Loading older activities: back to history_target; everything from history_through on is checked.
+        history_target = db.Column(db.Date, nullable=True)
+        history_through = db.Column(db.Date, nullable=True)
+        history_result = db.Column(db.Text, nullable=False, default='{}')
+        history_error = db.Column(db.Text, nullable=True)
 
     class GarminImport(db.Model):
         """One row per Garmin activity already handled, so a sync never downloads it twice."""
@@ -287,6 +311,22 @@ def register_garmin(app, db, Activity, PlannedWorkout, user_id, import_recording
                 'lastPushError': row.last_push_error if row else None,
             },
             'disconnecting': state.disconnect_after_cleanup,
+            'history': history_body(row),
+        }
+
+    def history_body(row):
+        target = row.history_target if row else None
+        through = row.history_through if row else None
+        running = state.busy_with('history')
+        return {
+            'target': target.isoformat() if target else None,
+            'through': through.isoformat() if through else None,
+            'running': running,
+            'stopping': running and state.history_stop,
+            'complete': bool(target and through and through <= target),
+            'result': json.loads(row.history_result or '{}') if row else {},
+            'error': row.history_error if row else None,
+            'progress': state.progress if state.job == 'history' else None,
         }
 
     def connect(client, email):
@@ -364,6 +404,33 @@ def register_garmin(app, db, Activity, PlannedWorkout, user_id, import_recording
         state.request('activities', 'workouts')
         return jsonify(status_body()), 202
 
+    @app.route('/api/garmin/history', methods=['POST'])
+    def garmin_history():
+        years = (request.get_json(silent=True) or {}).get('years')
+        if years is not None and years not in HISTORY_YEARS:
+            raise GarminError('Bitte 1, 2, 3 oder 5 Jahre oder alles wählen.')
+        row = connected_account()
+        if row.needs_login:
+            raise GarminError('Die Garmin-Anmeldung ist abgelaufen. Bitte neu verbinden.', 409)
+        today = today_local()
+        target = HISTORY_EARLIEST if years is None else years_before(today, years)
+        if row.history_target != target:
+            row.history_result = '{}'  # a new range counts from zero; the checked stretch stays checked
+        row.history_target, row.history_error = target, None
+        db.session.commit()
+        state.history_stop = False
+        state.history_span = HISTORY_CHUNK_DAYS
+        state.request('history')
+        return jsonify(status_body()), 202
+
+    @app.route('/api/garmin/history', methods=['DELETE'])
+    def garmin_history_stop():
+        with state.lock:
+            state.wanted.discard('history')
+        if state.job == 'history':
+            state.history_stop = True
+        return jsonify(status_body())
+
     @app.route('/api/garmin/settings', methods=['PUT'])
     def garmin_settings():
         payload = request.get_json(silent=True) or {}
@@ -402,7 +469,7 @@ def register_garmin(app, db, Activity, PlannedWorkout, user_id, import_recording
     def keep_session(row, client):
         row.tokens = encrypt_tokens(client.client.dumps())  # keeps the refreshed session
 
-    def handle(client, item):
+    def handle(client, item, pause=None):
         garmin_id = str(item.get('activityId') or '')
         if not garmin_id.isdigit() or db.session.get(GarminImport, garmin_id):
             return None
@@ -413,7 +480,7 @@ def register_garmin(app, db, Activity, PlannedWorkout, user_id, import_recording
             if same:
                 return GarminImport(garmin_id=garmin_id, user_id=user_id, activity_id=same.id, status='duplicate')
         data = fit_payload(client.download_activity(garmin_id, dl_fmt=client.ActivityDownloadFormat.ORIGINAL))
-        time.sleep(PAUSE_SECONDS)
+        time.sleep(PAUSE_SECONDS if pause is None else pause)
         if data is None:
             return GarminImport(garmin_id=garmin_id, user_id=user_id, status='skipped', message='Keine FIT-Datei (z. B. manuell eingetragen).')
         name = f'garmin-{garmin_id}.fit'
@@ -446,6 +513,33 @@ def register_garmin(app, db, Activity, PlannedWorkout, user_id, import_recording
         finally:
             row.last_sync_at = datetime.utcnow()
             row.last_result = json.dumps(counts)
+
+    def pull_history(row, client):
+        """One chunk backwards from history_through (or today); queues the next one until the target is reached."""
+        target = row.history_target
+        through = row.history_through or today_local() + timedelta(days=1)
+        if target is None or through <= target:
+            return
+        start = max(target, through - timedelta(days=state.history_span))
+        end = through - timedelta(days=1)
+        listed = client.get_activities_by_date(start.isoformat(), end.isoformat(), sortorder='asc')
+        counts = {'imported': 0, 'duplicate': 0, 'skipped': 0, 'failed': 0, **json.loads(row.history_result or '{}')}
+        state.progress = {'done': 0, 'total': len(listed)}
+        for item in listed:
+            if state.history_stop:
+                return
+            record = handle(client, item, HISTORY_PAUSE_SECONDS)
+            if record is not None:
+                db.session.add(record)
+                counts[record.status] += 1
+                row.history_result = json.dumps(counts)
+                db.session.commit()
+            state.progress = {'done': state.progress['done'] + 1, 'total': len(listed)}
+        row.history_through = start
+        # Years without activities go quickly: an empty stretch doubles the next one.
+        state.history_span = HISTORY_CHUNK_DAYS if listed else min(state.history_span * 2, HISTORY_MAX_CHUNK_DAYS)
+        if start > target:
+            state.request('history')
 
     def remove(client, link):
         for action, ident in ((client.unschedule_workout, link.schedule_id), (client.delete_workout, link.garmin_workout_id)):
@@ -518,6 +612,9 @@ def register_garmin(app, db, Activity, PlannedWorkout, user_id, import_recording
             row = account()
             if row is None or not row.tokens or (job == 'workouts' and not row.push_workouts):
                 return
+            if job == 'history' and (row.needs_login or state.history_stop):
+                state.history_stop = False
+                return
             error = None
             try:
                 client = signed_in(row)
@@ -525,6 +622,8 @@ def register_garmin(app, db, Activity, PlannedWorkout, user_id, import_recording
                     pull_activities(row, client)
                 elif job == 'workouts':
                     push_workouts(row, client)
+                elif job == 'history':
+                    pull_history(row, client)
                 else:
                     remove_all(client)
                 keep_session(row, client)
@@ -542,6 +641,12 @@ def register_garmin(app, db, Activity, PlannedWorkout, user_id, import_recording
                 return
             if job == 'activities':
                 row.last_error = str(error) if error else None
+            elif job == 'history':
+                row.history_error = str(error) if error else None
+                if state.history_stop or error:
+                    state.history_stop = False
+                    with state.lock:
+                        state.wanted.discard('history')
             elif error:
                 row.last_push_error = str(error)
             if error and error.status == 401:

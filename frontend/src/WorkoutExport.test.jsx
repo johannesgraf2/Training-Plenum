@@ -1,6 +1,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import BatchImport from './BatchImport';
+import DataHub from './DataHub';
+import WorkoutExport from './WorkoutExport';
 import { newWorkout } from './workoutModel';
 
 let container, root, originalFetch, clicked;
@@ -34,14 +35,10 @@ afterEach(() => {
 });
 const button = label => Array.from(container.querySelectorAll('button')).find(b => b.textContent.includes(label));
 const rows = () => Array.from(container.querySelectorAll('.export-list li')).map(li => [li.querySelector('.batch-file-name').textContent, li.querySelector('input').checked]);
-const openExport = onClose => {
-  act(() => root.render(<BatchImport apiBase="http://api" workouts={workouts} onClose={onClose || (() => {})} />));
-  act(() => button('Exportieren').click());
-};
+const openExport = () => act(() => root.render(<WorkoutExport apiBase="http://api" workouts={workouts} onClose={() => {}} />));
 
 test('export lists upcoming workouts by date with the next seven days ticked and downloads them as one ZIP', async () => {
   openExport();
-  expect(container.querySelector('#batch-title').textContent).toBe('Workouts exportieren');
   expect(rows()).toEqual([['Heute', true], ['Bald', true], ['Später', false]]);
   await act(async () => button('2 Workouts als ZIP').click());
   expect(global.fetch).toHaveBeenCalledWith('http://api/api/workouts/export-selection', expect.objectContaining({ method: 'POST', body: JSON.stringify({ ids: ['today', 'soon'] }) }));
@@ -66,8 +63,10 @@ test('presets, single picks and past workouts change the selection; one workout 
 
 test('a failed export keeps the selection and shows the server message; closing without an import reports nothing imported', async () => {
   const onClose = jest.fn();
-  global.fetch = jest.fn(async () => ({ ok: false, status: 404, json: async () => ({ error: 'Mindestens ein ausgewähltes Workout existiert nicht mehr.' }) }));
-  openExport(onClose);
+  global.fetch = jest.fn(async url => (url.endsWith('/api/garmin') ? { ok: true, json: async () => ({ available: true, connected: false }) }
+    : { ok: false, status: 404, json: async () => ({ error: 'Mindestens ein ausgewähltes Workout existiert nicht mehr.' }) }));
+  await act(async () => root.render(<DataHub apiBase="http://api" initialView="export" workouts={workouts} onClose={onClose} />));
+  expect(container.querySelector('#hub-title').textContent).toBe('Workouts per USB');
   await act(async () => button('2 Workouts als ZIP').click());
   expect(container.querySelector('[role="alert"]').textContent).toBe('Mindestens ein ausgewähltes Workout existiert nicht mehr.');
   expect(rows().filter(([, checked]) => checked)).toHaveLength(2);

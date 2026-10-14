@@ -55,29 +55,31 @@ Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und
 
 ## Aktivitäten importieren
 
-Training Plēnum liest **FIT**, **FIT.GZ**, **GPX** und **TCX**, einzeln oder als ganzen Ordner. Die Originaldatei bleibt erhalten, jeder Messpunkt wird gespeichert.
+Alles rund um Daten liegt an einer Stelle: Oben rechts auf **Daten** klicken. Daneben steht, wann Garmin Connect zuletzt abgeglichen hat. Der Dialog **Daten & Geräte** zeigt alle Wege, Aktivitäten zu holen und Workouts aufs Gerät zu bringen, und darunter die zuletzt importierten Aktivitäten mit ihrer Herkunft.
 
-**Woher kommen die Dateien?**
+| Weg | Wann | So geht's |
+|-----|------|-----------|
+| **Garmin Connect** | Laufend, ohne Kabel | Einmal verbinden, danach kommen neue Aktivitäten automatisch. **Jetzt abgleichen** holt sie sofort. Siehe [Garmin Connect](#garmin-connect). |
+| **Garmin per USB** | Ohne Garmin-Konto oder offline | Garmin anschließen, **Garmin-Ordner wählen** und den Ordner `GARMIN` auf dem Gerät wählen. Gelesen wird nur `GARMIN/Activity`, der Import startet sofort. In Chrome und Edge merkt sich Training Plēnum den Ordner; beim nächsten Mal reicht **Erneut einlesen**. Auf dem Gerät sind meist nur die letzten Aktivitäten gespeichert. |
+| **Dateien & Exporte** | Einzelne Dateien oder die komplette Historie | Dateien oder einen ganzen Ordner ins Fenster ziehen, oder **Dateien auswählen** bzw. **Ordner auswählen**. Unterordner werden mitgelesen. Dann auf **Dateien importieren** klicken. |
+| **Manuell eintragen** | Einheiten ohne Aufzeichnung | Sportart, Datum, Startzeit und Dauer eingeben, optional Distanz, Puls und Notizen. |
 
-- **Automatisch aus Garmin Connect:** siehe [Garmin Connect](#garmin-connect). Neue Aktivitäten kommen dann ohne Export oder USB-Kabel.
-- **Direkt vom Garmin:** Garmin per USB an den PC anschließen und den Ordner `GARMIN/Activity` auf den PC kopieren. Darin liegen deine Aktivitäten als FIT-Dateien. Auf dem Gerät sind meist nur die letzten Aktivitäten gespeichert.
+Gelesen werden **FIT**, **FIT.GZ**, **GPX** und **TCX**. Die Originaldatei bleibt erhalten, jeder Messpunkt wird gespeichert. Dateien lassen sich auch einfach irgendwo ins Fenster ziehen.
+
+**Woher kommen Exporte?**
+
 - **Garmin Connect (komplette Historie):** Im Garmin-Konto unter **Datenverwaltung** den Datenexport anfordern. Der Download-Link kommt per E-Mail. Die ZIP-Datei entpacken und darin auch die weiteren ZIPs mit den Aktivitäten.
 - **TrainingPeaks:** Export herunterladen und entpacken.
-
-**So geht's:**
-
-1. Oben rechts auf **Datei importieren / exportieren** klicken.
-2. Dateien oder einen ganzen Ordner in das Fenster ziehen. Alternativ **Ordner auswählen** oder **Dateien auswählen**. Unterordner werden mitgelesen.
-3. Auf **Dateien importieren** klicken und warten. Danach mit **Aktivitäten anzeigen** fertig.
+- **Strava:** Datenexport anfordern, entpacken und den Ordner `activities` importieren (FIT- und GPX-Dateien).
+- **Garmin-Gerät, das nicht als Laufwerk erscheint:** Den Ordner `GARMIN/Activity` zuerst auf den Rechner kopieren (auf dem Mac z. B. mit OpenMTP) und die Kopie unter **Garmin per USB** wählen.
 
 **Gut zu wissen:**
 
 - **ZIP-Dateien zuerst entpacken.** Direkt lesen kann Training Plēnum nur die entpackten Dateien.
-- **Doppelte Dateien** werden erkannt und übersprungen. Denselben Ordner nochmal zu importieren schadet also nicht.
+- **Doppelte Dateien** werden erkannt und als **schon vorhanden** übersprungen, egal über welchen Weg sie kommen. Denselben Ordner oder dasselbe Gerät nochmal einzulesen schadet also nicht.
 - **Eine kaputte Datei** stoppt den Import nicht. Sie wird in der Liste als Fehler angezeigt und lässt sich mit **Fehler erneut versuchen** nochmal probieren.
 - **Anhalten:** **Nach aktueller Datei stoppen** beendet den Import sauber. Bereits importierte Aktivitäten bleiben gespeichert.
 - **Tab offen lassen**, solange der Import läuft.
-- **Strava-Export** (`activities.csv`) und **manuelle Einträge** gibt es unter **Manuelle Eingabe / CSV**.
 
 Eine Aktivität löschen: Aktivität öffnen, **Aktivität löschen** und dann **Endgültig löschen** klicken.
 
@@ -130,19 +132,24 @@ Die **Gesamtübersicht** unten im Editor zeigt das ganze Workout als Leistungspr
 
 **Auf den Garmin bringen:**
 
-1. Im Editor auf **Garmin FIT herunterladen** klicken. Mehrere Workouts auf einmal: unter **Datei importieren / exportieren** auswählen (z. B. **Nächste 7 Tage**) und als ZIP herunterladen.
+1. Im Editor auf **Garmin FIT herunterladen** klicken. Mehrere Workouts auf einmal: unter **Daten → Per USB als FIT-Datei** auswählen (z. B. **Nächste 7 Tage**) und als ZIP herunterladen.
 2. Garmin per USB anschließen und die `.fit`-Datei(en) in den Ordner `GARMIN/NewFiles` kopieren (ZIP vorher entpacken).
 3. Garmin sicher auswerfen. Das Workout findest du im Trainingsmenü des Geräts. Das Datum steht im Namen, z. B. `24.09.2026 · 30 min konstant`.
+
+Mit verbundenem [Garmin Connect](#garmin-connect) geht es auch ohne Kabel: Geplante Einheiten landen dann automatisch im Garmin-Kalender.
 
 Getestet auf dem Edge 1050. Welche Ziele und Funktionen unterstützt werden, hängt vom Gerät ab. Es entsteht kein Eintrag im Garmin-Kalender, nur ein Workout auf dem Gerät. Mehr dazu in [Garmins Anleitung](https://support.garmin.com/en-GB/?faq=AXV7LuWgc73v21nq6nbDa6).
 
 ## Garmin Connect
 
-Training Plēnum holt neue Aktivitäten selbst aus Garmin Connect, als originale FIT-Datei mit allen Messpunkten, und schickt geplante Einheiten in deinen Garmin-Kalender. Kostenlos, aber über die **inoffizielle** Schnittstelle (Bibliothek [garminconnect](https://github.com/cyberjunky/python-garminconnect)), denn Garmin bietet für private Nutzer keine offizielle API an. Ändert Garmin den Login, kann der Abgleich vorübergehend ausfallen; der Datei-Import funktioniert weiter.
+Training Plēnum holt neue Aktivitäten selbst aus Garmin Connect, als originale FIT-Datei mit allen Messpunkten, und schickt geplante Einheiten in deinen Garmin-Kalender. Kostenlos, aber über die **inoffizielle** Schnittstelle (Bibliothek [garminconnect](https://github.com/cyberjunky/python-garminconnect)), denn Garmin bietet für private Nutzer keine offizielle API an. Ändert Garmin den Login, kann der Abgleich vorübergehend ausfallen; Datei- und USB-Import funktionieren weiter.
 
-1. Im Menü oben rechts (dein Name) **Garmin Connect verbinden** wählen.
+1. Oben rechts auf **Daten** klicken und bei **Garmin Connect** auf **Verbinden** (oder im Menü unter deinem Namen **Garmin Connect verbinden**).
 2. E-Mail und Passwort des Garmin-Kontos eingeben. Ist die Zwei-Faktor-Anmeldung aktiv, danach den Code von Garmin eingeben.
 3. Der erste Abgleich holt die letzten 90 Tage, danach läuft er beim Start und alle 6 Stunden (`GARMIN_SYNC_INTERVAL_HOURS`, `0` schaltet ihn ab) oder per **Jetzt synchronisieren**.
+4. Optional: Unter **Ältere Aktivitäten nachladen** 1, 2, 3 oder 5 Jahre oder **Alles** wählen und **Nachladen** klicken.
+
+- **Ältere Aktivitäten** kommen in Etappen von etwa einem Monat, rückwärts und mit einer Sekunde Pause zwischen den Downloads, damit Garmin nicht bremst. Abgleich und Workouts laufen zwischen den Etappen weiter, der Dialog darf zu. Der Fortschritt wird gespeichert: Nach **Anhalten**, einem Neustart oder wenn Garmin „zu viele Anfragen“ meldet, macht **Fortsetzen** an derselben Stelle weiter. Ein größerer Zeitraum setzt unterhalb des schon geprüften an. Für sehr lange Historien ist der Garmin-Datenexport (siehe [Aktivitäten importieren](#aktivitäten-importieren)) die Alternative ohne Last auf der Schnittstelle.
 
 - **Geplante Einheiten ab heute** landen als strukturiertes Workout (Watt, Pace, Puls, Kadenz, Wiederholungen) am geplanten Tag im Garmin-Connect-Kalender; Garmin überträgt sie wie gewohnt aufs Gerät (**Training → Kalender**). Neu planen, Verschieben, Ändern und Löschen in Training Plēnum, im Kalender oder durch den KI-Coach werden sofort übernommen. Vergangene Einheiten bleiben in Garmin stehen. Änderungen direkt in Garmin Connect kommen nicht zurück.
 - **Nur eigene Workouts:** Training Plēnum ändert oder löscht in Garmin nur, was es selbst angelegt hat. Beim Abschalten des Sendens oder beim Trennen lassen sich diese Workouts auf Wunsch wieder aus Garmin löschen.

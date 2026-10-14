@@ -193,6 +193,8 @@ class FitTests(unittest.TestCase):
         response = self.client.post('/api/upload?summary=1', data={'file': (io.BytesIO(content), 'batch.fit')})
         self.assertEqual(response.status_code, 201, response.json)
         self.assertNotIn('timeSeries', response.json)
+        self.assertEqual(response.json['origin'], 'file')
+        self.assertTrue(response.json['importedAt'].endswith('Z'))
         detail = self.client.get('/api/activities/' + response.json['id']).json
         self.assertEqual(len(detail['timeSeries']), 6001)
         self.assertEqual(detail['fitDetails']['recordCount'], 6001)
@@ -237,6 +239,7 @@ class FitTests(unittest.TestCase):
         workout = example()
         self.client.post('/api/activities/manual', json={'title': 'Completed ride', 'sport': 'ride', 'date': '2026-09-23', 'duration': 60})
         before = self.client.get('/api/activities').json
+        self.assertEqual(before[0]['origin'], 'manual')
         created = self.client.post('/api/workouts', json=workout)
         self.assertEqual(created.status_code, 201)
         identity = created.json['id']

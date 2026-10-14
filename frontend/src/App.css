@@ -12,6 +12,10 @@
 .app-header-end { display: flex; align-items: center; gap: 16px; }
 .app-import { min-height: 44px; padding: 0 20px; border: 1px solid var(--line-strong); border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
 .app-import:hover { background: var(--btn-bg); color: var(--btn-fg); }
+.app-import { display: inline-flex; align-items: center; gap: 10px; }
+.app-import-status { padding-left: 10px; border-left: 1px solid var(--line-strong); font-size: 12px; font-weight: 400; color: var(--muted); }
+.app-import:hover .app-import-status { color: inherit; }
+.app-import-status.bad { color: var(--danger); }
 
 .app-main { max-width: 1440px; margin: 0 auto; padding: 0 56px; }
 .app-main-wide { max-width: none; padding: 0; }
@@ -87,6 +91,7 @@
   .app-main { padding: 0 16px; }
   .app-main-wide { padding: 0; }
   .app-notice { padding: 0 16px; }
+  .app-import-status { display: none; }
   .calendar-toolbar { padding: 16px; }
 }
 .app-nav-status { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; vertical-align: 2px; background: var(--accent); }

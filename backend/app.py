@@ -96,6 +96,8 @@ class Activity(db.Model):
             'tags': json.loads(self.tags or '[]'),
             'notes': self.notes or '',
             'source': self.source_type or 'manual',
+            'origin': activity_origin(self),
+            'importedAt': self.created_at.isoformat() + 'Z' if self.created_at else None,
             'timerSeconds': details.get('timerSeconds'),
             'elapsedSeconds': details.get('elapsedSeconds'),
         }
@@ -104,6 +106,15 @@ class Activity(db.Model):
             d['fitDetails'] = details
             d['originalFileUrl'] = f'/api/activities/{self.id}/file' if self.source_file else None
         return d
+
+
+def activity_origin(activity):
+    """Where an activity came from: 'garmin' (Garmin Connect sync), 'file' (upload or USB) or 'manual'."""
+    if not activity.source_file:
+        return 'manual'
+    # The Garmin sync stores downloads as <uuid>_garmin-<activity id>.fit.
+    name = activity.source_file.split('_', 1)[-1]
+    return 'garmin' if name.startswith('garmin-') and name[7:-4].isdigit() and name.endswith('.fit') else 'file'
 
 
 class PlannedWorkout(db.Model):
