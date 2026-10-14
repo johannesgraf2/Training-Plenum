@@ -89,7 +89,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
     @app.before_request
     def protect_coach():
-        sensitive = request.path.startswith(('/api/coach/', '/api/ai-provider', '/api/athlete-')) or request.path.endswith('/lock')
+        sensitive = request.path.startswith(('/api/coach/', '/api/ai-provider', '/api/athlete-', '/api/whoop')) or request.path.endswith('/lock')
         if not sensitive:
             return None
         allowed = {'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5000', 'http://127.0.0.1:5000',
@@ -98,6 +98,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         hosts = {urlparse(origin).hostname for origin in allowed}
         if request.host.split(':')[0] not in hosts or (request.headers.get('Origin') and request.headers['Origin'] not in allowed):
             return jsonify(error='Dieser Ursprung ist für den AI Coach nicht freigegeben.'), 403
+        if request.path.startswith('/api/whoop/bridge/'):
+            return None  # gzip uploads with their own size limit and bearer-token auth (whoop_sync.py)
         if request.method in ('POST', 'PUT', 'PATCH') and not request.is_json:
             return jsonify(error='Content-Type application/json erforderlich.'), 415
         if request.content_length and request.content_length > 65536:
@@ -105,7 +107,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
     @app.after_request
     def private_coach_response(response):
-        if request.path.startswith(('/api/coach/', '/api/ai-provider', '/api/athlete-')):
+        if request.path.startswith(('/api/coach/', '/api/ai-provider', '/api/athlete-', '/api/whoop')):
             response.headers['Cache-Control'] = 'no-store'
         return response
 

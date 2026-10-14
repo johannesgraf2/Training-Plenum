@@ -147,6 +147,16 @@ Der API-Key wird verschlüsselt gespeichert. Den Schlüssel dafür legt das Prog
 
 Alle Details zur Einrichtung: [AI-COACH.md](AI-COACH.md)
 
+## WHOOP 4.0 (in Arbeit)
+
+Training Plēnum liest einen **WHOOP 4.0** direkt aus, ohne WHOOP-App. Eine kleine Bridge auf dem Mac hält die Bluetooth-Verbindung und schickt die Rohdaten an Training Plēnum; Einrichtung und Status findest du im Menü oben rechts unter **WHOOP-Strap verbinden**.
+
+- **Stand (Phase 1):** Herzfrequenz, R-R-Abstände, Bewegung und Rohwerte für Hauttemperatur und Atmung kommen an und werden gespeichert. Erholung, HRV, Ruhepuls, Schlaf und Belastung folgen in den nächsten Phasen, dann auch in Kalender, Startseite, Dashboard und KI-Coach.
+- Der Strap muss dafür von der WHOOP-App getrennt werden. Danach erhalten WHOOP-App und WHOOP-Cloud keine Daten mehr.
+- Die Rohdaten jedes Uploads bleiben 30 Tage erhalten (`WHOOP_RAW_RETENTION_DAYS`), damit Decoder-Korrekturen per **Rohdaten neu einlesen** nachträglich greifen.
+
+Einrichtung und Fehlersuche: [whoop-bridge/README.md](whoop-bridge/README.md). Plan und Protokoll-Recherche: [docs/whoop-integration/](docs/whoop-integration/).
+
 ## Startseite anpassen
 
 Im Menü oben rechts (dein Name) unter **Hintergrund** wählst du **Landschaft**, ein eigenes **Foto** (JPEG, PNG oder WebP bis 10 MB) oder **Aus**. Die Wettkampfziel-Karte hat ein eigenes Foto: Kamera-Symbol zum Hinzufügen, Mülleimer zum Entfernen. Fotos bleiben auf deinem Rechner.
@@ -224,6 +234,8 @@ Berechnungen werden pro Aktivität zwischengespeichert. Deshalb sind Filter schn
 ```powershell
 cd backend
 .venv/Scripts/python.exe -m unittest -v
+cd ../whoop-bridge
+python -m unittest -v
 cd ../frontend
 npm test -- --watchAll=false --runInBand
 npm run build
@@ -253,6 +265,12 @@ Die Tests nutzen eine temporäre Datenbank und verändern keine eigenen Aktivit�
 | PUT / DELETE | `/api/workouts/:id` | Workout ändern oder löschen |
 | POST | `/api/workouts/export` | Workout als Garmin-FIT-Datei |
 
+| GET / DELETE | `/api/whoop` | WHOOP-Status; trennen (`?deleteData=1` löscht auch die Daten) |
+| POST | `/api/whoop/token` | Bridge-Token erzeugen oder erneuern (wird nur einmal angezeigt) |
+| POST | `/api/whoop/sync` | Bridge um sofortigen Sync bitten |
+| POST | `/api/whoop/recompute` | Gespeicherte Rohdaten neu dekodieren |
+| POST | `/api/whoop/bridge/heartbeat`, `/api/whoop/bridge/frames` | Nur für die Bridge (Bearer-Token) |
+
 Die Endpunkte des KI-Coachs stehen in [AI-COACH.md](AI-COACH.md).
 
 ## Geplante Features (v2+)
@@ -260,7 +278,8 @@ Die Endpunkte des KI-Coachs stehen in [AI-COACH.md](AI-COACH.md).
 - [ ] Fitness / Ermüdung / Form (CTL/ATL/TSB)
 - [ ] Coach-Accounts mit Zugriff auf Athleten
 - [ ] Erweiterte Analysen (Leistungskurve, Zonentabellen)
-- [ ] Anbindungen an Garmin Connect, Strava und WHOOP
+- [ ] Anbindungen an Garmin Connect und Strava
+- [ ] WHOOP 4.0: Rohdaten per Bridge ✓, Erholung/HRV/Schlaf/Belastung, Planungshinweise, Coach-Kontext
 - [x] TSS fürs Radfahren mit einstellbarer FTP (TSS fürs Laufen folgt)
 - [ ] Trainingsplan-Builder
 - [ ] Benutzeranmeldung (JWT)

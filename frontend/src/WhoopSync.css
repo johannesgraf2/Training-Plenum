@@ -1,0 +1,18 @@
+.whoop-dialog .batch-content { display: flex; flex-direction: column; gap: 14px; }
+.whoop-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 16px; }
+.whoop-steps h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.whoop-steps p { font-size: 13px; color: var(--fg-64748b); line-height: 1.6; margin-bottom: 10px; }
+.whoop-setup { display: flex; flex-direction: column; gap: 12px; }
+.whoop-command > span { display: block; font-size: 12px; color: var(--fg-64748b); margin-bottom: 4px; }
+.whoop-command > div { display: flex; gap: 8px; align-items: stretch; }
+.whoop-command code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 9px 10px; border: 1px solid var(--bd-e2e8f0); border-radius: 2px; background: var(--bg-f8fafc); font-size: 12px; }
+.whoop-status { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 1px; border: 1px solid var(--bd-e2e8f0); border-radius: 2px; background: var(--bd-e2e8f0); }
+.whoop-row { padding: 10px 12px; background: var(--bg-ffffff); }
+.whoop-row dt { font-size: 11px; color: var(--fg-64748b); }
+.whoop-row dd { margin: 3px 0 0; font-size: 13px; font-weight: 500; color: var(--fg-243248); }
+.whoop-row dd.whoop-ok { color: var(--success); }
+.whoop-row dd.whoop-bad { color: var(--danger); }
+.whoop-warning { padding: 10px; font-size: 12px; border-radius: 2px; background: var(--warning-bg); color: var(--warning); }
+.whoop-confirm { padding: 14px; border: 1px solid var(--danger-line); border-radius: 2px; background: var(--danger-bg); font-size: 13px; display: flex; flex-direction: column; gap: 10px; }
+.whoop-confirm label { display: flex; gap: 8px; align-items: center; }
+.whoop-confirm div { display: flex; gap: 8px; }

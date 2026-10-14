@@ -30,6 +30,8 @@ services:
       - UPLOAD_FOLDER=/app/uploads
       # Created on first start next to the database; back it up separately from trainhub.db.
       - TRAINHUB_AI_ENCRYPTION_KEY_FILE=/app/data/ai-encryption-key.txt
+      # Days the raw WHOOP uploads are kept for re-decoding (whoop_sync.py).
+      - WHOOP_RAW_RETENTION_DAYS=30
 
   nginx:
     image: nginx:alpine

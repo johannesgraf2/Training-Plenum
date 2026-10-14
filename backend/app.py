@@ -1003,10 +1003,13 @@ def load_effort_rows():
 
 from coach_api import register_coach
 from appearance import register_appearance
+from whoop_sync import register_whoop, start_whoop_worker
 register_coach(app, db, User, Activity, PlannedWorkout, DEMO_USER_ID, load_analytics_rows, load_effort_rows)
 register_appearance(app)
+register_whoop(app, db, User, DEMO_USER_ID)
 
 
 if __name__ == '__main__':
     initialize_database()
+    start_whoop_worker(app)
     app.run(host='0.0.0.0', port=5000, debug=os.environ.get('FLASK_DEBUG') == '1')
