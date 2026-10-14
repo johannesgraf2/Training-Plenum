@@ -134,11 +134,16 @@ class AnalyticsTests(unittest.TestCase):
         zone = gettz('Europe/Berlin')
         result = fitness(summary(), zone, ftp=200, max_hr=200, today=date(2026, 1, 1))
         self.assertEqual(len(result['days']), 730)
-        self.assertEqual(result['days'][-1], {'key': '2026-01-01', 'value': round(100 / 42, 1), 'load': 100})
+        self.assertEqual(result['days'][-1], {'key': '2026-01-01', 'value': round(100 / 42, 1), 'fatigue': round(100 / 7, 1),
+                                              'form': 0, 'load': 100})
+        self.assertEqual((result['fatigue'], result['form'], result['fatigueWindow']), (round(100 / 7, 1), 0, 7))
         self.assertEqual(result['days'][0]['value'], 0)
         self.assertEqual(result['activities'], {'power': 1, 'hr': 0, 'missing': 0})
         later = fitness(summary(), zone, ftp=200, max_hr=200, today=date(2026, 2, 12))
         self.assertAlmostEqual(later['value'], round(100 / 42 * (41 / 42) ** 42, 1))
+        # The day after the ride starts with fitness minus fatigue of the ride day.
+        self.assertEqual(later['days'][-42]['form'], round(100 / 42 - 100 / 7, 1))
+        self.assertAlmostEqual(later['fatigue'], round(100 / 7 * (6 / 7) ** 42, 1))
         # Without FTP the same ride counts via heart rate: 140 bpm / 180 bpm threshold for one hour.
         by_hr = fitness(summary(), zone, max_hr=200, today=date(2026, 1, 1))
         self.assertEqual(by_hr['activities'], {'power': 0, 'hr': 1, 'missing': 0})

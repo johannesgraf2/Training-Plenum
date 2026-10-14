@@ -16,7 +16,7 @@ from werkzeug.exceptions import NotFound
 
 from ai_provider import (DEFAULT_MODEL, REASONING_EFFORTS, ProviderError, decrypt_key, encrypt_key, ensure_server_key,
                          get_provider, key_file, validate_model, validate_reasoning_effort)
-from athlete_context import build_snapshot, session_pattern, summarize_period
+from athlete_context import WEARABLE_DAYS, build_snapshot, session_pattern, summarize_period, training_load, wearable
 from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, GROUPS, SECONDARY_FOCUS, SITUATIONS, block_for_week, block_status,
                           catalog as block_catalog, check_block, check_choice, check_formats, check_options, check_week_rules,
                           interval_formats, migrate_plan, new_block, place_block, public_blocks, rule_texts)
@@ -135,8 +135,16 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
     def athlete():
         return {key: value for key, value in user().to_dict().items() if key in ('age', 'weight', 'sport', 'ftp', 'maxHr')}
 
+    def wearable_days(today):
+        """WHOOP nights of the last two weeks; empty without the WHOOP module or data. Not part of the fingerprint:
+        a new night arrives every morning and must not invalidate a pending proposal."""
+        loader = app.extensions.get('whoop_days')
+        return loader((today - timedelta(days=WEARABLE_DAYS - 1)).isoformat(), today.isoformat()) if loader else []
+
     def snapshot():
-        result = build_snapshot(load_rows(), load_efforts(), athlete(), profile(), zone())
+        today = datetime.now(zone()).date()
+        result = build_snapshot(load_rows(), load_efforts(), athlete(), profile(), zone(), today=today,
+                                wearable_days=wearable_days(today))
         db.session.commit()
         return result
 
@@ -627,6 +635,14 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'controlled; vary interval formats that serve the same aim; continue the progression chains from blockHistory week by week '
         'and step back in deload weeks or after missed sessions. '
         'Do not diagnose or infer readiness from absent data. Use conservative adjustments when fatigue or limitations are reported. '
+        'trainingLoad (also snapshot.observed.trainingLoad) is calculated: form = fitness - fatigue, negative means recent load is '
+        'above the long-term average. recentRecovery (also snapshot.observed.wearable) is measured by the athlete\'s WHOOP strap: '
+        'readiness, HRV against its personal normal range, resting HR and sleep per night. These are approximations, not medical data. '
+        'Recovery rule: when signals.reduceIntensityToday is true (readiness red, or HRV below its normal range while form is '
+        'negative), do not keep a hard session (intervals, threshold, VO2max, race pace) on the date of recentRecovery.today: make it '
+        'easy or shorter, or swap it with a later easy day of the same week, and say so in hinweise. Several recent nights in red or below the normal range '
+        'argue for a lighter next few days; one green night never justifies more load than planned. While signals.calibrating is '
+        'true, or without recentRecovery, ignore readiness. Missing nights mean no data, not bad recovery. '
         'Choose only supplied templates and supported params; use null for unused params. Follow exact duration rules including warmup/cooldown. '
         'targetHours must equal total duration including fixed sessions, within 15 minutes. Never change fixed or locked sessions. '
         'Use unique short session ids. A patch contains only changed sessions, with matching sessionId/id; remove uses session:null. '
@@ -805,10 +821,16 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             if monday <= today <= monday + timedelta(days=6):
                 # Do not add, move or replace workouts on already elapsed days.
                 context['elapsedDays'] = DAYS[:today.weekday()]
-            context['recentPattern'] = session_pattern(load_rows(), zone(), today)
+            rows = load_rows()
+            context['recentPattern'] = session_pattern(rows, zone(), today)
+            load = training_load(rows, zone(), user().ftp, user().max_hr, today)
+            context['trainingLoad'] = {key: load[key] for key in ('source', 'fitness', 'fatigue', 'form', 'formLast7Days')}
+            recovery = wearable(wearable_days(today), today, load['form'])
+            if recovery:
+                context['recentRecovery'] = recovery
             context['blockHistory'] = block_history(plan, block, week)
             if kind == 'week':
-                context['recentTraining'] = summarize_period(load_rows(), zone(), today - timedelta(days=27), today, user().ftp, user().max_hr)
+                context['recentTraining'] = summarize_period(rows, zone(), today - timedelta(days=27), today, user().ftp, user().max_hr)
             if data.get('feedbackWeek'):
                 context['feedback'] = feedback(data['feedbackWeek'])
                 if 'missedSessions' in data:

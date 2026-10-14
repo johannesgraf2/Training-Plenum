@@ -22,6 +22,17 @@ test('no hint while calibrating or without a night', () => {
   expect(planningHint({ band: null, readiness: null, confidence: 'calibrating' }, '2026-01-28', plan)).toBeNull();
 });
 
+test('each hint carries a change request for the AI coach', () => {
+  const hard = { date: '2026-01-28', name: 'VO2max 5 × 4', sport: 'ride', steps: [powerStep('interval', 300, 300)] };
+  const night = extra => ({ readiness: 50, band: 'yellow', confidence: 'provisional', hrv: 66, hrvBaseline: base, ...extra });
+  expect(planningHint(night({ readiness: 25, band: 'red' }), '2026-01-28', [hard]).coach)
+    .toBe('Meine Readiness ist heute rot (25). Mach „VO2max 5 × 4“ (Mittwoch) bitte zu einer lockeren Einheit, oder tausche sie mit Donnerstag.');
+  expect(planningHint(night({ readiness: 25, band: 'red' }), '2026-01-28', []).coach)
+    .toBe('Meine Readiness ist heute rot (25). Plane heute und morgen nur lockere Einheiten.');
+  expect(planningHint(night({ hrv: 50 }), '2026-01-28', [hard]).coach)
+    .toBe('Meine HRV liegt heute unter meinem Normalbereich (50 ms, normal 54–66 ms). Reduziere die Intensität von „VO2max 5 × 4“ (Mittwoch), oder tausche sie mit Donnerstag.');
+});
+
 test('week averages over the nights that have values', () => {
   const days = { a: { readiness: 80, hrv: 66, hrvBaseline: base }, b: { readiness: 40, hrv: 54, hrvBaseline: base }, c: { readiness: null, hrv: null } };
   expect(weekRecovery(['a', 'b', 'c', 'd'], days)).toEqual({ readiness: 60, nights: 3, hrv: 60, hrvDeviation: 0 });

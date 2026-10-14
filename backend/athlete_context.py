@@ -10,7 +10,7 @@ from statistics import median
 
 from dateutil.tz import gettz
 
-from analytics import add, bucket, finish, utc, valid
+from analytics import add, bucket, fitness, finish, utc, valid
 from best_efforts import TARGETS
 
 
@@ -328,12 +328,72 @@ def _performance(efforts, zone, today):
     return {'bestEfforts': result}
 
 
-def build_snapshot(rows, efforts, athlete, self_reported, zone, today=None):
+def training_load(rows, zone, ftp=None, max_hr=None, today=None):
+    """Fitness (CTL), fatigue (ATL) and form (TSB) as on the dashboard, plus the form of the last 7 days."""
+    zone = _zone(zone)
+    today = _day(today, zone) if today is not None else datetime.now(zone).date()
+    parsable = []
+    for row in rows:
+        try:
+            _day(row['date'], zone, row.get('utc', True))
+        except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+            continue
+        parsable.append({**row, 'utc': row.get('utc', True)})
+    result = fitness(parsable, zone, _threshold(ftp), _threshold(max_hr), today=today)
+    return {'source': 'calculated', 'fitness': result['value'], 'fatigue': result['fatigue'], 'form': result['form'],
+            'fitnessWindowDays': result['window'], 'fatigueWindowDays': result['fatigueWindow'],
+            'formLast7Days': [{'date': day['key'], 'form': day['form']} for day in result['days'][-7:]],
+            'activitiesWithoutLoad': result['activities']['missing']}
+
+
+WEARABLE_DAYS = 14
+
+
+def wearable(days, today, form=None):
+    """Compact WHOOP recovery for the coach: today plus the last 14 nights, or None without any.
+
+days are whoop_sync day bodies keyed by local date. Missing nights stay missing.
+signals apply the planning rule: readiness red, or HRV below its normal range
+(baseline ± 1 SD) while form is negative, means hard sessions should be reduced
+or moved. Nothing is signalled while the baseline is calibrating.
+"""
+    today = today.isoformat() if isinstance(today, date) else today
+    first = (date.fromisoformat(today) - timedelta(days=WEARABLE_DAYS - 1)).isoformat()
+    recent = sorted((day for day in days or [] if first <= day.get('date', '') <= today), key=lambda day: day['date'])
+    if not recent:
+        return None
+
+    def night(day):
+        base, rhr_base, sleep = day.get('hrvBaseline') or {}, day.get('rhrBaseline') or {}, day.get('sleep') or {}
+        return {'date': day['date'], 'readiness': day.get('readiness'), 'band': day.get('band'), 'confidence': day.get('confidence'),
+                'hrvMs': day.get('hrv'), 'hrvBaselineMs': base.get('mean'), 'hrvNormalRangeMs': [base['low'], base['high']] if base.get('low') is not None else None,
+                'hrvVsBaselinePercent': round((day['hrv'] / base['mean'] - 1) * 100) if day.get('hrv') is not None and base.get('mean') else None,
+                'restingHr': day.get('rhr'), 'restingHrBaseline': rhr_base.get('mean'),
+                'sleepMinutes': sleep.get('minutes'), 'sleepDebtMinutes': day.get('sleepDebtMinutes'),
+                'strain': (day.get('strain') or {}).get('strain')}
+
+    latest = recent[-1]
+    current = night(latest) if latest['date'] == today else None
+    calibrated = current is not None and current['confidence'] not in (None, 'calibrating')
+    low = (current or {}).get('hrvNormalRangeMs')
+    hrv_low = calibrated and current['hrvMs'] is not None and low is not None and current['hrvMs'] < low[0]
+    red = calibrated and current['band'] == 'red'
+    negative = None if form is None else form < 0
+    return {'source': 'device', 'device': 'WHOOP 4.0', 'nightsMeasured': latest.get('nights', 0),
+            'confidence': latest.get('confidence'), 'today': current,
+            'last14Nights': [night(day) for day in recent],
+            'signals': {'source': 'calculated', 'calibrating': not calibrated, 'readinessRed': red, 'hrvBelowNormalRange': hrv_low,
+                        'formNegative': negative, 'reduceIntensityToday': red or (hrv_low and negative is True)}}
+
+
+def build_snapshot(rows, efforts, athlete, self_reported, zone, today=None, wearable_days=None):
     """Build the context from cached summary/effort dictionaries, without I/O.
 
 Rows follow analytics.activity_summary with optional activityId. Efforts are
 {sport, target, value, date, utc, activityId}; target/value use best_efforts.py
 units. Scope-level source tags apply to all descendants in their own section.
+wearable_days are WHOOP day bodies (whoop_sync); without them there is no
+observed.wearable section.
 """
     timezone_name, zone = _zone_name(zone), _zone(zone)
     today = _day(today, zone) if today is not None else datetime.now(zone).date()
@@ -346,13 +406,16 @@ units. Scope-level source tags apply to all descendants in their own section.
     quality = periods['last42Days']['dataQuality']
     earliest = min((day for day, _ in dated), default=None)
     latest = max((day for day, _ in dated), default=None)
+    load = training_load(rows, zone, ftp, max_hr, today)
+    recovery = wearable(wearable_days, today, load['form'])
     return {
         'schemaVersion': SCHEMA_VERSION, 'asOf': today.isoformat(), 'timezone': timezone_name,
         'athlete': {**{key: athlete.get(key) for key in ('age', 'weight', 'sport', 'ftp', 'maxHr')}, 'source': 'athlete'},
         'observed': {'source': 'calculated', 'currentTraining': periods,
                      'performanceHistory': _performance(efforts, zone, today),
                      'trainingHistory': {'last365Days': _history(dated, today, ftp, max_hr)},
-                     'observedTrainingCapacity': _capacity(dated, today)},
+                     'observedTrainingCapacity': _capacity(dated, today), 'trainingLoad': load,
+                     **({'wearable': recovery} if recovery else {})},
         'selfReported': {**(self_reported or {}), 'source': 'athlete'},
         'dataQuality': {
             'source': 'calculated',
@@ -379,6 +442,8 @@ units. Scope-level source tags apply to all descendants in their own section.
                 'intensity': 'Cycling power: low Z1-2, moderate Z3, high Z4-7. HR: low Z1-2, moderate Z3, high Z4-5. Separate descriptive zone groups, not physiological threshold estimates; shares use measured sensor seconds.',
                 'missingValues': 'Hours, distance and elevation are known subtotals when some sessions lack values. Zero weeks mean no recorded activities; absence of imports cannot prove absence of training.',
                 'cyclingTss': 'Current FTP and cached normalized-power factor; every positive-duration ride must have 95-105% recorded power coverage and valid normalized power. Other sports never contribute.',
+                'trainingLoad': 'Daily load is power TSS (current FTP) or, without it, heart-rate TSS (90% max HR as threshold). fitness = 42-day and fatigue = 7-day exponentially weighted load; form = fitness - fatigue going into the day. Negative form means recent load is above the long-term average.',
+                'wearable': 'WHOOP 4.0 strap, own approximations from raw data (not WHOOP scores, not a medical device). Night values belong to the wake-up date. readiness 0-100 from HRV, resting HR and sleep vs personal baselines (bands red < 34, yellow < 67, green); null while calibrating (fewer than 4 nights). hrvNormalRangeMs is baseline +/- 1 SD of the nights before. Missing nights are unknown, not bad.',
             },
         },
     }

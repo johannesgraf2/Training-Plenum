@@ -417,6 +417,14 @@ def register_whoop(app, db, User, user_id):
         state.trigger(reprocess=bool(raw), recompute=True)
         return jsonify(status_body()), 202
 
+    def days_between(first, last):
+        """Day bodies from first to last (ISO dates, inclusive); the coach reads them through app.extensions."""
+        rows = WhoopDay.query.filter(WhoopDay.user_id == user_id, WhoopDay.date >= first,
+                                     WhoopDay.date <= last).order_by(WhoopDay.date).all()
+        return [day_body(row) for row in rows]
+
+    app.extensions['whoop_days'] = days_between
+
     @app.route('/api/whoop/days', methods=['GET'])
     def whoop_days():
         try:
@@ -426,9 +434,7 @@ def register_whoop(app, db, User, user_id):
             raise WhoopError('from und to müssen Daten im Format JJJJ-MM-TT sein.') from None
         if first > last or (last - first).days > 400:
             raise WhoopError('Der Zeitraum muss zwischen 1 und 400 Tagen liegen.')
-        rows = WhoopDay.query.filter(WhoopDay.user_id == user_id, WhoopDay.date >= first.isoformat(),
-                                     WhoopDay.date <= last.isoformat()).order_by(WhoopDay.date).all()
-        return jsonify(days=[day_body(row) for row in rows], timezone=os.environ.get('TRAINHUB_TIMEZONE', 'Europe/Berlin'),
+        return jsonify(days=days_between(first.isoformat(), last.isoformat()), timezone=os.environ.get('TRAINHUB_TIMEZONE', 'Europe/Berlin'),
                        disclaimer='Eigene Näherungen aus den Rohdaten, keine offiziellen WHOOP-Scores, kein Medizinprodukt.')
 
     # Bridge routes (bearer token; exempt from the JSON and 64 KB checks)

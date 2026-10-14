@@ -10,6 +10,8 @@ import unittest
 from datetime import date, datetime, timedelta
 from unittest.mock import Mock, patch
 
+from dateutil.tz import gettz
+
 from cryptography.fernet import Fernet
 from coach_domain import DEFAULT_PROFILE, DAYS, iso_week
 from coach_templates import PARAM_NAMES
@@ -33,6 +35,7 @@ class CoachAPITests(unittest.TestCase):
         cls.client = cls.backend.app.test_client()
         cls.client.get('/api/user')
         cls.State, cls.Settings, cls.Proposal = cls.backend.app.extensions['coach_models']
+        cls.WhoopDay = cls.backend.app.extensions['whoop_models'][3]
 
     @classmethod
     def tearDownClass(cls):
@@ -44,7 +47,7 @@ class CoachAPITests(unittest.TestCase):
 
     def setUp(self):
         with self.backend.app.app_context():
-            for model in (self.Proposal, self.State, self.Settings, self.backend.PlannedWorkout,
+            for model in (self.Proposal, self.State, self.Settings, self.backend.PlannedWorkout, self.WhoopDay,
                           self.backend.AnalyticsCache, self.backend.BestEffortCache, self.backend.Activity):
                 model.query.delete()
             user = self.backend.db.session.get(self.backend.User, self.backend.DEMO_USER_ID)
@@ -391,11 +394,45 @@ class CoachAPITests(unittest.TestCase):
         proposal, provider = self.propose({'kind': 'patch', 'week': self.week, 'instruction': 'Montag länger'},
             {'week': self.week, 'targetHours': 1.5, 'focus': 'Basis', 'hinweise': [], 'operations': [{'op': 'replace', 'sessionId': identity, 'session': replacement}]})
         self.assertNotIn('snapshot', provider.generate.call_args.args[3])
+        self.assertNotIn('recentRecovery', provider.generate.call_args.args[3])  # no WHOOP data, no section
         before = self.client.get('/api/workouts').json[0]
         self.assertEqual(before['id'], identity)
         result = self.confirm(proposal)['weeks'][self.week]
         self.assertEqual(result['calculatedHours'], 1.5)
         self.assertEqual(result['sessions'][0]['id'], identity)
+
+    def add_night(self, day, **scores):
+        nightly = {'version': 1, 'sleep': {'start': 1, 'end': 2, 'minutes': 400}, 'hrv': 48.0, 'rhr': 52.0, 'strain': None}
+        scores = {'readiness': 25, 'band': 'red', 'confidence': 'provisional', 'nights': 8,
+                  'hrvBaseline': {'mean': 60, 'spread': 5, 'nights': 7, 'low': 54, 'high': 66}, 'sleepDebtMinutes': 60, **scores}
+        with self.backend.app.app_context():
+            self.backend.db.session.add(self.WhoopDay(user_id=self.backend.DEMO_USER_ID, date=day.isoformat(), version=1,
+                                                      nightly=json.dumps(nightly), scores=json.dumps(scores)))
+            self.backend.db.session.commit()
+
+    def test_whoop_recovery_and_form_reach_the_coach_without_invalidating_proposals(self):
+        self.assertNotIn('wearable', self.client.get('/api/athlete-snapshot?timezone=Europe/Berlin').json['observed'])
+        week = self.week_plan()
+        today = datetime.now(gettz('Europe/Berlin')).date()
+        self.add_night(today - timedelta(days=20))
+        self.add_night(today)
+        snapshot = self.client.get('/api/athlete-snapshot?timezone=Europe/Berlin').json['observed']
+        self.assertEqual(snapshot['wearable']['today']['readiness'], 25)
+        self.assertEqual(len(snapshot['wearable']['last14Nights']), 1)
+        self.assertIn('form', snapshot['trainingLoad'])
+        identity = week['sessions'][0]['id']
+        proposal, provider = self.propose({'kind': 'patch', 'week': self.week, 'instruction': 'Readiness rot'},
+            {'week': self.week, 'targetHours': 1, 'focus': 'Locker', 'hinweise': [],
+             'operations': [{'op': 'replace', 'sessionId': identity, 'session': self.session(identity, duration=60)}]})
+        instructions, context = provider.generate.call_args.args[2], provider.generate.call_args.args[3]
+        self.assertIn('Recovery rule', instructions)
+        self.assertEqual(context['recentRecovery']['source'], 'device')
+        self.assertTrue(context['recentRecovery']['signals']['readinessRed'])
+        self.assertTrue(context['recentRecovery']['signals']['reduceIntensityToday'])
+        self.assertEqual(set(context['trainingLoad']), {'source', 'fitness', 'fatigue', 'form', 'formLast7Days'})
+        # A night arriving after the proposal does not make it stale.
+        self.add_night(today - timedelta(days=1), readiness=80, band='green')
+        self.confirm(proposal)
 
     def test_locked_session_rejects_patch_and_legacy_edit_delete(self):
         identity = self.week_plan()['sessions'][0]['id']

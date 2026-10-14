@@ -2,7 +2,7 @@
 
 Dieser Ordner enthält alles, um die WHOOP-4.0-Anbindung an Training Plenum an einem anderen Rechner bzw. Account weiterzuführen.
 
-**Stand:** Phase 1 (Rohdaten), Phase 2 (Auswertung) und Phase 3 (Planungs-UI) sind im Code umgesetzt und mit Tests, simulierten Nächten und einem simulierten Strap geprüft, aber **noch nicht mit dem echten Strap**. Nächster Schritt ist der Test auf dem Mac (siehe `whoop-bridge/README.md`, Abschnitt „Erster Test“), danach Phase 4 (Coach).
+**Stand:** Phase 1 (Rohdaten), Phase 2 (Auswertung), Phase 3 (Planungs-UI) und Phase 4 (Coach) sind im Code umgesetzt und mit Tests, simulierten Nächten und einem simulierten Strap geprüft, aber **noch nicht mit dem echten Strap**. Nächster Schritt ist der Test auf dem Mac (siehe `whoop-bridge/README.md`, Abschnitt „Erster Test“). Phase 5 (v2-Kennzahlen) ist bewusst offen.
 
 ### Abweichungen vom Plan in Phase 1
 - `whoop_hour` speichert die **Schwerkraftvektoren** (1/10000 g) statt eines fertigen Bewegungswerts. So lassen sich Chunks in beliebiger Reihenfolge zusammenführen; Phase 2 berechnet die Bewegung aus aufeinanderfolgenden Vektoren (`whoop_sync.hour_view`).
@@ -29,6 +29,16 @@ Dieser Ordner enthält alles, um die WHOOP-4.0-Anbindung an Training Plenum an e
 - „Im AI Coach anpassen“ öffnet die Plan-Seite des Coachs („Woche anpassen“); ein vorbefüllter Patch-Auftrag folgt in Phase 4.
 - Dashboard: Die Erholungs-Karte teilt sich den Zeitraum mit der Fitness-Karte und nutzt dieselbe x-Geometrie, damit beide Diagramme dieselben Tage zeigen.
 - Ohne WHOOP-Daten erscheinen weder Kachel noch Hinweis noch Karte.
+
+### Abweichungen und Festlegungen in Phase 4
+- **Form (TSB) gibt es jetzt auch in diesem Repo:** `analytics.fitness()` liefert zusätzlich `fatigue` (ATL, 7 Tage), `form` und `fatigueWindow`, pro Tag und aktuell, in derselben Form wie die Mac-Version. Form = Fitness − Ermüdung **zu Tagesbeginn** (vor der Belastung des Tages). Das Dashboard zeigt weiterhin nur die Fitness.
+- **Snapshot:** `build_snapshot(..., wearable_days=...)` ergänzt `observed.trainingLoad` (immer) und `observed.wearable` (nur mit WHOOP-Nächten der letzten 14 Tage, `source: 'device'`), dazu Definitionen in `dataQuality.definitions`. Die Nächte liest `coach_api` über `app.extensions['whoop_days']` aus `whoop_sync.py`; ohne WHOOP-Modul oder Daten fehlt der Abschnitt.
+- **Planungsregel serverseitig:** `wearable.signals` rechnet die Regel aus (Readiness rot, oder HRV unter dem Normalbereich **und** negative Form → `reduceIntensityToday`), damit das Modell sie nicht selbst herleiten muss. Nichts während der Kalibrierung und nichts, wenn für heute keine Nacht vorliegt.
+- **Woche und Patch** erhalten `trainingLoad` und, mit Daten, `recentRecovery` (gleiches Format wie `observed.wearable`), statt eines separaten `recentRecovery`-Formats. Block und Saison bekommen beides über den Snapshot.
+- **Fingerprint:** WHOOP-Nächte gehören bewusst **nicht** dazu. Jeden Morgen kommt eine neue Nacht; offene Vorschläge sollen dadurch nicht ungültig werden.
+- **Vorbefüllter Patch-Auftrag:** „Im AI Coach anpassen“ am Planungshinweis öffnet den Coach auf der laufenden Woche und setzt einen deutschen Wunsch (z. B. „Meine Readiness ist heute rot (28). Mach „Schwelle“ (Mittwoch) bitte zu einer lockeren Einheit, oder tausche sie mit Freitag.“). Gesendet wird erst mit „Woche anpassen“, damit kein API-Aufruf ohne Bestätigung entsteht.
+- Unter „Datenbasis & Herkunft“ im Coach stehen jetzt Form und eine Zeile „WHOOP-Erholung“, damit sichtbar ist, was der Coach bekommt.
+- Der Planungshinweis auf der Startseite (Phase 3) nutzt die Form weiterhin nicht; er bleibt bei „HRV unter Normalbereich und harte Einheit“ mit weicher Formulierung. Die strengere Regel mit Form gilt im Coach.
 
 ### Repo-Stand
 - Das GitHub-Repo war älter als die Mac-Kopie (kein `garmin_sync.py`, `wsgi.py`, `backup.py`). Phase 1 baut auf dem Repo-Stand auf; beim Zusammenführen mit der Mac-Kopie gehören `start_whoop_worker(app)` zusätzlich in `wsgi.py` und `/api/whoop` in die Garmin-erweiterte Guard-Liste in `coach_api.py`.

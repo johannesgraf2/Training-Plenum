@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from dateutil.tz import gettz
 
-from athlete_context import build_snapshot, session_pattern, summarize_period
+from athlete_context import build_snapshot, session_pattern, summarize_period, training_load, wearable
 
 
 TODAY = date(2026, 9, 23)
@@ -245,6 +245,57 @@ class AthleteContextTests(unittest.TestCase):
         self.assertEqual(result['observed']['currentTraining']['last7Days']['activityCount'], 1)
         with self.assertRaises(ValueError):
             build_snapshot([], [], {}, {}, 'Mars/Olympus', TODAY)
+
+
+def night(day, readiness=72, band='green', confidence='provisional', hrv=66, **extra):
+    return {'date': day, 'readiness': readiness, 'band': band, 'confidence': confidence, 'nights': 9, 'hrv': hrv, 'rhr': 48.4,
+            'hrvBaseline': {'mean': 60, 'spread': 5, 'nights': 8, 'low': 54, 'high': 66}, 'rhrBaseline': {'mean': 50, 'low': 47, 'high': 53},
+            'sleep': {'start': '2026-09-22T21:30:00Z', 'end': '2026-09-23T05:10:00Z', 'minutes': 452}, 'sleepDebtMinutes': 15,
+            'strain': {'trimp': 80, 'strain': 10.4}, **extra}
+
+
+class TrainingLoadAndWearableTests(unittest.TestCase):
+    def test_training_load_matches_the_dashboard_and_skips_bad_dates(self):
+        load = training_load([row('2026-09-22T08:00:00Z'), row('invalid-date')], 'Europe/Berlin', 200, 200, TODAY)
+        self.assertEqual((load['fitness'], load['fatigue']), (round(100 / 42 * 41 / 42, 1), round(100 / 7 * 6 / 7, 1)))
+        # Today starts with yesterday's fitness minus fatigue.
+        self.assertEqual(load['form'], round(100 / 42 - 100 / 7, 1))
+        self.assertEqual([d['date'] for d in load['formLast7Days']][-1], '2026-09-23')
+        self.assertEqual(snapshot([row('2026-09-22T08:00:00Z')])['observed']['trainingLoad'], load)
+        self.assertIsNone(training_load([], 'Europe/Berlin', today=TODAY)['form'])
+
+    def test_no_wearable_section_without_recent_nights(self):
+        self.assertNotIn('wearable', snapshot([row()])['observed'])
+        self.assertIsNone(wearable([night('2026-09-01')], TODAY))
+
+    def test_wearable_lists_recent_nights_and_today(self):
+        days = [night('2026-09-08'), night('2026-09-10', hrv=None), night('2026-09-23'), night('2026-09-24')]
+        result = build_snapshot([row()], [], ATHLETE, {}, 'Europe/Berlin', today=TODAY, wearable_days=days)['observed']['wearable']
+        self.assertEqual((result['source'], result['nightsMeasured'], result['confidence']), ('device', 9, 'provisional'))
+        self.assertEqual([n['date'] for n in result['last14Nights']], ['2026-09-10', '2026-09-23'])  # 14 days, nothing after today
+        self.assertEqual(result['today'], {'date': '2026-09-23', 'readiness': 72, 'band': 'green', 'confidence': 'provisional',
+                                           'hrvMs': 66, 'hrvBaselineMs': 60, 'hrvNormalRangeMs': [54, 66], 'hrvVsBaselinePercent': 10,
+                                           'restingHr': 48.4, 'restingHrBaseline': 50, 'sleepMinutes': 452, 'sleepDebtMinutes': 15,
+                                           'strain': 10.4})
+        self.assertIsNone(result['last14Nights'][0]['hrvVsBaselinePercent'])
+        self.assertFalse(result['signals']['reduceIntensityToday'])
+        json.dumps(result, allow_nan=False)
+
+    def test_recovery_rule_red_or_low_hrv_with_negative_form(self):
+        signals = lambda day, form: wearable([day], TODAY, form)['signals']
+        self.assertTrue(signals(night('2026-09-23', readiness=28, band='red'), 5)['reduceIntensityToday'])
+        low = night('2026-09-23', readiness=50, band='yellow', hrv=50)
+        self.assertEqual(signals(low, -8), {'source': 'calculated', 'calibrating': False, 'readinessRed': False,
+                                            'hrvBelowNormalRange': True, 'formNegative': True, 'reduceIntensityToday': True})
+        self.assertFalse(signals(low, 3)['reduceIntensityToday'])
+        self.assertFalse(signals(low, None)['reduceIntensityToday'])
+        calibrating = night('2026-09-23', readiness=None, band=None, confidence='calibrating', hrv=40)
+        self.assertEqual(signals(calibrating, -8)['calibrating'], True)
+        self.assertFalse(signals(calibrating, -8)['reduceIntensityToday'])
+        # Only an older night: today is unknown, nothing is signalled.
+        older = wearable([night('2026-09-22', readiness=20, band='red')], TODAY, -8)
+        self.assertIsNone(older['today'])
+        self.assertFalse(older['signals']['reduceIntensityToday'])
 
 
 if __name__ == '__main__':

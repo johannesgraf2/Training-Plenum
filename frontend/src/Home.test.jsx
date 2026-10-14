@@ -190,7 +190,7 @@ describe('WHOOP recovery', () => {
     act(() => [...hint().querySelectorAll('button')].find(b => b.textContent === 'Workout öffnen').click());
     expect(onOpenWorkout).toHaveBeenCalledWith(threshold);
     act(() => [...hint().querySelectorAll('button')].find(b => b.textContent === 'Im AI Coach anpassen').click());
-    expect(onOpenCoach).toHaveBeenCalled();
+    expect(onOpenCoach).toHaveBeenCalledWith('Meine Readiness ist heute rot (28). Mach „Schwelle 3 × 12 min“ (Mittwoch) bitte zu einer lockeren Einheit, oder tausche sie mit Freitag.');
   });
 
   test('red readiness on an easy day asks to keep it easy', async () => {

@@ -763,6 +763,34 @@ test('a new tab request opens that tab without reloading the coach', async () =>
   expect(requests.filter(r => r.path === '/api/coach/plan')).toHaveLength(1);
 });
 
+test('the data basis names the WHOOP recovery and the form the coach receives', async () => {
+  responses['GET /api/athlete-snapshot'] = async () => ({ ok: true, json: async () => ({ athlete: {}, selfReported: profile, dataQuality: {},
+    observed: { currentTraining: {}, trainingLoad: { fitness: 50, fatigue: 62.5, form: -12.5 },
+      wearable: { nightsMeasured: 9, today: { readiness: 28, band: 'red' }, last14Nights: [], signals: {} } } }) });
+  await render();
+  const basis = container.querySelector('.coach-context');
+  expect(basis.textContent).toContain('Gemessen · WHOOP');
+  expect(basis.textContent).toContain('Form (Fitness − Ermüdung): -12,5');
+  expect(basis.textContent).toContain('WHOOP-Erholung: 9 Nächte, heute Readiness 28 (rot)');
+});
+
+test('a recovery hint prefills the change request for the current week, sent only on request', async () => {
+  initialPlan = { revision: 2, blocks: [macro], weeks: { '2026-W39': weekPlan } };
+  const wish = 'Meine Readiness ist heute rot (28). Mach „Schwelle“ (Mittwoch) bitte zu einer lockeren Einheit.';
+  await render({ initialTab: 'plan', tabVersion: 1, initialInstruction: wish });
+  expect(inputFor('Wunsch für die Planung').value).toBe(wish);
+  expect(container.textContent).toContain('Der Erholungshinweis steht als Wunsch bereit.');
+  expect(requests.some(r => r.path === '/api/coach/proposals')).toBe(false);
+  await click(button('Woche anpassen'));
+  expect(requests.find(r => r.path === '/api/coach/proposals').body).toEqual({ kind: 'patch', week: '2026-W39', instruction: wish });
+  // Re-rendering with the same request does not overwrite what the athlete typed since.
+  await change(inputFor('Wunsch für die Planung'), 'Nur Dienstag frei.');
+  await render({ initialTab: 'plan', tabVersion: 1, initialInstruction: wish });
+  expect(inputFor('Wunsch für die Planung').value).toBe('Nur Dienstag frei.');
+  await render({ initialTab: 'plan', tabVersion: 2, initialInstruction: 'Heute nur locker.' });
+  expect(inputFor('Wunsch für die Planung').value).toBe('Heute nur locker.');
+});
+
 test('the coach reports when it starts and finishes working', async () => {
   const busyChanges = jest.fn();
   let resolveProposal;

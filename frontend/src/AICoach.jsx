@@ -34,6 +34,10 @@ const MODEL_PRESETS = ['gpt-6-sol', 'gpt-5-mini', 'gpt-5', 'gpt-4.1-mini', 'gpt-
 const REASONING_LEVELS = [['', 'Standard des Modells'], ['low', 'Niedrig'], ['medium', 'Mittel'], ['high', 'Hoch']];
 const number = value => value === '' || value == null ? null : Number(value);
 const fmt = value => value == null ? '—' : Number(value).toLocaleString('de-DE', { maximumFractionDigits: 1 });
+const BAND_NAMES = { green: 'grün', yellow: 'gelb', red: 'rot' };
+// What the coach gets from the WHOOP strap, in one line (values are the app's own approximations).
+const wearableSummary = value => [`${value.nightsMeasured} ${value.nightsMeasured === 1 ? 'Nacht' : 'Nächte'}`,
+  value.today?.readiness != null ? `heute Readiness ${value.today.readiness} (${BAND_NAMES[value.today.band]})` : value.today ? 'heute noch in Kalibrierung' : 'heute keine Nacht'].join(', ');
 const sourceValue = value => value && typeof value === 'object' && 'value' in value ? value.value : value;
 const hours = value => `${fmt(sourceValue(value))} h`;
 const dateLabel = date => date ? new Date(`${date}T12:00:00`).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }) : '';
@@ -748,7 +752,7 @@ function Proposal({ value, busy, onConfirm, onDiscard }) {
   </section>;
 }
 
-export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase = '', workouts = EMPTY_WORKOUTS, onWorkoutsChanged, onOpenWorkout, onBusyChange }) {
+export default function AICoach({ initialTab = 'plan', tabVersion = 0, initialInstruction = '', apiBase = '', workouts = EMPTY_WORKOUTS, onWorkoutsChanged, onOpenWorkout, onBusyChange }) {
   const [tab, setTab] = useState(initialTab);
   // The app keeps the coach mounted between pages; a new tabVersion asks it to show initialTab again.
   const shownTabVersion = useRef(tabVersion);
@@ -1069,6 +1073,17 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
     if (key === week) return;
     invalidate(); setWeek(key);
   }
+  // The recovery hint on the start page hands over a change request for the current week; the athlete sends it.
+  // It may arrive with the first mount, since the coach is mounted on its first visit.
+  const shownInstruction = useRef(initialInstruction ? null : tabVersion);
+  useEffect(() => {
+    if (shownInstruction.current === tabVersion) return;
+    shownInstruction.current = tabVersion;
+    if (!initialInstruction) return;
+    goToWeek(isoWeek()); invalidate(); setInstruction(initialInstruction);
+    setNotice('Der Erholungshinweis steht als Wunsch bereit. Prüfe ihn und tippe auf „Woche anpassen“.');
+    // Only a new request applies; the week and the wish stay the athlete's afterwards.
+  }, [tabVersion, initialInstruction]);
   const inRange = key => !!range && weekStart(key) >= weekStart(isoWeek(range.start)) && weekStart(key) <= range.end;
   const previousWeek = range && inRange(isoWeek(addDays(weekStart(week), -7))) ? isoWeek(addDays(weekStart(week), -7)) : null;
   const followingWeek = range && inRange(isoWeek(addDays(weekStart(week), 7))) ? isoWeek(addDays(weekStart(week), 7)) : null;
@@ -1282,6 +1297,6 @@ export default function AICoach({ initialTab = 'plan', tabVersion = 0, apiBase =
           <details className="coach-details"><summary>Check-in {dirty.checkIn ? '· ungespeichert' : ''}</summary>{checkInForm}</details>
         </section></div>}
     </>}
-    {!loading && snapshot && <details className="coach-card coach-context"><summary>Datenbasis & Herkunft</summary><div className="coach-provenance"><span className="coach-badge">Berechnet · Trainingsdaten</span><span className="coach-badge athlete">Athlet · Selbstauskunft</span><span className="coach-badge recommendation">AI · Empfehlung</span></div><p className="coach-muted">Fehlende Messwerte bleiben offen. Der Snapshot enthält verdichtete Daten ohne Sensorstreams.</p><div className="coach-quality"><span>FTP: <strong>{snapshot.dataQuality?.ftpConfigured ? 'konfiguriert' : 'nicht konfiguriert'}</strong></span><span>Maximale Herzfrequenz: <strong>{snapshot.dataQuality?.maxHrConfigured ? 'konfiguriert' : 'nicht konfiguriert'}</strong></span><span>Leistungsdaten (42 Tage): <strong>{snapshot.dataQuality?.cyclingPowerCoverageLast42Days == null ? '—' : `${fmt(snapshot.dataQuality.cyclingPowerCoverageLast42Days * 100)} %`}</strong></span></div><details className="coach-details"><summary>Kompakten Athlete Snapshot ansehen</summary><pre>{JSON.stringify(snapshot, null, 2)}</pre></details></details>}
+    {!loading && snapshot && <details className="coach-card coach-context"><summary>Datenbasis & Herkunft</summary><div className="coach-provenance"><span className="coach-badge">Berechnet · Trainingsdaten</span><span className="coach-badge athlete">Athlet · Selbstauskunft</span>{snapshot.observed?.wearable && <span className="coach-badge">Gemessen · WHOOP</span>}<span className="coach-badge recommendation">AI · Empfehlung</span></div><p className="coach-muted">Fehlende Messwerte bleiben offen. Der Snapshot enthält verdichtete Daten ohne Sensorstreams.</p><div className="coach-quality"><span>FTP: <strong>{snapshot.dataQuality?.ftpConfigured ? 'konfiguriert' : 'nicht konfiguriert'}</strong></span><span>Maximale Herzfrequenz: <strong>{snapshot.dataQuality?.maxHrConfigured ? 'konfiguriert' : 'nicht konfiguriert'}</strong></span><span>Leistungsdaten (42 Tage): <strong>{snapshot.dataQuality?.cyclingPowerCoverageLast42Days == null ? '—' : `${fmt(snapshot.dataQuality.cyclingPowerCoverageLast42Days * 100)} %`}</strong></span>{snapshot.observed?.trainingLoad && <span>Form (Fitness − Ermüdung): <strong>{fmt(snapshot.observed.trainingLoad.form)}</strong></span>}{snapshot.observed?.wearable && <span>WHOOP-Erholung: <strong>{wearableSummary(snapshot.observed.wearable)}</strong></span>}</div><details className="coach-details"><summary>Kompakten Athlete Snapshot ansehen</summary><pre>{JSON.stringify(snapshot, null, 2)}</pre></details></details>}
   </div>;
 }

@@ -860,7 +860,8 @@ export default function App() {
     setCoachBusy(label);
     if (!label && !coachVisibleRef.current) setCoachDone(true);
   };
-  const openCoachPlan = () => { setCoachTab(t => ({ tab: 'plan', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
+  // `instruction` prefills a change request for the current week (recovery hint on the start page).
+  const openCoachPlan = instruction => { setCoachTab(t => ({ tab: 'plan', version: t.version + 1, instruction: typeof instruction === 'string' ? instruction : '' })); setPage('coach'); setSelected(null); window.location.hash = ''; };
   const openCoachProfile = () => { setCoachTab(t => ({ tab: 'profile', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
 
   const todayStr = new Date().toDateString();
@@ -1118,7 +1119,7 @@ export default function App() {
           </div>
         ) : null}
         {coachOpened && <div hidden={!coachVisible}>
-          <AICoach initialTab={coachTab.tab} tabVersion={coachTab.version} apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
+          <AICoach initialTab={coachTab.tab} tabVersion={coachTab.version} initialInstruction={coachTab.instruction} apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
             onBusyChange={coachBusyChanged}
             onWorkoutsChanged={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })} />
         </div>}

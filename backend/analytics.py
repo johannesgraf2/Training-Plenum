@@ -18,6 +18,7 @@ VERSION = 2
 POWER_LIMITS = [.55, .75, .90, 1.05, 1.20, 1.50]
 HR_LIMITS = [.60, .70, .80, .90]
 FITNESS_DAYS = 42
+FATIGUE_DAYS = 7
 FITNESS_HISTORY = 730
 THRESHOLD_HR = .90
 
@@ -230,7 +231,11 @@ def training_load(row, ftp, max_hr):
 
 
 def fitness(rows, zone, ftp=None, max_hr=None, today=None):
-    """Daily fitness over all sports for the last two years, independent of dashboard filters."""
+    """Daily fitness (CTL, 42 days), fatigue (ATL, 7 days) and form over all sports for the last two years.
+
+Form (TSB) is fitness minus fatigue going into the day, before its own load, so
+today's form describes how rested the athlete starts today. Independent of dashboard filters.
+"""
     today = today or datetime.now(zone).date()
     loads = defaultdict(float)
     counted = {'power': 0, 'hr': 0, 'missing': 0}
@@ -243,17 +248,20 @@ def fitness(rows, zone, ftp=None, max_hr=None, today=None):
         counted[source or 'missing'] += 1
         if load is not None:
             loads[day] += load
-    result = {'value': None, 'days': [], 'window': FITNESS_DAYS, 'thresholdHr': round(max_hr * THRESHOLD_HR) if max_hr else None,
-              'activities': counted}
+    result = {'value': None, 'fatigue': None, 'form': None, 'days': [], 'window': FITNESS_DAYS, 'fatigueWindow': FATIGUE_DAYS,
+              'thresholdHr': round(max_hr * THRESHOLD_HR) if max_hr else None, 'activities': counted}
     if not loads:
         return result
-    ctl = 0.0
+    ctl = atl = 0.0
     first = today - timedelta(days=FITNESS_HISTORY - 1)
     day = min(min(loads), first)
     while day <= today:
+        form = ctl - atl
         ctl += (loads.get(day, 0) - ctl) / FITNESS_DAYS
+        atl += (loads.get(day, 0) - atl) / FATIGUE_DAYS
         if day >= first:
-            result['days'].append({'key': day.isoformat(), 'value': round(ctl, 1), 'load': round(loads.get(day, 0), 1)})
+            result['days'].append({'key': day.isoformat(), 'value': round(ctl, 1), 'fatigue': round(atl, 1), 'form': round(form, 1),
+                                   'load': round(loads.get(day, 0), 1)})
         day += timedelta(days=1)
-    result['value'] = round(ctl, 1)
+    result.update(value=round(ctl, 1), fatigue=round(atl, 1), form=round(form, 1))
     return result

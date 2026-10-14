@@ -151,7 +151,7 @@ Alle Details zur Einrichtung: [AI-COACH.md](AI-COACH.md)
 
 Training Plēnum liest einen **WHOOP 4.0** direkt aus, ohne WHOOP-App. Eine kleine Bridge auf dem Mac hält die Bluetooth-Verbindung und schickt die Rohdaten an Training Plēnum; Einrichtung und Status findest du im Menü oben rechts unter **WHOOP-Strap verbinden**.
 
-- **Stand (Phase 2):** Herzfrequenz, R-R-Abstände und Bewegung kommen an. Daraus berechnet Training Plēnum pro Tag Schlafdauer, nächtliche HRV (RMSSD), Ruhepuls, eine Readiness von 0 bis 100 gegenüber deiner persönlichen Baseline, Strain (0–21) und Schlafschuld. Die Readiness erscheint nach 4 Nächten (vorläufig) und ist ab 14 Nächten verlässlich. Die Werte stehen auf der Startseite (Kachel **Erholung** und ein Hinweis, wenn eine harte Einheit auf einen schlechten Erholungstag fällt), im Kalender (Punkt und Readiness je Tag, Wochenmittel) und im Dashboard (HRV mit Normalbereich und Readiness auf derselben Zeitachse wie die Fitness). Der KI-Coach folgt.
+- **Stand (Phase 4):** Herzfrequenz, R-R-Abstände und Bewegung kommen an. Daraus berechnet Training Plēnum pro Tag Schlafdauer, nächtliche HRV (RMSSD), Ruhepuls, eine Readiness von 0 bis 100 gegenüber deiner persönlichen Baseline, Strain (0–21) und Schlafschuld. Die Readiness erscheint nach 4 Nächten (vorläufig) und ist ab 14 Nächten verlässlich. Die Werte stehen auf der Startseite (Kachel **Erholung** und ein Hinweis, wenn eine harte Einheit auf einen schlechten Erholungstag fällt), im Kalender (Punkt und Readiness je Tag, Wochenmittel) und im Dashboard (HRV mit Normalbereich und Readiness auf derselben Zeitachse wie die Fitness). Der KI-Coach bekommt die letzten 14 Nächte und deine Form (Fitness − Ermüdung) und nimmt bei roter Readiness, oder bei HRV unter dem Normalbereich und negativer Form, die Intensität heraus. **Im AI Coach anpassen** am Hinweis füllt den passenden Wunsch für die laufende Woche vor; geschickt wird er erst, wenn du **Woche anpassen** tippst.
 - Alle Werte sind eigene Näherungen, keine offiziellen WHOOP-Scores und kein Medizinprodukt. Methoden: [RESEARCH-ANALYTICS.md](docs/whoop-integration/RESEARCH-ANALYTICS.md).
 - Der Strap muss dafür von der WHOOP-App getrennt werden. Danach erhalten WHOOP-App und WHOOP-Cloud keine Daten mehr.
 - Die Rohdaten jedes Uploads bleiben 30 Tage erhalten (`WHOOP_RAW_RETENTION_DAYS`), damit Decoder-Korrekturen per **Rohdaten neu einlesen** nachträglich greifen.
@@ -281,7 +281,7 @@ Die Endpunkte des KI-Coachs stehen in [AI-COACH.md](AI-COACH.md).
 - [ ] Coach-Accounts mit Zugriff auf Athleten
 - [ ] Erweiterte Analysen (Leistungskurve, Zonentabellen)
 - [ ] Anbindungen an Garmin Connect und Strava
-- [ ] WHOOP 4.0: Rohdaten per Bridge ✓, Erholung/HRV/Schlaf/Belastung ✓, Planungshinweise ✓, Coach-Kontext
+- [ ] WHOOP 4.0: Rohdaten per Bridge ✓, Erholung/HRV/Schlaf/Belastung ✓, Planungshinweise ✓, Coach-Kontext ✓; Test mit dem echten Strap offen
 - [x] TSS fürs Radfahren mit einstellbarer FTP (TSS fürs Laufen folgt)
 - [ ] Trainingsplan-Builder
 - [ ] Benutzeranmeldung (JWT)

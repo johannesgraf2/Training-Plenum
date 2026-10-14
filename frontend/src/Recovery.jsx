@@ -35,6 +35,7 @@ export function isHard(workout) {
  * red readiness with a hard session -> keep it easy or swap; red without one -> keep it easy;
  * HRV below its normal range with a hard session -> reduce intensity if it feels hard.
  * Returns null when there is nothing to say (no data, calibrating, or green).
+ * `coach` is the change request the AI coach gets prefilled for this week.
  */
 export function planningHint(day, todayKey, plannedWorkouts) {
   if (!calibrated(day)) return null;
@@ -43,17 +44,22 @@ export function planningHint(day, todayKey, plannedWorkouts) {
   const swap = hard && [1, 2, 3].map(offset => addDays(todayKey, offset))
     .find(key => !plannedWorkouts.some(workout => workout.date === key && isHard(workout)));
   const swapText = swap ? ` oder mit ${weekdayName(swap)} tauschen` : '';
+  const name = hard ? `„${hard.name || 'die Intervalleinheit'}“ (${weekdayName(todayKey)})` : '';
+  const swapRequest = swap ? `, oder tausche sie mit ${weekdayName(swap)}` : '';
   if (day.band === 'red' && hard) {
     return { tone: 'red', workout: hard, title: 'Heute lieber locker',
-      text: `Readiness ${day.readiness} (rot). Für heute ist „${hard.name || 'ein Intervalltraining'}“ geplant: besser locker trainieren${swapText}.` };
+      text: `Readiness ${day.readiness} (rot). Für heute ist „${hard.name || 'ein Intervalltraining'}“ geplant: besser locker trainieren${swapText}.`,
+      coach: `Meine Readiness ist heute rot (${day.readiness}). Mach ${name} bitte zu einer lockeren Einheit${swapRequest}.` };
   }
   if (day.band === 'red') {
     return { tone: 'red', title: 'Erholung hat Vorrang',
-      text: `Readiness ${day.readiness} (rot). ${today.length ? 'Halte die geplante Einheit locker.' : 'Gut, dass heute nichts Hartes ansteht.'}` };
+      text: `Readiness ${day.readiness} (rot). ${today.length ? 'Halte die geplante Einheit locker.' : 'Gut, dass heute nichts Hartes ansteht.'}`,
+      coach: `Meine Readiness ist heute rot (${day.readiness}). Plane heute und morgen nur lockere Einheiten.` };
   }
   if (hrvBelowBand(day) && hard) {
     return { tone: 'yellow', workout: hard, title: 'HRV unter deinem Normalbereich',
-      text: `HRV ${number(day.hrv)} ms, dein Normalbereich liegt bei ${number(day.hrvBaseline.low)}–${number(day.hrvBaseline.high)} ms. Wenn sich „${hard.name || 'die Einheit'}“ schwer anfühlt: Intensität reduzieren${swapText}.` };
+      text: `HRV ${number(day.hrv)} ms, dein Normalbereich liegt bei ${number(day.hrvBaseline.low)}–${number(day.hrvBaseline.high)} ms. Wenn sich „${hard.name || 'die Einheit'}“ schwer anfühlt: Intensität reduzieren${swapText}.`,
+      coach: `Meine HRV liegt heute unter meinem Normalbereich (${number(day.hrv)} ms, normal ${number(day.hrvBaseline.low)}–${number(day.hrvBaseline.high)} ms). Reduziere die Intensität von ${name}${swapRequest}.` };
   }
   return null;
 }
@@ -118,7 +124,7 @@ export function RecoveryHint({ hint, onOpenWorkout, onOpenCoach }) {
     <div><strong>{hint.title}</strong><p>{hint.text}</p></div>
     <div className="recovery-hint-actions">
       {hint.workout && <button type="button" className="home-link" onClick={() => onOpenWorkout(hint.workout)}>Workout öffnen</button>}
-      {onOpenCoach && <button type="button" className="home-link" onClick={onOpenCoach}>Im AI Coach anpassen</button>}
+      {onOpenCoach && <button type="button" className="home-link" onClick={() => onOpenCoach(hint.coach)}>Im AI Coach anpassen</button>}
     </div>
   </div>;
 }
