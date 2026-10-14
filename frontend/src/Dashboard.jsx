@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import BestEfforts from './BestEfforts';
+import { RecoveryChart, RecoverySummary, dateRange } from './Recovery';
+import { localDate } from './workoutModel';
 import './Dashboard.css';
 
 const SPORTS = { ride: ['Radfahren', 'var(--sport-ride)'], run: ['Laufen', 'var(--sport-run)'], swim: ['Schwimmen', 'var(--sport-swim)'], walking: ['Gehen', 'var(--ochre)'], hiking: ['Wandern', 'var(--muted)'], multisport: ['Multisport', 'var(--ink-2)'] };
@@ -166,8 +168,7 @@ export function FitnessChart({ days }) {
   </div>;
 }
 
-function FitnessCard({ fitness, settings, onSettings }) {
-  const [period, setPeriod] = useState('365');
+function FitnessCard({ fitness, settings, onSettings, period, setPeriod }) {
   const [, , phrase] = FITNESS_RANGES.find(([key]) => key === period);
   const days = (fitness?.days || []).slice(-Number(period));
   const current = fitness?.value;
@@ -190,7 +191,20 @@ function FitnessCard({ fitness, settings, onSettings }) {
   </Card>;
 }
 
-export default function Dashboard({ apiBase, activities, loading, onOpenActivity, onSettingsSaved }) {
+// Recovery shares the fitness card's period, so both charts show the same days.
+function RecoveryCard({ days, period, setPeriod }) {
+  const keys = dateRange(localDate(new Date()), Number(period));
+  if (!Object.keys(days).length) return null;
+  return <Card title="Erholung" eyebrow="WHOOP · eigene Näherung aus deinen Nachtdaten" className="recovery-card"
+    extra={<Toggle label="Zeitraum für Erholung" value={period} onChange={setPeriod} options={FITNESS_RANGES.map(([key, text]) => [key, text])} />}>
+    <RecoverySummary keys={keys} days={days} />
+    <RecoveryChart keys={keys} days={days} />
+    <p className="analysis-note">Oben die nächtliche HRV (RMSSD) mit deinem Normalbereich (Baseline ± eine Standardabweichung), unten die Readiness pro Morgen: grün ab 67, rot unter 34. Gleiche Zeitachse wie die Fitness. Die Readiness erscheint nach 4 Nächten und ist ab 14 Nächten verlässlich. Kein offizieller WHOOP-Score und kein Medizinprodukt.</p>
+  </Card>;
+}
+
+export default function Dashboard({ apiBase, activities, loading, onOpenActivity, onSettingsSaved, whoopDays = {} }) {
+  const [period, setPeriod] = useState('365');
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [sport, setSport] = useState('all');
   const [result, setResult] = useState(null);
@@ -275,7 +289,8 @@ export default function Dashboard({ apiBase, activities, loading, onOpenActivity
           <p className="analysis-note">{year === 'all' ? 'Der gesamte gespeicherte Zeitraum' : `Januar bis Dezember ${year}`} · ein Balken pro Kalenderwoche. Genaue Wochenwerte findest du am Balken und in der Tabelle.</p>
         </Card>
       </div>
-      <FitnessCard fitness={data.fitness} settings={data.settings} onSettings={openSettings} />
+      <FitnessCard fitness={data.fitness} settings={data.settings} onSettings={openSettings} period={period} setPeriod={setPeriod} />
+      <RecoveryCard days={whoopDays} period={period} setPeriod={setPeriod} />
       <div className="analysis-week-toolbar"><div><h3>Deine Trainingswochen</h3><p>{sportName} · {scope} · Montag bis Sonntag · {timezone}</p></div><span className="analysis-badge">{weeks.length} Kalenderwochen im Überblick</span></div>
       <div className="analysis-week-grid">
         <Card title="Verbrauchte Kalorien" eyebrow="Energie · pro Woche" extra={<span className="analysis-badge">kcal</span>}>

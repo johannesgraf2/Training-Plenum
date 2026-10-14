@@ -128,3 +128,25 @@ test('fitness asks for heart rate or FTP before it can be calculated', async () 
   await render();
   expect(host.querySelector('section[aria-label="Fitness"]').textContent).toContain('HFmax oder FTP hinterlegen');
 });
+
+test('recovery shares the fitness period and shows HRV with its normal range and readiness bars', async () => {
+  const key = offset => { const date = new Date(); date.setDate(date.getDate() - offset); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
+  const whoopDays = Object.fromEntries([0, 1, 2, 40].map(offset => [key(offset), { date: key(offset), readiness: offset ? 70 : 30, band: offset ? 'green' : 'red',
+    confidence: 'provisional', hrv: offset ? 62 : 48, hrvBaseline: { mean: 60, low: 54, high: 66 }, rhr: offset ? 48 : 55, sleep: { minutes: 450 } }]));
+  await act(async () => root.render(<Dashboard apiBase="http://localhost:5000" activities={activities} loading={false} onOpenActivity={jest.fn()} whoopDays={whoopDays} />));
+  const card = host.querySelector('section[aria-label="Erholung"]');
+  expect(card.querySelector('.recovery-kpi').textContent).toBe('Readiness heute30HRV Ø 7 Nächte57 ms-4 % zur BaselineRuhepuls Ø 7 Nächte50 bpm');
+  expect(card.querySelectorAll('svg rect')).toHaveLength(4);
+  const toggle = label => card.querySelector(`[aria-label="Zeitraum für Erholung"]`).querySelector(`button[aria-pressed]`) && Array.from(card.querySelectorAll('[aria-label="Zeitraum für Erholung"] button')).find(b => b.textContent === label);
+  await act(async () => toggle('1 Monat').click());
+  expect(card.querySelectorAll('svg rect')).toHaveLength(3); // the night 40 days ago is outside the month
+  const fitness = host.querySelector('section[aria-label="Fitness"]');
+  expect(fitness.querySelector('[aria-label="Zeitraum für Fitness"] button[aria-pressed="true"]').textContent).toBe('1 Monat');
+  await act(async () => Simulate.keyDown(card.querySelector('svg'), { key: 'End' }));
+  expect(card.querySelector('.analysis-chart-caption').textContent).toContain('Readiness 30 · HRV 48 ms (Normalbereich 54–66) · Ruhepuls 55 bpm');
+});
+
+test('without WHOOP data there is no recovery card', async () => {
+  await render();
+  expect(host.querySelector('section[aria-label="Erholung"]')).toBeNull();
+});
