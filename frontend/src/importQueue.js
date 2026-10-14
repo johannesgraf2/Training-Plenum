@@ -1,5 +1,13 @@
 export const ACCEPTED_FILES = '.fit,.fit.gz,.gpx,.tcx';
 
+// One vocabulary for every source: files, Garmin per USB and Garmin Connect ('failed' is the sync's word for an error).
+export const RESULT_LABELS = [['imported', 'neu'], ['duplicate', 'schon vorhanden'], ['skipped', 'übersprungen'], ['error', 'Fehler'], ['failed', 'Fehler']];
+
+export function resultText(result, labels = RESULT_LABELS, nothing = 'keine neuen Aktivitäten') {
+  const parts = labels.filter(([key]) => result?.[key]).map(([key, label]) => `${result[key]} ${label}`);
+  return parts.length ? parts.join(', ') : nothing;
+}
+
 export function prepareFiles(files) {
   return Array.from(files, (item, id) => {
     const file = item.file || item;

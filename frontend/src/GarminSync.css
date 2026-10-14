@@ -1,3 +1,4 @@
+.garmin-content { display: flex; flex-direction: column; gap: 14px; }
 .garmin-form { display: flex; flex-direction: column; gap: 12px; }
 .garmin-form .batch-help { margin-top: 0; }
 .garmin-form > button { align-self: flex-start; }
@@ -7,3 +8,13 @@
 .garmin-switch { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.5; color: var(--fg-64748b); cursor: pointer; }
 .garmin-switch input { margin-top: 3px; width: 16px; height: 16px; flex: none; }
 .garmin-switch strong { display: block; font-weight: 600; color: var(--fg-243248); }
+.garmin-history { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--bd-e2e8f0); }
+.garmin-history strong { font-size: 13px; font-weight: 600; color: var(--fg-243248); }
+.garmin-history .batch-help { margin-top: 4px; }
+.garmin-history progress { margin-top: 0; }
+.garmin-history-state { font-size: 12px; color: var(--fg-64748b); }
+.garmin-history-state.whoop-ok { color: var(--success); }
+.garmin-ranges { display: flex; flex-wrap: wrap; gap: 6px; }
+.batch-dialog .garmin-ranges button { padding: 7px 12px; font-size: 12px; }
+.batch-dialog .garmin-ranges button[aria-checked="true"] { background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); }
+.garmin-history p.batch-error { margin-top: 0; }
