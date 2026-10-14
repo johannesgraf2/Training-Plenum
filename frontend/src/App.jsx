@@ -7,6 +7,7 @@ import AICoach from './AICoach';
 import Home from './Home';
 import UserMenu from './UserMenu';
 import WhoopSync from './WhoopSync';
+import GarminSync from './GarminSync';
 import { ReadinessBadge, WeekRecovery, weekRecovery } from './Recovery';
 import WorkoutEditor from './WorkoutEditor';
 import { localDate, summary as workoutSummary, workoutTotals } from './workoutModel';
@@ -721,6 +722,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
   const [showWhoop, setShowWhoop] = useState(false);
+  const [showGarmin, setShowGarmin] = useState(false);
   const [whoopDays, setWhoopDays] = useState({});
   const whoopStamp = useRef(null);
   const [workoutEditor, setWorkoutEditor] = useState(null);
@@ -761,6 +763,8 @@ export default function App() {
     setToast(`${acts.length} Aktivitäten aus Strava importiert!`);
     setTimeout(() => setToast(null), 4000);
   };
+
+  const reloadActivities = useCallback(() => api('/api/activities').then(setActivities, () => {}), []);
 
   const openActivity = async (activity) => {
     setLoadError('');
@@ -947,7 +951,7 @@ export default function App() {
           <button type="button" className="app-import" onClick={() => setShowUpload(true)}>Datei importieren / exportieren</button>
           <UserMenu apiBase={API} user={user}
             onSaved={(saved, changed) => { setUser(saved); if (changed) { setProfileVersion(v => v + 1); setToast('Profil gespeichert.'); setTimeout(() => setToast(null), 3000); } }}
-            onOpenCoachProfile={openCoachProfile} onOpenWhoop={() => setShowWhoop(true)} />
+            onOpenCoachProfile={openCoachProfile} onOpenWhoop={() => setShowWhoop(true)} onOpenGarmin={() => setShowGarmin(true)} />
         </div>
       </header>
 
@@ -1137,6 +1141,7 @@ export default function App() {
         onLegacy={() => { setLegacyUpload(true); setIncomingDrop(null); }}
         onOpen={id => { setShowUpload(false); setIncomingDrop(null); openActivity({ id }); }} />}
       {showWhoop && <WhoopSync apiBase={API} onClose={() => { setShowWhoop(false); loadWhoop(); }} />}
+      {showGarmin && <GarminSync apiBase={API} onClose={() => setShowGarmin(false)} onSynced={reloadActivities} />}
       {showUpload && legacyUpload && <UploadModal onClose={() => { setShowUpload(false); setLegacyUpload(false); }} onUpload={handleUpload} onBulkImport={handleBulkImport} />}
 
       {/* Toast */}

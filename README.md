@@ -59,6 +59,7 @@ Training Plēnum liest **FIT**, **FIT.GZ**, **GPX** und **TCX**, einzeln oder al
 
 **Woher kommen die Dateien?**
 
+- **Automatisch aus Garmin Connect:** siehe [Garmin Connect](#garmin-connect). Neue Aktivitäten kommen dann ohne Export oder USB-Kabel.
 - **Direkt vom Garmin:** Garmin per USB an den PC anschließen und den Ordner `GARMIN/Activity` auf den PC kopieren. Darin liegen deine Aktivitäten als FIT-Dateien. Auf dem Gerät sind meist nur die letzten Aktivitäten gespeichert.
 - **Garmin Connect (komplette Historie):** Im Garmin-Konto unter **Datenverwaltung** den Datenexport anfordern. Der Download-Link kommt per E-Mail. Die ZIP-Datei entpacken und darin auch die weiteren ZIPs mit den Aktivitäten.
 - **TrainingPeaks:** Export herunterladen und entpacken.
@@ -135,6 +136,20 @@ Die **Gesamtübersicht** unten im Editor zeigt das ganze Workout als Leistungspr
 
 Getestet auf dem Edge 1050. Welche Ziele und Funktionen unterstützt werden, hängt vom Gerät ab. Es entsteht kein Eintrag im Garmin-Kalender, nur ein Workout auf dem Gerät. Mehr dazu in [Garmins Anleitung](https://support.garmin.com/en-GB/?faq=AXV7LuWgc73v21nq6nbDa6).
 
+## Garmin Connect
+
+Training Plēnum holt neue Aktivitäten selbst aus Garmin Connect, als originale FIT-Datei mit allen Messpunkten, und schickt geplante Einheiten in deinen Garmin-Kalender. Kostenlos, aber über die **inoffizielle** Schnittstelle (Bibliothek [garminconnect](https://github.com/cyberjunky/python-garminconnect)), denn Garmin bietet für private Nutzer keine offizielle API an. Ändert Garmin den Login, kann der Abgleich vorübergehend ausfallen; der Datei-Import funktioniert weiter.
+
+1. Im Menü oben rechts (dein Name) **Garmin Connect verbinden** wählen.
+2. E-Mail und Passwort des Garmin-Kontos eingeben. Ist die Zwei-Faktor-Anmeldung aktiv, danach den Code von Garmin eingeben.
+3. Der erste Abgleich holt die letzten 90 Tage, danach läuft er beim Start und alle 6 Stunden (`GARMIN_SYNC_INTERVAL_HOURS`, `0` schaltet ihn ab) oder per **Jetzt synchronisieren**.
+
+- **Geplante Einheiten ab heute** landen als strukturiertes Workout (Watt, Pace, Puls, Kadenz, Wiederholungen) am geplanten Tag im Garmin-Connect-Kalender; Garmin überträgt sie wie gewohnt aufs Gerät (**Training → Kalender**). Neu planen, Verschieben, Ändern und Löschen in Training Plēnum, im Kalender oder durch den KI-Coach werden sofort übernommen. Vergangene Einheiten bleiben in Garmin stehen. Änderungen direkt in Garmin Connect kommen nicht zurück.
+- **Nur eigene Workouts:** Training Plēnum ändert oder löscht in Garmin nur, was es selbst angelegt hat. Beim Abschalten des Sendens oder beim Trennen lassen sich diese Workouts auf Wunsch wieder aus Garmin löschen.
+- **Doppelte Aktivitäten** werden übersprungen: gleiche Datei oder gleiche Startzeit (±2 min), etwa aus einem früheren TrainingPeaks-Export.
+- **Das Passwort wird nicht gespeichert.** Nur der Anmelde-Token bleibt, verschlüsselt mit demselben Schlüssel wie der API-Key des KI-Coachs (`.run/ai-encryption-key.txt`). **Trennen** löscht die Anmeldung, importierte Aktivitäten bleiben.
+- Braucht **Python 3.12 oder neuer** (im Docker-Image enthalten).
+
 ## KI-Coach
 
 Der KI-Coach plant auf Wunsch ganze Trainingsblöcke und Wochen nach deinem Ziel, deiner verfügbaren Zeit und deinen Check-ins. Du brauchst dafür einen eigenen OpenAI-API-Key.
@@ -166,7 +181,7 @@ Im Menü oben rechts (dein Name) unter **Hintergrund** wählst du **Landschaft**
 
 ### Start unter Windows
 
-**Einmalig einrichten** (im Projektordner):
+**Einmalig einrichten** (im Projektordner, mit Python 3.12 oder neuer für Garmin Connect):
 
 ```powershell
 python -m venv backend/.venv
@@ -272,6 +287,10 @@ Die Tests nutzen eine temporäre Datenbank und verändern keine eigenen Aktivit�
 | POST | `/api/whoop/recompute` | Rohdaten neu dekodieren und alle Tage neu berechnen |
 | GET | `/api/whoop/days?from=&to=` | Tageswerte: Schlaf, HRV, Ruhepuls, Readiness, Strain, Schlafschuld |
 | POST | `/api/whoop/bridge/heartbeat`, `/api/whoop/bridge/frames` | Nur für die Bridge (Bearer-Token) |
+| GET / DELETE | `/api/garmin` | Garmin-Status; trennen (Aktivitäten bleiben, `?deleteWorkouts=1` löscht gesendete Workouts aus Garmin) |
+| POST | `/api/garmin/login`, `/api/garmin/mfa` | Mit Garmin anmelden, ggf. Zwei-Faktor-Code bestätigen |
+| POST | `/api/garmin/sync` | Abgleich sofort starten (Aktivitäten holen, Einheiten senden) |
+| PUT | `/api/garmin/settings` | Senden geplanter Einheiten an/aus (`removeWorkouts` löscht gesendete) |
 
 Die Endpunkte des KI-Coachs stehen in [AI-COACH.md](AI-COACH.md).
 
@@ -280,7 +299,8 @@ Die Endpunkte des KI-Coachs stehen in [AI-COACH.md](AI-COACH.md).
 - [ ] Fitness / Ermüdung / Form (CTL/ATL/TSB)
 - [ ] Coach-Accounts mit Zugriff auf Athleten
 - [ ] Erweiterte Analysen (Leistungskurve, Zonentabellen)
-- [ ] Anbindungen an Garmin Connect und Strava
+- [x] Garmin Connect (Aktivitäten abholen, geplante Einheiten in den Garmin-Kalender)
+- [ ] Strava-Anbindung
 - [ ] WHOOP 4.0: Rohdaten per Bridge ✓, Erholung/HRV/Schlaf/Belastung ✓, Planungshinweise ✓, Coach-Kontext
 - [x] TSS fürs Radfahren mit einstellbarer FTP (TSS fürs Laufen folgt)
 - [ ] Trainingsplan-Builder

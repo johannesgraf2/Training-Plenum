@@ -44,7 +44,7 @@ function BackgroundSetting({ apiBase }) {
   </div>;
 }
 
-export default function UserMenu({ apiBase = '', user, onSaved, onOpenCoachProfile, onOpenWhoop }) {
+export default function UserMenu({ apiBase = '', user, onSaved, onOpenCoachProfile, onOpenWhoop, onOpenGarmin }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(() => draftFrom(user));
   const [saving, setSaving] = useState(false);
@@ -115,6 +115,7 @@ export default function UserMenu({ apiBase = '', user, onSaved, onOpenCoachProfi
       </form>
       {onOpenCoachProfile && <button type="button" className="user-menu-link" onClick={() => { setOpen(false); onOpenCoachProfile(); }}>Ziele &amp; Verfügbarkeit im AI Coach <span aria-hidden="true">→</span></button>}
       {onOpenWhoop && <button type="button" className="user-menu-link" onClick={() => { setOpen(false); onOpenWhoop(); }}>WHOOP-Strap verbinden <span aria-hidden="true">→</span></button>}
+      {onOpenGarmin && <button type="button" className="user-menu-link" onClick={() => { setOpen(false); onOpenGarmin(); }}>Garmin Connect verbinden <span aria-hidden="true">→</span></button>}
     </div>}
   </div>;
 }
