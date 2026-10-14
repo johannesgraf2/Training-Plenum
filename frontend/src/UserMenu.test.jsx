@@ -5,13 +5,13 @@ import UserMenu, { initials } from './UserMenu';
 import { applyTheme } from './theme';
 
 const stored = { id: 'u', name: 'Johannes Graf', email: 'athlete@trainhub.de', age: 30, weight: 75, ftp: 320, maxHr: 191 };
-let host, root, originalFetch, saved, onSaved, onOpenCoachProfile;
+let host, root, originalFetch, saved, onSaved, onOpenCoachProfile, onOpenWhoop;
 const response = (payload, ok = true) => ({ ok, json: async () => payload });
 beforeEach(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
   window.localStorage.clear();
   delete document.documentElement.dataset.theme;
-  saved = null; onSaved = jest.fn(); onOpenCoachProfile = jest.fn();
+  saved = null; onSaved = jest.fn(); onOpenCoachProfile = jest.fn(); onOpenWhoop = jest.fn();
   originalFetch = global.fetch;
   global.fetch = jest.fn(async (url, options = {}) => {
     if (options.method === 'PUT') {
@@ -23,7 +23,7 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); global.fetch = originalFetch; delete global.IS_REACT_ACT_ENVIRONMENT; delete window.matchMedia; });
-const render = () => act(async () => root.render(<UserMenu apiBase="http://api" user={stored} onSaved={onSaved} onOpenCoachProfile={onOpenCoachProfile} />));
+const render = () => act(async () => root.render(<UserMenu apiBase="http://api" user={stored} onSaved={onSaved} onOpenCoachProfile={onOpenCoachProfile} onOpenWhoop={onOpenWhoop} />));
 const button = text => Array.from(host.querySelectorAll('button')).find(b => b.textContent.trim() === text);
 const open = () => act(async () => host.querySelector('.user-menu-trigger').click());
 const field = label => Array.from(host.querySelectorAll('label')).find(l => l.querySelector('span').textContent.startsWith(label)).querySelector('input');
@@ -89,6 +89,10 @@ test('closes with Escape and links to goals in the AI Coach', async () => {
   await open();
   await act(async () => button('Ziele & Verfügbarkeit im AI Coach →').click());
   expect(onOpenCoachProfile).toHaveBeenCalled();
+  await open();
+  await act(async () => button('WHOOP-Strap verbinden →').click());
+  expect(onOpenWhoop).toHaveBeenCalled();
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
   expect(initials('  anna  maria  berg ')).toBe('AM');
   expect(initials('')).toBe('?');
 });

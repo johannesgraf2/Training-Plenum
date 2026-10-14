@@ -6,6 +6,7 @@ import Dashboard from './Dashboard';
 import AICoach from './AICoach';
 import Home from './Home';
 import UserMenu from './UserMenu';
+import WhoopSync from './WhoopSync';
 import WorkoutEditor from './WorkoutEditor';
 import { localDate, summary as workoutSummary, workoutTotals } from './workoutModel';
 import './Calendar.css';
@@ -718,6 +719,7 @@ export default function App() {
   const [page, setPage] = useState('home');
   const [selected, setSelected] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [showWhoop, setShowWhoop] = useState(false);
   const [workoutEditor, setWorkoutEditor] = useState(null);
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [workoutLoadError, setWorkoutLoadError] = useState('');
@@ -920,7 +922,7 @@ export default function App() {
           <button type="button" className="app-import" onClick={() => setShowUpload(true)}>Datei importieren / exportieren</button>
           <UserMenu apiBase={API} user={user}
             onSaved={(saved, changed) => { setUser(saved); if (changed) { setProfileVersion(v => v + 1); setToast('Profil gespeichert.'); setTimeout(() => setToast(null), 3000); } }}
-            onOpenCoachProfile={openCoachProfile} />
+            onOpenCoachProfile={openCoachProfile} onOpenWhoop={() => setShowWhoop(true)} />
         </div>
       </header>
 
@@ -1106,6 +1108,7 @@ export default function App() {
         onClose={imported => { setShowUpload(false); setIncomingDrop(null); if (imported) { setSelected(null); setPage('dashboard'); window.location.hash = ''; } }}
         onLegacy={() => { setLegacyUpload(true); setIncomingDrop(null); }}
         onOpen={id => { setShowUpload(false); setIncomingDrop(null); openActivity({ id }); }} />}
+      {showWhoop && <WhoopSync apiBase={API} onClose={() => setShowWhoop(false)} />}
       {showUpload && legacyUpload && <UploadModal onClose={() => { setShowUpload(false); setLegacyUpload(false); }} onUpload={handleUpload} onBulkImport={handleBulkImport} />}
 
       {/* Toast */}
