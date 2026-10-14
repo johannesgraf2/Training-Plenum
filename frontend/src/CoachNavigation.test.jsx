@@ -33,6 +33,7 @@ beforeEach(() => {
   global.fetch = jest.fn(async url => {
     const path = url.replace('http://localhost:5000', '');
     if (path === '/api/activities' || path === '/api/workouts') return { ok: true, json: async () => [] };
+    if (path === '/api/whoop') return { ok: true, json: async () => ({ connected: false }) };
     throw new Error(`Unexpected request ${path}`);
   });
 });

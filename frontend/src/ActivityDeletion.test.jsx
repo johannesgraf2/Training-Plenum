@@ -27,6 +27,7 @@ beforeEach(() => {
   global.fetch = jest.fn(async (url, options = {}) => {
     const path = url.replace('http://localhost:5000', '');
     if (path === '/api/activities') return { ok: true, json: async () => [...saved] };
+    if (path === '/api/whoop') return { ok: true, json: async () => ({ connected: false }) };
     if (path === '/api/workouts') return { ok: true, json: async () => [plan] };
     if (path === '/api/activities/ride-to-delete' && options.method === 'DELETE') {
       const response = await deleteResponse();

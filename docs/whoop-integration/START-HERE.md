@@ -2,7 +2,7 @@
 
 Dieser Ordner enthält alles, um die WHOOP-4.0-Anbindung an Training Plenum an einem anderen Rechner bzw. Account weiterzuführen.
 
-**Stand:** Phase 1 (Rohdaten) und Phase 2 (Auswertung) sind im Code umgesetzt und mit Tests, simulierten Nächten und einem simulierten Strap geprüft, aber **noch nicht mit dem echten Strap**. Nächster Schritt ist der Test auf dem Mac (siehe `whoop-bridge/README.md`, Abschnitt „Erster Test“), danach Phase 3 (Planungs-UI).
+**Stand:** Phase 1 (Rohdaten), Phase 2 (Auswertung) und Phase 3 (Planungs-UI) sind im Code umgesetzt und mit Tests, simulierten Nächten und einem simulierten Strap geprüft, aber **noch nicht mit dem echten Strap**. Nächster Schritt ist der Test auf dem Mac (siehe `whoop-bridge/README.md`, Abschnitt „Erster Test“), danach Phase 4 (Coach).
 
 ### Abweichungen vom Plan in Phase 1
 - `whoop_hour` speichert die **Schwerkraftvektoren** (1/10000 g) statt eines fertigen Bewegungswerts. So lassen sich Chunks in beliebiger Reihenfolge zusammenführen; Phase 2 berechnet die Bewegung aus aufeinanderfolgenden Vektoren (`whoop_sync.hour_view`).
@@ -21,6 +21,14 @@ Dieser Ordner enthält alles, um die WHOOP-4.0-Anbindung an Training Plenum an e
 - Zeitzone für die Zuordnung der Nächte: `TRAINHUB_TIMEZONE` (Standard `Europe/Berlin`).
 - `POST /api/whoop/recompute` liest die aufbewahrten Rohdaten neu ein und berechnet danach alle Tage neu.
 - Behoben: Das Zusammenführen von R-R-Werten in Phase 1 war quadratisch langsam.
+
+### Abweichungen und Festlegungen in Phase 3
+- Die Tageswerte lädt `App.jsx` einmal über `/api/whoop/days` (400 Tage) und gibt sie an Startseite, Kalender und Dashboard weiter; `/api/analytics` bleibt unverändert. Neu geladen wird, wenn sich `analytics.computedAt` im Status ändert (Abfrage alle 5 min, beim Fokussieren des Fensters und nach dem Schließen des WHOOP-Fensters).
+- **Planungshinweis** (`Recovery.jsx`, `planningHint`): Readiness rot und heute eine Einheit mit Intervallschritten → „Heute lieber locker“ mit Tauschvorschlag (nächster der drei Folgetage ohne Intervalle); rot ohne harte Einheit → locker halten; HRV unter dem Normalbereich (Baseline ± 1 SD) und eine harte Einheit → Intensität reduzieren. Nichts während der Kalibrierung und nichts bei Grün.
+- **Ohne TSB:** Dieses Repo berechnet nur Fitness (CTL), keine Ermüdung/Form (ATL/TSB); die gibt es nur in der Mac-Version. Die Regel „HRV unter Normalbereich und negative TSB“ kommt deshalb erst mit Phase 4 bzw. nach dem Zusammenführen.
+- „Im AI Coach anpassen“ öffnet die Plan-Seite des Coachs („Woche anpassen“); ein vorbefüllter Patch-Auftrag folgt in Phase 4.
+- Dashboard: Die Erholungs-Karte teilt sich den Zeitraum mit der Fitness-Karte und nutzt dieselbe x-Geometrie, damit beide Diagramme dieselben Tage zeigen.
+- Ohne WHOOP-Daten erscheinen weder Kachel noch Hinweis noch Karte.
 
 ### Repo-Stand
 - Das GitHub-Repo war älter als die Mac-Kopie (kein `garmin_sync.py`, `wsgi.py`, `backup.py`). Phase 1 baut auf dem Repo-Stand auf; beim Zusammenführen mit der Mac-Kopie gehören `start_whoop_worker(app)` zusätzlich in `wsgi.py` und `/api/whoop` in die Garmin-erweiterte Guard-Liste in `coach_api.py`.

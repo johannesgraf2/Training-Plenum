@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 
 import ActivityDetail from './ActivityDetail';
 import BatchImport from './BatchImport';
@@ -7,6 +7,7 @@ import AICoach from './AICoach';
 import Home from './Home';
 import UserMenu from './UserMenu';
 import WhoopSync from './WhoopSync';
+import { ReadinessBadge, WeekRecovery, weekRecovery } from './Recovery';
 import WorkoutEditor from './WorkoutEditor';
 import { localDate, summary as workoutSummary, workoutTotals } from './workoutModel';
 import './Calendar.css';
@@ -720,6 +721,8 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
   const [showWhoop, setShowWhoop] = useState(false);
+  const [whoopDays, setWhoopDays] = useState({});
+  const whoopStamp = useRef(null);
   const [workoutEditor, setWorkoutEditor] = useState(null);
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [workoutLoadError, setWorkoutLoadError] = useState('');
@@ -811,6 +814,27 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
+  // WHOOP recovery days for Today, the calendar and the dashboard. Optional: without
+  // a strap (or when the request fails) every view works as before.
+  const loadWhoop = useCallback(async () => {
+    try {
+      const status = await api('/api/whoop');
+      const stamp = status?.analytics?.latest ? status.analytics.computedAt || 'computed' : null;
+      if (stamp === whoopStamp.current) return;
+      whoopStamp.current = stamp;
+      if (!stamp) { setWhoopDays({}); return; }
+      const first = new Date(); first.setDate(first.getDate() - 399);
+      const data = await api(`/api/whoop/days?from=${localDate(first)}&to=${localDate(new Date())}`);
+      setWhoopDays(Object.fromEntries((data.days || []).map(day => [day.date, day])));
+    } catch { /* recovery data is an extra, not a requirement */ }
+  }, []);
+  useEffect(() => {
+    loadWhoop();
+    const timer = setInterval(loadWhoop, 5 * 60 * 1000);
+    window.addEventListener('focus', loadWhoop);
+    return () => { clearInterval(timer); window.removeEventListener('focus', loadWhoop); };
+  }, [loadWhoop]);
+
   const reloadWorkouts = () => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })
     .catch(error => setWorkoutLoadError(error.message));
   // Moves a planned workout to another day: shown immediately, reverted if the server refuses.
@@ -836,6 +860,7 @@ export default function App() {
     setCoachBusy(label);
     if (!label && !coachVisibleRef.current) setCoachDone(true);
   };
+  const openCoachPlan = () => { setCoachTab(t => ({ tab: 'plan', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
   const openCoachProfile = () => { setCoachTab(t => ({ tab: 'profile', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
 
   const todayStr = new Date().toDateString();
@@ -938,7 +963,8 @@ export default function App() {
         ) : page === 'home' ? (
           <Home apiBase={API} activities={activities} plannedWorkouts={plannedWorkouts} workoutLoadError={workoutLoadError}
             onReloadWorkouts={reloadWorkouts} onOpenActivity={openActivity} onOpenWorkout={setWorkoutEditor}
-            onEditGoal={openCoachProfile} bestEffortsYear={calMonth.getFullYear()} />
+            onEditGoal={openCoachProfile} bestEffortsYear={calMonth.getFullYear()}
+            whoopDays={whoopDays} onOpenWhoop={() => setShowWhoop(true)} onOpenCoach={openCoachPlan} />
         ) : page === 'calendar' ? (
           <div className="calendar">
             <div className="calendar-toolbar">
@@ -988,6 +1014,7 @@ export default function App() {
                       }}>
                       <div className="calendar-day-header">
                         <span className="calendar-day-number">{isToday ? `Heute ${cell.day}` : cell.day === 1 ? `1. ${calMonth.toLocaleDateString('de-DE', { month: 'short' })}` : cell.day}</span>
+                        <ReadinessBadge day={whoopDays[cellDate]} />
                         <button type="button" className="calendar-add-workout"
                           aria-label={`Workout am ${cell.date.toLocaleDateString('de-DE')} planen`}
                           title="Workout planen"
@@ -1024,6 +1051,7 @@ export default function App() {
                 })}
 
                 <div className="calendar-summary">
+                  <WeekRecovery summary={weekRecovery(week.cells.filter(Boolean).map(cell => localDate(cell.date)), whoopDays)} />
                   {week.planned.count > 0 && (
                     <div className="calendar-summary-planned" aria-label="Geplante Wochenstunden">
                       <div className="calendar-summary-planned-total"><span>Geplant</span><strong>{fmt.hours(week.planned.duration)}</strong></div>
@@ -1065,7 +1093,7 @@ export default function App() {
           </div>
         ) : page === 'coach' ? null : page === 'dashboard' ? (
           <div className="dashboard-page">
-            <Dashboard key={profileVersion} apiBase={API} activities={activities} loading={loading} onOpenActivity={openActivity} onSettingsSaved={setUser} />
+            <Dashboard key={profileVersion} apiBase={API} activities={activities} loading={loading} onOpenActivity={openActivity} onSettingsSaved={setUser} whoopDays={whoopDays} />
 
             <section className="activity-list" aria-labelledby="all-activities">
               <div className="activity-list-head">
@@ -1108,7 +1136,7 @@ export default function App() {
         onClose={imported => { setShowUpload(false); setIncomingDrop(null); if (imported) { setSelected(null); setPage('dashboard'); window.location.hash = ''; } }}
         onLegacy={() => { setLegacyUpload(true); setIncomingDrop(null); }}
         onOpen={id => { setShowUpload(false); setIncomingDrop(null); openActivity({ id }); }} />}
-      {showWhoop && <WhoopSync apiBase={API} onClose={() => setShowWhoop(false)} />}
+      {showWhoop && <WhoopSync apiBase={API} onClose={() => { setShowWhoop(false); loadWhoop(); }} />}
       {showUpload && legacyUpload && <UploadModal onClose={() => { setShowUpload(false); setLegacyUpload(false); }} onUpload={handleUpload} onBulkImport={handleBulkImport} />}
 
       {/* Toast */}

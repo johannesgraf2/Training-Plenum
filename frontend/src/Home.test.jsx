@@ -142,3 +142,68 @@ test('the race goal shows its photo and can remove it', async () => {
   expect(global.fetch).toHaveBeenCalledWith('http://api/api/appearance/race-goal/image', { method: 'DELETE' });
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
+
+describe('WHOOP recovery', () => {
+  const threshold = { id: 'p1', version: 1, sport: 'ride', name: 'Schwelle 3 × 12 min', date: '2026-01-28', steps: [powerStep('warmup', 600, 150), powerStep('interval', 720, 260), powerStep('cooldown', 480, 120)] };
+  const tomorrowHard = { ...threshold, id: 'p3', name: 'VO2max', date: '2026-01-29' };
+  const easy = { id: 'p2', version: 1, sport: 'run', name: 'Locker', date: '2026-01-28', steps: [powerStep('active', 2700, 0)].map(step => ({ ...step, target: { type: 'none' } })) };
+  const base = { mean: 60, low: 54, high: 66, spread: 5, nights: 6 };
+  const night = extra => ({ date: '2026-01-28', readiness: 72, band: 'green', confidence: 'provisional', nights: 7, hrv: 66, hrvBaseline: base, rhr: 48.4,
+    sleep: { minutes: 452 }, sleepDebtMinutes: 15, ...extra });
+  const tile = () => container.querySelector('[aria-labelledby="home-recovery"]');
+  const hint = () => container.querySelector('.recovery-hint');
+
+  test('without WHOOP data the start page has no recovery tile or hint', async () => {
+    await renderHome({ plannedWorkouts: [threshold] });
+    expect(tile()).toBeNull();
+    expect(hint()).toBeNull();
+  });
+
+  test('the tile shows readiness, HRV against the baseline, resting HR, sleep and debt', async () => {
+    const onOpenWhoop = jest.fn();
+    await renderHome({ whoopDays: { '2026-01-28': night() }, plannedWorkouts: [threshold], onOpenWhoop });
+    expect(tile().querySelector('svg').getAttribute('aria-label')).toBe('Readiness 72 von 100, grün');
+    expect(tile().textContent).toContain('Readiness grünvorläufig · 7 Nächte');
+    expect(tile().querySelector('.recovery-figures').textContent).toBe('HRV66 ms +10 %Ruhepuls48 bpmSchlaf7:32 hSchlafschuld0:15 h');
+    expect(hint()).toBeNull(); // green: nothing to change
+    act(() => button('WHOOP').click());
+    expect(onOpenWhoop).toHaveBeenCalled();
+  });
+
+  test('while calibrating the tile shows progress instead of a number', async () => {
+    await renderHome({ whoopDays: { '2026-01-28': night({ readiness: null, band: null, confidence: 'calibrating', nights: 2 }) } });
+    expect(tile().querySelector('svg').getAttribute('aria-label')).toBe('Readiness wird noch kalibriert');
+    expect(tile().textContent).toContain('2 von 4 Nächten');
+  });
+
+  test('only an older night: the tile says today is not evaluated yet', async () => {
+    await renderHome({ whoopDays: { '2026-01-26': night({ date: '2026-01-26' }) } });
+    expect(tile().textContent).toContain('Für heute ist noch keine Nacht ausgewertet. Zuletzt: Mo., 26.1.');
+  });
+
+  test('red readiness with intervals today suggests an easy day or a swap, with links', async () => {
+    const onOpenWorkout = jest.fn(); const onOpenCoach = jest.fn();
+    await renderHome({ whoopDays: { '2026-01-28': night({ readiness: 28, band: 'red' }) }, plannedWorkouts: [threshold, tomorrowHard], onOpenWorkout, onOpenCoach });
+    expect(hint().textContent).toContain('Heute lieber locker');
+    // Thursday has intervals too, so Friday is suggested.
+    expect(hint().textContent).toContain('Readiness 28 (rot). Für heute ist „Schwelle 3 × 12 min“ geplant: besser locker trainieren oder mit Freitag tauschen.');
+    act(() => [...hint().querySelectorAll('button')].find(b => b.textContent === 'Workout öffnen').click());
+    expect(onOpenWorkout).toHaveBeenCalledWith(threshold);
+    act(() => [...hint().querySelectorAll('button')].find(b => b.textContent === 'Im AI Coach anpassen').click());
+    expect(onOpenCoach).toHaveBeenCalled();
+  });
+
+  test('red readiness on an easy day asks to keep it easy', async () => {
+    await renderHome({ whoopDays: { '2026-01-28': night({ readiness: 20, band: 'red' }) }, plannedWorkouts: [easy] });
+    expect(hint().textContent).toBe('Erholung hat VorrangReadiness 20 (rot). Halte die geplante Einheit locker.');
+  });
+
+  test('HRV below the normal range only matters with a hard session planned', async () => {
+    const low = night({ readiness: 50, band: 'yellow', hrv: 49 });
+    await renderHome({ whoopDays: { '2026-01-28': low }, plannedWorkouts: [threshold] });
+    expect(hint().textContent).toContain('HRV 49 ms, dein Normalbereich liegt bei 54–66 ms.');
+    expect(hint().className).toContain('recovery-hint-yellow');
+    await renderHome({ whoopDays: { '2026-01-28': low }, plannedWorkouts: [easy] });
+    expect(hint()).toBeNull();
+  });
+});

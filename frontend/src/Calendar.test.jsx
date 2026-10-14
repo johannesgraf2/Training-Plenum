@@ -7,17 +7,19 @@ import { newWorkout } from './workoutModel';
 jest.mock('./Dashboard', () => () => null);
 jest.mock('./BestEfforts', () => () => null);
 
-let container, root, originalFetch, saved;
+let container, root, originalFetch, saved, whoopDays;
 beforeEach(() => {
   jest.useFakeTimers();
   jest.setSystemTime(new Date('2026-01-31T12:00:00'));
   global.IS_REACT_ACT_ENVIRONMENT = true;
   window.location.hash = '';
   container = document.createElement('div'); document.body.appendChild(container);
-  root = createRoot(container); originalFetch = global.fetch; saved = [];
+  root = createRoot(container); originalFetch = global.fetch; saved = []; whoopDays = [];
   global.fetch = jest.fn(async (url, options = {}) => {
     const path = url.replace('http://localhost:5000', '');
     if (path === '/api/activities') return { ok: true, json: async () => [] };
+    if (path === '/api/whoop') return { ok: true, json: async () => ({ connected: true, analytics: { computedAt: 'x', latest: whoopDays[0] || null } }) };
+    if (path.startsWith('/api/whoop/days?')) return { ok: true, json: async () => ({ days: whoopDays }) };
     if (path === '/api/workouts' && options.method === 'POST') {
       const workout = { ...JSON.parse(options.body), id: 'calendar-plan' };
       saved.push(workout); return { ok: true, json: async () => workout };
@@ -150,4 +152,22 @@ test('the week column shows the planned weekly hours per week', async () => {
   expect(summary.textContent).toContain('3 Einheiten · + 8 km');
   expect(summary.textContent).toContain('Radfahren2:00 h');
   expect(day('2026-01-20').closest('.calendar-week').querySelector('.calendar-summary-planned')).toBeNull();
+});
+
+test('days show the WHOOP readiness and the week column its averages', async () => {
+  const base = { mean: 60, low: 54, high: 66 };
+  whoopDays = [
+    { date: '2026-01-26', readiness: 80, band: 'green', confidence: 'provisional', hrv: 66, hrvBaseline: base, rhr: 47, sleep: { minutes: 470 } },
+    { date: '2026-01-27', readiness: 30, band: 'red', confidence: 'provisional', hrv: 48, hrvBaseline: base, rhr: 55, sleep: { minutes: 320 } },
+    { date: '2026-01-28', readiness: null, band: null, confidence: 'calibrating', hrv: null, hrvBaseline: null, rhr: 50, sleep: { minutes: 400 } },
+  ];
+  await renderCalendar();
+  const green = day('2026-01-26').querySelector('.calendar-readiness');
+  expect(green.textContent).toBe('80');
+  expect(green.getAttribute('title')).toBe('Readiness 80 (grün) · HRV 66 ms · Ruhepuls 47 bpm · Schlaf 7:50 h');
+  expect(day('2026-01-27').querySelector('.calendar-readiness').style.getPropertyValue('--band')).toBe('var(--danger)');
+  expect(day('2026-01-28').querySelector('.calendar-readiness').getAttribute('title')).toContain('Kalibrierung läuft');
+  expect(day('2026-01-29').querySelector('.calendar-readiness')).toBeNull();
+  const week = day('2026-01-26').closest('.calendar-week').querySelector('[aria-label="Erholung dieser Woche"]');
+  expect(week.textContent).toBe('ErholungØ 55HRV Ø 57 ms (-5 %)');
 });

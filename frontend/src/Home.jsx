@@ -5,6 +5,7 @@ import { isoWeek } from './AICoach';
 import { imageUrl, useAppearance } from './appearance';
 import { Icon, sportIcon } from './icons';
 import { HomeLandscape } from './Landscape';
+import { RecoveryHint, RecoveryTile, planningHint } from './Recovery';
 import { SportMark, sportColor, sportLabels } from './sports';
 import { localDate, summary as workoutSummary, workoutOverview } from './workoutModel';
 import './Home.css';
@@ -144,7 +145,8 @@ function WeekChart({ week, todayKey }) {
   </>;
 }
 
-export default function Home({ apiBase, activities, plannedWorkouts, workoutLoadError, onReloadWorkouts, onOpenActivity, onOpenWorkout, onEditGoal, bestEffortsYear }) {
+export default function Home({ apiBase, activities, plannedWorkouts, workoutLoadError, onReloadWorkouts, onOpenActivity, onOpenWorkout, onEditGoal, bestEffortsYear,
+  whoopDays = {}, onOpenWhoop, onOpenCoach }) {
   const appearance = useAppearance(apiBase);
   const today = new Date();
   const todayKey = localDate(today);
@@ -195,6 +197,7 @@ export default function Home({ apiBase, activities, plannedWorkouts, workoutLoad
   const tomorrowActs = activities.filter(a => localDate(new Date(a.date)) === tomorrowKey);
   const upcoming = plannedWorkouts.filter(w => w.date > tomorrowKey).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
   const tomorrowMinutes = tomorrowPlans.reduce((sum, w) => sum + plannedMinutes(w), 0);
+  const hint = planningHint(whoopDays[todayKey], todayKey, plannedWorkouts);
 
   const lede = todayPlans.length ? <>Heute steht <strong>{todayPlans[0].name || 'ein Workout'}</strong> auf dem Plan.</>
     : todayActs.length ? <>Heute hast du schon {todayActs.length === 1 ? 'eine Einheit' : `${todayActs.length} Einheiten`} absolviert.</>
@@ -220,6 +223,7 @@ export default function Home({ apiBase, activities, plannedWorkouts, workoutLoad
       <div className="home-main">
         <section className="home-card home-block" aria-labelledby="home-today">
           <div className="home-block-head"><h2 id="home-today">Heute</h2><button type="button" className="home-link" aria-label="Workout planen für heute" onClick={() => onOpenWorkout({ date: todayKey })}>Workout planen<Icon name="arrow" size={14} /></button></div>
+          <RecoveryHint hint={hint} onOpenWorkout={onOpenWorkout} onOpenCoach={onOpenCoach} />
           <div className="home-today">
             {todayPlans.map(workout => <TodayPlan key={workout.id} workout={workout} onOpen={onOpenWorkout} />)}
             {todayActs.map(activity => <ActivityLine key={activity.id} activity={activity} onOpen={onOpenActivity} />)}
@@ -265,6 +269,7 @@ export default function Home({ apiBase, activities, plannedWorkouts, workoutLoad
       </div>
 
       <aside className="home-side">
+        <RecoveryTile days={whoopDays} todayKey={todayKey} onOpenWhoop={onOpenWhoop} />
         <figure className="home-week home-card" aria-label="Trainingszeit dieser Woche nach Tagen">
           <div className="home-week-head"><span>Wochenumfang</span><strong>{hm(done).replace(' h', '')}{target > done && <small> / {hm(target)}</small>}</strong></div>
           <WeekChart week={week} todayKey={todayKey} />
