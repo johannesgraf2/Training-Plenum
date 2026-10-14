@@ -32,6 +32,8 @@ services:
       - TRAINHUB_AI_ENCRYPTION_KEY_FILE=/app/data/ai-encryption-key.txt
       # Days the raw WHOOP uploads are kept for re-decoding (whoop_sync.py).
       - WHOOP_RAW_RETENTION_DAYS=30
+      # Local day boundary for WHOOP nights and strain.
+      - TRAINHUB_TIMEZONE=Europe/Berlin
 
   nginx:
     image: nginx:alpine

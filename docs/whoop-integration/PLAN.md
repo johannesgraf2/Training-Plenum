@@ -1,6 +1,6 @@
 # WHOOP 4.0 directly in Training Plenum: implementation plan
 
-Status: **phase 1 implemented, not yet tested on the real strap** (as of 2026-10-14; deviations are listed in START-HERE.md). Research details are in the `RESEARCH-*.md` files in this folder.
+Status: **phases 1 and 2 implemented, not yet tested on the real strap** (as of 2026-10-14; deviations are listed in START-HERE.md). Research details are in the `RESEARCH-*.md` files in this folder.
 
 ## Context
 Johannes wants to use his WHOOP 4.0 without the official WHOOP app and without the noop app. Training Plenum (TP) stays the **only interface**. Recovery, HRV, resting HR, sleep and strain should appear right next to training planning (calendar, Today, Dashboard, AI coach), so plans get better.

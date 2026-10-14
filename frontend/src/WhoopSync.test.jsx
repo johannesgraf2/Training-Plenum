@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Simulate } from 'react-dom/test-utils';
-import WhoopSync, { bridgeUrl } from './WhoopSync';
+import WhoopSync, { bridgeUrl, calibrationText } from './WhoopSync';
 
 const disconnected = { connected: false, reprocessing: false, rawRetentionDays: 30 };
 const connected = {
@@ -9,6 +9,9 @@ const connected = {
   stats: { records: 43200, undecoded: 3, lastHrAt: 1760418600, lastRrAt: 1760418600 },
   bridge: { online: true, lastSeen: '2026-10-14T05:12:00Z', strapConnected: true, strapName: 'WHOOP 4C0123', battery: { percent: 87.3, charging: false },
     realtimeHr: { bpm: 58 }, outboxFrames: 0, lastSyncAt: '2026-10-14T05:11:00Z', firmware: { harvard: '41.17.6.0' } },
+  analytics: { computing: false, nights: 6, provisionalAt: 4, solidAt: 14, latest: {
+    date: '2026-10-14', readiness: 72, band: 'green', confidence: 'provisional', hrv: 66, hrvBaseline: { mean: 60 }, rhr: 48.4,
+    sleep: { minutes: 452, efficiency: 0.94 }, sleepDebtMinutes: 15, strain: { strain: 8.3 } } },
 };
 let host, root, originalFetch, current, onClose;
 const response = (payload, ok = true) => ({ ok, json: async () => payload });
@@ -56,6 +59,26 @@ test('shows bridge, strap and data status and requests a sync', async () => {
   await click('Jetzt synchronisieren');
   expect(global.fetch).toHaveBeenCalledWith('http://localhost:5000/api/whoop/sync', expect.objectContaining({ method: 'POST' }));
   expect(button('Sync angefordert').disabled).toBe(true);
+});
+
+test('previews the latest night with readiness, HRV against its baseline and calibration', async () => {
+  current = connected;
+  await render();
+  const night = host.querySelector('[aria-label="Letzte Nacht"]').textContent;
+  expect(night).toContain('72 (grün, vorläufig)');
+  expect(night).toContain('66 ms (+10 %)');
+  expect(night).toContain('48 bpm');
+  expect(night).toContain('7:32 h · 94 %');
+  expect(night).toContain('0:15 h');
+  expect(night).toContain('Vorläufig: 6/14 Nächte');
+  expect(calibrationText(2)).toContain('2/4 Nächte');
+  expect(calibrationText(20)).toContain('Verlässlich');
+});
+
+test('shows calibrating instead of a number before four nights', async () => {
+  current = { ...connected, analytics: { ...connected.analytics, nights: 2, latest: { ...connected.analytics.latest, readiness: null, band: null, confidence: 'calibrating' } } };
+  await render();
+  expect(host.querySelector('[aria-label="Letzte Nacht"]').textContent).toContain('Readinesskalibriert…');
 });
 
 test('warns when the bridge has been offline for over a day', async () => {

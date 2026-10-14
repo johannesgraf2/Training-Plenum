@@ -165,6 +165,8 @@ def initialize_database():
             for column in ('ftp', 'max_hr'):
                 if column not in user_columns:
                     connection.execute(text(f'ALTER TABLE user ADD COLUMN {column} FLOAT'))
+            if 'analytics_at' not in {column['name'] for column in inspect(connection).get_columns('whoop_account')}:
+                connection.execute(text('ALTER TABLE whoop_account ADD COLUMN analytics_at DATETIME'))
             if 'ai_provider_settings' in inspect(connection).get_table_names() and 'reasoning_effort' not in {
                     column['name'] for column in inspect(connection).get_columns('ai_provider_settings')}:
                 connection.execute(text('ALTER TABLE ai_provider_settings ADD COLUMN reasoning_effort VARCHAR(20)'))

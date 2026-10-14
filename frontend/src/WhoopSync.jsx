@@ -45,6 +45,36 @@ function Row({ label, children, tone }) {
   return <div className="whoop-row"><dt>{label}</dt><dd className={tone ? `whoop-${tone}` : undefined}>{children}</dd></div>;
 }
 
+const BAND_LABELS = { green: 'grün', yellow: 'gelb', red: 'rot' };
+const minutesText = minutes => (minutes == null ? '–' : `${Math.floor(minutes / 60)}:${String(Math.round(minutes % 60)).padStart(2, '0')} h`);
+
+export function calibrationText(nights, provisionalAt = 4, solidAt = 14) {
+  if (nights < provisionalAt) return `Kalibrierung: ${nights}/${provisionalAt} Nächte, danach gibt es eine Readiness`;
+  if (nights < solidAt) return `Vorläufig: ${nights}/${solidAt} Nächte bis zur verlässlichen Baseline`;
+  return `Verlässlich: Baseline aus ${nights} Nächten`;
+}
+
+// A preview of the latest computed day; the planning views come with phase 3.
+function Recovery({ analytics }) {
+  const day = analytics?.latest;
+  if (!day) return <p className="batch-help">Noch keine ausgewertete Nacht. Die erste erscheint nach einer Nacht mit dem Strap.</p>;
+  const base = day.hrvBaseline;
+  const deviation = day.hrv != null && base?.mean ? Math.round((day.hrv / base.mean - 1) * 100) : null;
+  const tone = { green: 'ok', yellow: 'warn', red: 'bad' }[day.band];
+  return <section aria-label="Letzte Nacht" className="whoop-recovery">
+    <h3>Letzte Nacht · {new Date(`${day.date}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' })}</h3>
+    <p className="batch-help">{calibrationText(analytics.nights, analytics.provisionalAt, analytics.solidAt)}</p>
+    <dl className="whoop-status">
+      <Row label="Readiness" tone={tone}>{day.readiness != null ? `${day.readiness} (${BAND_LABELS[day.band]}${day.confidence === 'provisional' ? ', vorläufig' : ''})` : 'kalibriert…'}</Row>
+      <Row label="HRV (RMSSD)">{day.hrv != null ? `${Math.round(day.hrv)} ms${deviation != null ? ` (${deviation > 0 ? '+' : ''}${deviation} %)` : ''}` : '–'}</Row>
+      <Row label="Ruhepuls">{day.rhr != null ? `${Math.round(day.rhr)} bpm` : '–'}</Row>
+      <Row label="Schlaf">{minutesText(day.sleep?.minutes)}{day.sleep?.efficiency != null ? ` · ${Math.round(day.sleep.efficiency * 100)} %` : ''}</Row>
+      <Row label="Schlafschuld">{minutesText(day.sleepDebtMinutes)}</Row>
+      <Row label="Strain">{day.strain?.strain != null ? day.strain.strain.toLocaleString('de-DE') : '–'}</Row>
+    </dl>
+  </section>;
+}
+
 function Status({ status }) {
   const bridge = status.bridge || {};
   const stats = status.stats || {};
@@ -121,8 +151,9 @@ export default function WhoopSync({ apiBase = '', onClose }) {
         </ol>}
         {status?.connected && <>
           {token && <Setup apiBase={apiBase} token={token} />}
+          <Recovery analytics={status.analytics} />
           <Status status={status} />
-          {status.reprocessing && <p role="status" className="batch-help">Rohdaten werden neu eingelesen…</p>}
+          {(status.reprocessing || status.analytics?.computing) && <p role="status" className="batch-help">{status.reprocessing ? 'Rohdaten werden neu eingelesen…' : 'Tage werden neu berechnet…'}</p>}
           {confirming && <div className="whoop-confirm" role="group" aria-label="WHOOP trennen">
             <p>Das Token wird ungültig, die Bridge kann keine Daten mehr senden.</p>
             <label><input type="checkbox" checked={deleteData} onChange={event => setDeleteData(event.target.checked)} /> Auch alle gespeicherten WHOOP-Daten löschen</label>
@@ -136,7 +167,7 @@ export default function WhoopSync({ apiBase = '', onClose }) {
       {status?.connected && !confirming && <footer className="batch-footer">
         <button type="button" className="batch-link" disabled={busy} onClick={() => setConfirming(true)}>Trennen…</button>
         <button type="button" disabled={busy} onClick={createToken}>Neues Token</button>
-        <button type="button" disabled={busy || status.reprocessing || !status.hours} onClick={recompute}>Rohdaten neu einlesen</button>
+        <button type="button" disabled={busy || status.reprocessing || status.analytics?.computing || !status.hours} onClick={recompute}>Neu berechnen</button>
         <button type="button" className="batch-primary" disabled={busy || status.syncRequested} onClick={sync}>{status.syncRequested ? 'Sync angefordert' : 'Jetzt synchronisieren'}</button>
       </footer>}
     </section>
