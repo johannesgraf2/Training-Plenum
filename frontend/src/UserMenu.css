@@ -8,7 +8,11 @@
 .user-menu-avatar.large { width: 40px; height: 40px; font-size: 14px; background: var(--bg-e2e8f0); color: var(--fg-475569); }
 .user-menu-caret { font-size: 10px; color: var(--fg-64748b); }
 .user-menu-panel { position: absolute; right: 0; top: calc(100% + 8px); width: 320px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 96px); overflow-y: auto; overscroll-behavior: contain; background: var(--bg-ffffff); color: var(--fg-1e293b); border: 1px solid var(--bd-e2e8f0); border-radius: 4px; box-shadow: 0 12px 32px rgba(15, 23, 42, .18); padding: 18px; z-index: 200; }
-@media (max-width: 900px) { .user-menu-panel { max-height: calc(100dvh - 170px); } } /* the header wraps onto more lines */
+/* The header wraps onto more lines and the trigger moves to the left, so anchor the panel to the header instead of the trigger. */
+@media (max-width: 900px) {
+  .user-menu { position: static; }
+  .user-menu-panel { left: 16px; right: 16px; width: auto; max-width: 480px; max-height: calc(100dvh - 170px); }
+}
 .user-menu-head { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--bd-e2e8f0); }
 .user-menu-head strong { display: block; font-size: 14px; }
 .user-menu-head small { display: block; color: var(--fg-64748b); font-size: 12px; margin-top: 2px; }
