@@ -98,3 +98,20 @@
 .app-nav-status.busy { animation: app-nav-pulse 1.2s ease-in-out infinite; }
 @keyframes app-nav-pulse { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .app-nav-status.busy { animation: none; } }
+
+/* Phone: a compact header that scrolls away. Wordmark with "Daten" and profile on one line, the navigation below. */
+@media (max-width: 700px) {
+  .app-header { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand end" "nav nav"; align-items: center; gap: 2px 12px; padding: 10px 16px 0; }
+  .app-header-start { display: contents; }
+  .app-wordmark { grid-area: brand; font-size: 24px; white-space: nowrap; }
+  .app-header-end { grid-area: end; gap: 10px; }
+  .app-import { min-height: 40px; padding: 0 14px; }
+  .app-nav { grid-area: nav; justify-content: space-between; gap: 12px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .app-nav button { flex-shrink: 0; white-space: nowrap; }
+}
+@media (max-width: 360px) {
+  .app-wordmark { font-size: 21px; }
+  .app-nav { gap: 8px; }
+  .app-nav button { font-size: 14px; }
+  .app-import { padding: 0 10px; }
+}
