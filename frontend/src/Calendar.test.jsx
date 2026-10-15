@@ -171,3 +171,30 @@ test('days show the WHOOP readiness and the week column its averages', async () 
   const week = day('2026-01-26').closest('.calendar-week').querySelector('[aria-label="Erholung dieser Woche"]');
   expect(week.textContent).toBe('ErholungØ 55HRV Ø 57 ms (-5 %)');
 });
+
+test('month and year are picked separately, so any year can be shown', async () => {
+  saved = [{ ...newWorkout('2027-03-10'), id: 'next-year', name: 'Frühjahr' }];
+  await renderCalendar();
+  const month = container.querySelector('select[aria-label="Monat wählen"]');
+  const year = container.querySelector('select[aria-label="Jahr wählen"]');
+  expect([...month.options].map(o => o.textContent)).toHaveLength(12);
+  expect([...year.options].map(o => o.value)).toEqual(['2027', '2026', '2025']);
+  act(() => Simulate.change(year, { target: { value: '2025' } }));
+  expect(container.querySelector('.calendar-toolbar h2').textContent).toBe('Januar 2025');
+  act(() => Simulate.change(year, { target: { value: '2027' } }));
+  act(() => Simulate.change(month, { target: { value: '2' } }));
+  expect(container.querySelector('.calendar-toolbar h2').textContent).toBe('März 2027');
+  expect(day('2027-03-10').textContent).toContain('Frühjahr');
+  click(button('Heute'));
+  expect(container.querySelector('.calendar-toolbar h2').textContent).toBe('Januar 2026');
+});
+
+test('each week carries its number and dates and each day its weekday for the phone layout', async () => {
+  await renderCalendar();
+  const labels = [...container.querySelectorAll('.calendar-week-label')].map(label => label.textContent);
+  // The month abbreviation comes from the runtime's locale data ("Jan" or "Jan.").
+  expect(labels[0]).toMatch(/^KW 1 1\.–4\. Jan\.?$/);
+  expect(labels[labels.length - 1]).toMatch(/^KW 5 26\.–31\. Jan\.?$/);
+  expect(day('2026-01-26').querySelector('.calendar-day-weekday').textContent).toBe('Mo');
+  expect(day('2026-01-31').querySelector('.calendar-day-weekday').textContent).toBe('Sa');
+});

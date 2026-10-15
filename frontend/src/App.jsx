@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import ActivityDetail from './ActivityDetail';
 import DataHub, { timeAgo } from './DataHub';
 import Dashboard from './Dashboard';
-import AICoach from './AICoach';
+import AICoach, { isoWeek } from './AICoach';
 import Home from './Home';
 import UserMenu from './UserMenu';
 import WhoopSync from './WhoopSync';
@@ -261,6 +261,26 @@ export default function App() {
     }
     return weeks;
   }, [calMonth, activities, plannedWorkouts]);
+  // Years to pick in the calendar: from the first recorded or planned session up to next year.
+  const calYears = useMemo(() => {
+    const now = new Date().getFullYear();
+    const years = [...activities.map(a => new Date(a.date).getFullYear()), ...plannedWorkouts.map(w => Number(String(w.date).slice(0, 4)))].filter(Number.isFinite);
+    const first = Math.min(now - 1, calMonth.getFullYear(), ...years);
+    const last = Math.max(now + 1, calMonth.getFullYear(), ...years);
+    return Array.from({ length: last - first + 1 }, (_, i) => last - i);
+  }, [activities, plannedWorkouts, calMonth]);
+  // On a phone the calendar is a list of weeks; opening the current month starts at this week,
+  // once the activities are in (they change the height above it), below the header if it stays on top.
+  useEffect(() => {
+    const now = new Date();
+    if (loading || page !== 'calendar' || selected || calMonth.getFullYear() !== now.getFullYear() || calMonth.getMonth() !== now.getMonth()) return;
+    if (!window.matchMedia?.('(max-width: 700px)').matches) return;
+    const week = document.querySelector('.calendar-day.today')?.closest('.calendar-week');
+    if (!week) return;
+    const bar = document.querySelector('.app-header');
+    const header = bar && getComputedStyle(bar).position === 'sticky' ? bar.getBoundingClientRect().height : 0;
+    window.scrollTo({ top: week.getBoundingClientRect().top + window.scrollY - header });
+  }, [loading, page, selected, calMonth]);
   const maxSportDuration = Math.max(1, ...calWeeks.flatMap(w => Object.values(w.summary.bySport).map(sport => sport.duration)));
 
   // ─── RENDER ───
@@ -317,13 +337,16 @@ export default function App() {
           <div className="calendar">
             <div className="calendar-toolbar">
               <h2>{calMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</h2>
-              <select aria-label="Monat wählen" value={`${calMonth.getFullYear()}-${calMonth.getMonth()}`}
-                onChange={e => { const [y, m] = e.target.value.split('-'); setCalMonth(new Date(+y, +m, 1)); }}>
-                {Array.from({ length: 12 }, (_, i) => {
-                  const d = new Date(calMonth.getFullYear(), i, 1);
-                  return <option key={i} value={`${d.getFullYear()}-${i}`}>{d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</option>;
-                })}
-              </select>
+              <div className="calendar-pickers">
+                <select aria-label="Monat wählen" value={calMonth.getMonth()}
+                  onChange={e => setCalMonth(new Date(calMonth.getFullYear(), +e.target.value, 1))}>
+                  {Array.from({ length: 12 }, (_, i) => <option key={i} value={i}>{new Date(2026, i, 1).toLocaleDateString('de-DE', { month: 'long' })}</option>)}
+                </select>
+                <select aria-label="Jahr wählen" value={calMonth.getFullYear()}
+                  onChange={e => setCalMonth(new Date(+e.target.value, calMonth.getMonth(), 1))}>
+                  {calYears.map(year => <option key={year} value={year}>{year}</option>)}
+                </select>
+              </div>
               <div className="calendar-nav">
                 <button type="button" onClick={() => { const now = new Date(); setCalMonth(new Date(now.getFullYear(), now.getMonth(), 1)); }}>Heute</button>
                 <button type="button" aria-label="Vorheriger Monat" onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))}>‹</button>
@@ -339,8 +362,13 @@ export default function App() {
               <div>Woche</div>
             </div>
 
-            {calWeeks.map((week, wi) => (
+            {calWeeks.map((week, wi) => {
+              const days = week.cells.filter(Boolean);
+              const first = days[0].date, last = days[days.length - 1].date;
+              const span = `${first.getDate()}.${first.getDate() === last.getDate() ? '' : `–${last.getDate()}.`} ${first.toLocaleDateString('de-DE', { month: 'short' })}`;
+              return (
               <div key={wi} className="calendar-week">
+                <div className="calendar-week-label">KW {Number(isoWeek(localDate(first)).split('-W')[1])} <span>{span}</span></div>
                 {week.cells.map((cell, ci) => {
                   if (!cell) return <div key={`e${wi}-${ci}`} className="calendar-day-empty" />;
                   const isToday = cell.date.toDateString() === todayStr;
@@ -361,6 +389,7 @@ export default function App() {
                         moveWorkout(event.dataTransfer.getData(WORKOUT_DRAG_TYPE), cellDate);
                       }}>
                       <div className="calendar-day-header">
+                        <span className="calendar-day-weekday" aria-hidden="true">{['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][ci]}</span>
                         <span className="calendar-day-number">{isToday ? `Heute ${cell.day}` : cell.day === 1 ? `1. ${calMonth.toLocaleDateString('de-DE', { month: 'short' })}` : cell.day}</span>
                         <ReadinessBadge day={whoopDays[cellDate]} />
                         <button type="button" className="calendar-add-workout"
@@ -437,7 +466,8 @@ export default function App() {
                   </>) : <p className="calendar-summary-empty">Keine Aktivitäten</p>}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : page === 'coach' ? null : page === 'dashboard' ? (
           <div className="dashboard-page">
