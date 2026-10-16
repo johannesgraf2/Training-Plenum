@@ -17,7 +17,8 @@
 .coach-heading p { color: var(--fg-64748b); margin: 6px 0 0; }
 .coach-eyebrow { font-size: 13px; color: var(--fg-64748b); font-weight: 500; font-variant-numeric: tabular-nums; }
 .coach-beta { font-size: 10px; letter-spacing: .02em; font-weight: 600; color: var(--fg-1d4ed8); background: var(--bg-dbeafe); padding: 5px 7px; border-radius: 2px; }
-.coach-connection { font-size: 11px; color: var(--fg-64748b); display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.coach-connection { font-size: 11px; color: var(--fg-64748b); display: flex; align-items: center; gap: 7px; white-space: nowrap; padding: 4px 0; border: none; background: transparent; cursor: pointer; }
+.coach-connection:hover { color: var(--fg-1e40af); }
 .coach-connection i { width: 7px; height: 7px; background: var(--muted-2); border-radius: 50%; }
 .coach-connection.ready i { background: var(--success); }
 .coach-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--bd-dbe1e9); margin: 0 0 22px; }

@@ -247,6 +247,15 @@ test('provider keys are transient and never included in a later model-only save'
   expect(storageSpy).not.toHaveBeenCalled(); storageSpy.mockRestore();
 });
 
+test('the connection badge shows the active model and opens the provider settings', async () => {
+  await render();
+  await click(button('Provider verbunden · gpt-4.1-mini'));
+  expect(container.textContent).toContain('Dein AI Provider');
+  await change(inputFor('Modell'), 'gpt-6.1-sol');
+  await submit(button('Provider speichern').closest('form'));
+  expect(button('Provider verbunden · gpt-6.1-sol')).toBeDefined();
+});
+
 test('a rejected provider save clears the secret and exposes a useful error', async () => {
   responses['PUT /api/ai-provider'] = async () => ({ ok: false, json: async () => ({ error: 'Verschlüsselung ist nicht konfiguriert.' }) });
   await render(); await click(button('AI Provider'));

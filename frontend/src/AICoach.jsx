@@ -1202,7 +1202,7 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
   </>;
 
   return <div className="ai-coach">
-    <header className="coach-heading"><div><span className="coach-eyebrow">Training Plēnum / Dein Training, mit Kontext</span><h1>AI Coach <span className="coach-beta">BYOK</span></h1><p>Deine Trainingsdaten. Deine Ziele. Ein Plan, den du freigibst.</p></div><span className={`coach-connection ${provider?.configured ? 'ready' : ''}`}><i />{provider?.configured ? 'Provider verbunden' : 'Provider einrichten'}</span></header>
+    <header className="coach-heading"><div><span className="coach-eyebrow">Training Plēnum / Dein Training, mit Kontext</span><h1>AI Coach <span className="coach-beta">BYOK</span></h1><p>Deine Trainingsdaten. Deine Ziele. Ein Plan, den du freigibst.</p></div><button type="button" className={`coach-connection ${provider?.configured ? 'ready' : ''}`} title="AI Provider und Modell einstellen" onClick={() => setTab('provider')}><i />{provider?.configured ? `Provider verbunden · ${provider.model}` : 'Provider einrichten'}</button></header>
     <nav className="coach-tabs" aria-label="AI Coach Bereiche">{TABS.map(([key, label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}>{label}{((key === 'profile' && dirty.profile) || (key === 'provider' && dirty.provider)) && <span aria-label="Ungespeicherte Änderungen"> •</span>}{key === 'today' && dayView && !dayView.checkIn && dayView.dailyCheckIn && <span className="coach-tab-dot" aria-label="Check-in offen" />}</button>)}</nav>
     {!messagesInCard && messages}
     {loading && <p role="status" className="coach-muted">Athletenkontext wird geladen …</p>}
