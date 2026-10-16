@@ -5,7 +5,6 @@ import json
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
-from statistics import mean
 from urllib.parse import urlparse
 
 from dateutil.tz import gettz
@@ -17,8 +16,8 @@ from werkzeug.exceptions import NotFound
 from ai_provider import (DEFAULT_MODEL, REASONING_EFFORTS, ProviderError, decrypt_key, encrypt_key, ensure_server_key,
                          get_provider, key_file, validate_model, validate_reasoning_effort)
 from athlete_context import build_snapshot, session_pattern, summarize_period
-from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, GROUPS, SECONDARY_FOCUS, SITUATIONS, block_for_week, block_status,
-                          catalog as block_catalog, check_block, check_choice, check_formats, check_options, check_week_rules,
+from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, DELOAD_PHASES, GROUPS, SECONDARY_FOCUS, SITUATIONS, block_for_week,
+                          block_status, block_type, catalog as block_catalog, check_block, check_choice, check_formats, check_options, check_week_rules,
                           interval_formats, migrate_plan, new_block, place_block, public_blocks, rule_texts)
 from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
                           CHECK_IN_SCHEMA, apply_patch, complete_profile, day_date, effective_availability, iso_week,
@@ -26,10 +25,10 @@ from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, WEEK_OVERRIDE_SCHEM
                           update_profile, validate, week_season, week_start)
 from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_order,
                           check_season, first_monday, new_season, public_season, season_frame, typical_season, with_fixed)
-from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, render_session, template_catalog
+from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, flat_steps, render_session, template_catalog
+from coach_wellness import (SPORT_NOUNS, blocked_sports, check_in_averages, heal, injury_label, public_injury, readiness,
+                            record_check_in)
 
-
-CHECK_IN_KEYS = ('fatigue', 'motivation', 'stress', 'sleepQuality', 'soreness')
 
 
 def packed(value):
@@ -216,13 +215,137 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         value['dailyOverrides'] = sorted([o for o in value['dailyOverrides'] if o['date'] != day] + [{'date': day, **data}], key=lambda o: o['date'])[-366:]
         return save_profile(value)
 
-    @app.route('/api/coach/check-ins', methods=['POST'])
+    @app.route('/api/coach/check-ins', methods=['GET', 'POST'])
     def check_in():
-        data = validate(request.get_json(silent=True), CHECK_IN_SCHEMA)
-        day_date(data['date'])
+        if request.method == 'GET':
+            # The check-ins of a period with the complaints, for the review.
+            today = datetime.now(zone()).date()
+            last = day_date(request.args['to']) if request.args.get('to') else today
+            first = day_date(request.args['from']) if request.args.get('from') else last - timedelta(days=27)
+            value = profile()
+            return jsonify({'checkIns': [c for c in value['checkIns'] if first.isoformat() <= c['date'] <= last.isoformat()],
+                            'injuries': [public_injury(i) for i in value['injuries']
+                                         if i['status'] == 'active' or (i['endDate'] or '') >= first.isoformat()]})
+        data = request.get_json(silent=True)
         value = profile()
-        value['checkIns'] = sorted([o for o in value['checkIns'] if o['date'] != data['date']] + [data], key=lambda o: o['date'])[-90:]
+        if isinstance(data, dict) and 'wellbeing' in data:
+            # The morning check-in: answers, complaints and the traffic light of that day.
+            today = datetime.now(zone()).date()
+            stored = record_check_in(value, data, today)
+            day = day_date(data['date'])
+            light = readiness(stored, value['injuries'], training_sessions(day)[0], (whoop_day(day) or {}).get('band'))
+            stored['readiness'] = {key: light[key] for key in ('level', 'reasons', 'affectedSports')}
+            record = state()
+            record.profile = packed(value)
+            record.revision += 1
+            db.session.commit()
+            return jsonify(today_view(day))
+        data = validate(data, CHECK_IN_SCHEMA)
+        day_date(data['date'])
+        value['checkIns'] = sorted([o for o in value['checkIns'] if o['date'] != data['date']] + [data], key=lambda o: o['date'])[-120:]
         return save_profile(value)
+
+    @app.route('/api/coach/injuries/<identity>', methods=['PUT'])
+    def edit_injury(identity):
+        data = validate(request.get_json(silent=True), obj({'status': {'enum': ['healed']}}))
+        value = profile()
+        heal(value, identity, datetime.now(zone()).date())
+        record = state()
+        record.profile = packed(value)
+        record.revision += 1
+        db.session.commit()
+        return jsonify(today_view(datetime.now(zone()).date()))
+
+    def whoop_day(day):
+        """The WHOOP readiness of that morning, once the baseline is calibrated; None without a strap."""
+        models = app.extensions.get('whoop_models')
+        if not models:
+            return None
+        row = db.session.get(models[3], (user_id, day.isoformat()))
+        scores = json.loads(row.scores or '{}') if row else {}
+        if scores.get('readiness') is None or scores.get('confidence') == 'calibrating':
+            return None
+        sleep = (json.loads(row.nightly or '{}').get('sleep') or {})
+        return {'source': 'calculated', 'readiness': scores['readiness'], 'band': scores.get('band'), 'sleepMinutes': sleep.get('minutes')}
+
+    def training_sessions(day):
+        """Coach sessions and own calendar workouts of one day as {id, name, sport, durationMin, hard}."""
+        plan = current_plan()
+        stamp, owned, result = day.isoformat(), set(), []
+        for session in (plan['weeks'].get(iso_week(day)) or {}).get('sessions', []):
+            owned.add(session['id'])
+            if session['rendered']['date'] != stamp:
+                continue
+            result.append({'id': session['id'], 'source': 'coach', 'name': session['rendered']['name'],
+                           'sport': TEMPLATES[session['template']]['sport'], 'durationMin': session['rendered']['durationMin'],
+                           'hard': session['template'] in GROUPS['quality'], 'locked': session.get('locked', False)})
+        for identity, row in workouts().items():
+            definition = json.loads(row.definition)
+            if identity in owned or definition['date'] != stamp:
+                continue
+            result.append({'id': identity, 'source': 'calendar', 'name': definition['name'], 'sport': definition['sport'],
+                           'durationMin': workout_minutes(definition), 'locked': bool(row.locked),
+                           'hard': any(step['intensity'] == 'interval' for step in flat_steps(definition['steps']))})
+        return [s for s in result if s['sport'] != 'rest'], plan
+
+    def period_view(plan, day, current_profile):
+        """Where the day sits: season, training block, block week with phase and the goal countdown."""
+        monday = day - timedelta(days=day.weekday())
+        blocks = public_blocks(plan['blocks'], day)
+        block, number = block_for_week(blocks, monday)
+        goal = current_profile['goal']
+        result = {'week': iso_week(day), 'goal': {key: goal[key] for key in ('type', 'sports', 'name', 'date')},
+                  'weeksToGoal': None, 'block': None, 'season': None,
+                  'plannedHours': (plan['weeks'].get(iso_week(day)) or {}).get('calculatedHours')}
+        if goal['date'] and day_date(goal['date']) >= day:
+            goal_day = day_date(goal['date'])
+            result['weeksToGoal'] = ((goal_day - timedelta(days=goal_day.weekday())) - monday).days // 7
+        if block:
+            item = next((w for w in block['weeks'] if w['week'] == number), None) or {}
+            start, end = day_date(block['startDate']), day_date(block['endDate'])
+            result['block'] = {'id': block['id'], 'blockType': block['blockType'], 'typeName': block['typeName'],
+                               'secondaryName': block['secondaryName'], 'weekNumber': number,
+                               'totalWeeks': (end - start).days // 7 + 1, 'phase': item.get('phase'),
+                               'deload': item.get('phase') in DELOAD_PHASES, 'targetHours': item.get('targetHours'),
+                               'focus': item.get('focus'), 'startDate': block['startDate'], 'endDate': block['endDate']}
+        season = public_season(plan.get('season'), blocks, goal['date'], day)
+        if season:
+            result['season'] = {'startDate': season['startDate'], 'segments': [
+                {key: s.get(key) for key in ('blockType', 'typeName', 'secondaryName', 'weeks', 'startDate', 'endDate', 'blockId')}
+                for s in season['segments']]}
+        return result
+
+    def today_view(day):
+        current_profile = profile()
+        sessions, plan = training_sessions(day)
+        stamp = day.isoformat()
+        morning = [c for c in current_profile['checkIns'] if c.get('version') == 2]
+        check_in = next((c for c in morning if c['date'] == stamp), None)
+        whoop = whoop_day(day)
+        light = readiness(check_in, current_profile['injuries'], sessions, (whoop or {}).get('band'))
+        result = {'date': stamp, 'checkIn': check_in, 'readiness': light,
+                  'previousCheckIn': next((c for c in reversed(morning) if c['date'] < stamp), None),
+                  'injuries': [public_injury(i) for i in current_profile['injuries'] if i['status'] == 'active'],
+                  'sessions': sessions, 'whoop': whoop, 'period': period_view(plan, day, current_profile),
+                  'weekPlanned': iso_week(day) in plan['weeks'],
+                  'dailyCheckIn': current_profile['preferences']['dailyCheckIn']}
+        db.session.commit()  # Activity summaries may have been cached.
+        return result
+
+    @app.route('/api/coach/today')
+    def get_today():
+        day = day_date(request.args['date']) if request.args.get('date') else datetime.now(zone()).date()
+        return jsonify(today_view(day))
+
+    def wellness_context(current_profile, today):
+        """Active complaints and today's traffic light for planning requests."""
+        injuries = [{'source': 'athlete', 'region': injury_label(i), 'pain': public_injury(i)['pain'],
+                     'timing': i['timing'], 'onset': i['onset'], 'impact': i['impact'], 'since': i['startDate'],
+                     'affectedSports': public_injury(i)['affectedSports'], 'severe': public_injury(i)['severe']}
+                    for i in current_profile['injuries'] if i['status'] == 'active']
+        check_in = next((c for c in current_profile['checkIns'] if c.get('version') == 2 and c['date'] == today.isoformat()), None)
+        light = readiness(check_in, current_profile['injuries'], training_sessions(today)[0], (whoop_day(today) or {}).get('band'))
+        return {'injuries': injuries, 'readinessToday': {key: light[key] for key in ('source', 'level', 'reasons', 'affectedSports', 'checkedIn')}}
 
     def provider_status():
         setting = db.session.get(AIProviderSettings, user_id)
@@ -441,6 +564,13 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         sports = {*current_profile['goal']['sports'], 'strength', 'rest'}
         if any(TEMPLATES[s['template']]['sport'] not in sports for s in changed):
             raise CoachError('Der Vorschlag enthält eine Sportart, die nicht in deinem Profil steht.')
+        # A severe complaint rules its sports out for every new or changed session from today on.
+        blocked = blocked_sports(current_profile['injuries'])
+        today = datetime.now(zone()).date()
+        for s in changed:
+            sport = TEMPLATES[s['template']]['sport']
+            if sport in blocked and day_date(s['rendered']['date']) >= today:
+                raise CoachError(f'Wegen deiner Beschwerde ({blocked[sport]}) plant der Coach gerade kein {SPORT_NOUNS[sport]}.')
         monday = week_start(value['week'])
         minimum = min_ride_minutes(current_profile, monday)
         if minimum and any(s['template'] in GROUPS['ride'] - {'bike_recovery'} and s['rendered']['durationMin'] < minimum - 0.01
@@ -550,8 +680,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                            'plannedSessions': sum(w['plannedSessions'] for w in weeks),
                            'missedSessions': sum(len(w['missedSessions']) for w in reported) if reported else None,
                            'weeksWithMissedReport': len(reported)},
-                'checkIns': {'source': 'athlete', 'count': len(check_ins),
-                             'averages': {key: round(mean(c[key] for c in check_ins), 1) for key in CHECK_IN_KEYS} if check_ins else None},
+                'checkIns': {'source': 'athlete', 'count': len(check_ins), 'averages': check_in_averages(check_ins)},
                 'reflection': block.get('review'),
                 'sources': {'targetHours': 'aiRecommendation', 'plannedHours': 'aiRecommendation', 'completedHours': 'calculated',
                             'missedSessions': 'athlete'}}
@@ -627,6 +756,16 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'controlled; vary interval formats that serve the same aim; continue the progression chains from blockHistory week by week '
         'and step back in deload weeks or after missed sessions. '
         'Do not diagnose or infer readiness from absent data. Use conservative adjustments when fatigue or limitations are reported. '
+        'Morning check-ins with version 2 use 1-5 scales: wellbeing (1 very bad, 5 excellent), recovery (1 exhausted, 5 fresh), '
+        'stress (1 relaxed, 5 very stressed), soreness (1 none, 5 extreme), mood (1 negative, 5 euphoric), nutrition of the day '
+        'before (1 too little, 3 adequate, 5 too much) and alcohol the evening before (0 none, 1 one or two drinks, 2 more). '
+        'injuries are active complaints reported by the athlete with pain 0-10 and the sports they affect: never plan an '
+        'affected sport while severe is true (the server rejects it) and keep it easy and short otherwise; replace affected '
+        'sessions with an unaffected sport that keeps the training aim (hard stays hard, long stays long). readinessToday is the '
+        'calculated traffic light of today (green, yellow, red) from the morning check-in, complaints and WHOOP. '
+        'checkInTrigger means the athlete asks to adapt the plan to today\'s check-in: on red make today a rest day or very easy '
+        'and ease the next day; on yellow turn today\'s hard session easy or shorten it; move a hard session only to a later '
+        'day of the same week when it fits the availability and no hard day follows; never add volume to make up for it. '
         'Choose only supplied templates and supported params; use null for unused params. Follow exact duration rules including warmup/cooldown. '
         'targetHours must equal total duration including fixed sessions, within 15 minutes. Never change fixed or locked sessions. '
         'Use unique short session ids. A patch contains only changed sessions, with matching sessionId/id; remove uses session:null. '
@@ -697,7 +836,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                       'week': text(8), 'instruction': text(1500), 'feedbackWeek': text(8),
                       'missedSessions': {'type': 'array', 'maxItems': 21, 'items': text(80)},
                       'design': {'type': 'array', 'maxItems': 8, 'items': obj({'question': text(200), 'answer': text(300)})},
-                      'formats': {'type': 'array', 'minItems': 1, 'maxItems': 12, 'items': text(40)}})
+                      'formats': {'type': 'array', 'minItems': 1, 'maxItems': 12, 'items': text(40)},
+                      'trigger': {'enum': ['checkIn']}})
         schema['required'] = ['kind']
         data = validate(request.get_json(silent=True), schema)
         kind = data['kind']
@@ -708,6 +848,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         if formats and (kind != 'block' or data.get('mode') != 'choose'):
             raise CoachError('Intervallformen lassen sich nur für einen selbst gewählten Block festlegen.')
         context = {'task': kind, 'instruction': data.get('instruction', '')}
+        if data.get('trigger') and kind not in ('week', 'patch'):
+            raise CoachError('Nur eine Woche lässt sich an den Check-in anpassen.')
         if kind == 'season':
             today = datetime.now(zone()).date()
             goal = current_profile['goal']
@@ -732,6 +874,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             context['snapshot']['selfReported']['checkIns'] = current_profile['checkIns'][-7:]
             context['snapshot']['selfReported']['dailyOverrides'] = []
             context['snapshot']['selfReported']['weeklyOverrides'] = []
+            context['snapshot']['selfReported']['injuries'] = wellness_context(current_profile, today)['injuries']
         elif kind == 'block':
             mode = data.get('mode')
             if mode is None:
@@ -767,6 +910,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             context['snapshot']['selfReported']['checkIns'] = current_profile['checkIns'][-7:]
             context['snapshot']['selfReported']['dailyOverrides'] = []
             context['snapshot']['selfReported']['weeklyOverrides'] = []
+            context['snapshot']['selfReported']['injuries'] = wellness_context(current_profile, today)['injuries']
         else:
             week = data.get('week')
             monday = week_start(week)
@@ -802,6 +946,12 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             context['selfReported']['checkIns'] = current_profile['checkIns'][-7:]
             context['selfReported']['weeklyNote'] = next((o['note'] for o in current_profile['weeklyOverrides'] if o['week'] == week), '')
             today = datetime.now(zone()).date()
+            context['selfReported'].update(wellness_context(current_profile, today))
+            if data.get('trigger') == 'checkIn':
+                if not monday <= today <= monday + timedelta(days=6):
+                    raise CoachError('An den heutigen Check-in lässt sich nur die laufende Woche anpassen.')
+                context['checkInTrigger'] = {'source': 'athlete', 'date': today.isoformat(),
+                                             'readiness': context['selfReported']['readinessToday']}
             if monday <= today <= monday + timedelta(days=6):
                 # Do not add, move or replace workouts on already elapsed days.
                 context['elapsedDays'] = DAYS[:today.weekday()]

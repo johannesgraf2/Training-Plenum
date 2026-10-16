@@ -1,0 +1,99 @@
+/* Morning check-in, traffic light and today view. The dialog also opens outside the coach, so its controls carry their own styles. */
+.today-period-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.today-period h2 { font-family: var(--font-display); font-weight: 400; font-size: 26px; letter-spacing: -.01em; margin: 4px 0 4px; }
+.today-facts { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+.today-whoop { display: flex; gap: 18px; }
+.today-whoop div { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); }
+.today-whoop strong { font-family: var(--font-display); font-size: 24px; font-weight: 500; color: var(--ink); line-height: 1.1; }
+.coach-season-strip.today-season { height: 26px; margin: 14px 0 4px; }
+.today-season .coach-season-segment.past { opacity: .45; }
+.today-goal { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.today-goal strong { color: var(--ink); }
+
+.today-readiness { display: flex; gap: 14px; align-items: flex-start; border-left: 4px solid var(--line-strong); }
+.today-readiness.green { border-left-color: var(--success); }
+.today-readiness.yellow { border-left-color: var(--zone-sweetspot, #d9a21b); }
+.today-readiness.red { border-left-color: var(--danger); }
+.today-readiness h3 { font-family: var(--font-display); font-weight: 400; font-size: 22px; margin: 4px 0 6px; }
+.today-light, .today-dot { flex: none; display: inline-block; border-radius: 50%; background: var(--line-strong); }
+.today-light { width: 18px; height: 18px; margin-top: 6px; box-shadow: 0 0 0 4px rgba(0, 0, 0, .04); }
+.today-dot { width: 10px; height: 10px; vertical-align: middle; }
+:is(.today-light, .today-dot).green { background: var(--success); }
+:is(.today-light, .today-dot).yellow { background: var(--zone-sweetspot, #d9a21b); }
+:is(.today-light, .today-dot).red { background: var(--danger); }
+.today-reasons { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+.today-sessions { list-style: none; padding: 0; margin: 8px 0 0; }
+.today-sessions li { display: flex; flex-direction: column; padding: 6px 0 6px 12px; border-left: 4px solid var(--planned); }
+.today-sessions li + li { margin-top: 8px; }
+.today-sessions li.sport-ride { border-left-color: var(--sport-ride); }
+.today-sessions li.sport-run { border-left-color: var(--sport-run); }
+.today-sessions li.sport-swim { border-left-color: var(--sport-swim); }
+.today-sessions li.sport-strength { border-left-color: var(--ochre); }
+.today-session-tag { font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+.today-session-tag b { color: var(--accent-text); }
+.today-sessions strong { font-family: var(--font-display); font-size: 18px; font-weight: 500; line-height: 1.25; }
+.today-sessions small { font-size: 12px; color: var(--muted); }
+.today-injury { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+.today-injury:first-of-type { border-top: 0; }
+.today-injury h3 { font-family: var(--font-display); font-weight: 400; font-size: 19px; margin: 4px 0; }
+.today-injury p { margin: 0; }
+.today-injury-line { font-size: 13px; margin: 8px 0 0; }
+.today-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+.today-table-wrap { overflow-x: auto; }
+.today-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.today-table th, .today-table td { text-align: left; padding: 8px 8px 8px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.today-table th { font-weight: 500; color: var(--muted); border-bottom-color: var(--ink); }
+
+/* Start page line */
+.today-strip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin: 0 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 14px; }
+.today-strip > span:not(.today-dot) { flex: 1; min-width: 180px; }
+.today-strip.open { border-color: var(--warning-line, var(--line-strong)); background: var(--warning-bg); color: var(--warning); }
+.today-strip button { font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.today-strip button:hover { border-color: var(--ink); }
+
+/* Dialog */
+.checkin-overlay { position: fixed; inset: 0; z-index: 1500; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(27, 26, 23, .45); }
+.checkin-dialog { display: flex; flex-direction: column; width: 100%; max-width: 620px; max-height: calc(100vh - 40px); overflow: hidden; border-radius: 10px; background: var(--paper); color: var(--ink); box-shadow: 0 20px 60px rgba(0, 0, 0, .3); font-family: var(--font-body); }
+.checkin-head { padding: 18px 22px 14px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.checkin-head .today-period h2 { font-size: 24px; }
+.checkin-body { flex: 1; overflow-y: auto; padding: 12px 22px 8px; }
+.checkin-body .coach-card { margin: 8px 0; padding: 16px 18px; }
+.checkin-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 22px; border-top: 1px solid var(--line); background: var(--paper); }
+.checkin-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.checkin-dialog button { font: inherit; font-size: 13px; font-weight: 600; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.checkin-dialog button:hover:not(:disabled) { border-color: var(--ink); }
+.checkin-dialog button.coach-primary { background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); }
+.checkin-dialog button:disabled { opacity: .5; cursor: not-allowed; }
+.checkin-dialog :is(button, input, textarea):focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.checkin-dialog button.checkin-link { border-color: transparent; background: none; padding: 6px 2px; font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.checkin-intro { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 4px; }
+.checkin-question { display: block; border: 0; margin: 0; padding: 10px 0; border-bottom: 1px solid var(--line-soft); min-width: 0; }
+.checkin-question legend, .checkin-question > span:first-child { display: flex; justify-content: space-between; gap: 10px; width: 100%; padding: 0; margin-bottom: 6px; font-size: 14px; font-weight: 600; }
+.checkin-question legend { float: left; }
+.checkin-question legend + * { clear: both; }
+.checkin-question legend span, .checkin-question small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.checkin-chips { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
+.checkin-chips.wrap { display: flex; flex-wrap: wrap; }
+.checkin-dialog .checkin-chip { min-height: 40px; padding: 6px; font-size: 12.5px; font-weight: 500; line-height: 1.15; }
+.checkin-chips.wrap .checkin-chip { padding: 6px 12px; }
+.checkin-dialog .checkin-chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.checkin-injury { margin: 6px 0; padding: 4px 14px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.checkin-injury .checkin-question:last-of-type { border-bottom: 0; }
+.checkin-dialog .checkin-healed { margin-top: 8px; }
+.checkin-range { display: flex; align-items: center; gap: 12px; }
+.checkin-range input { flex: 1; accent-color: var(--accent); }
+.checkin-range output { min-width: 52px; text-align: right; font-family: var(--font-display); font-size: 22px; }
+.checkin-pain > span:first-child { display: flex; }
+.checkin-notes textarea { width: 100%; min-height: 60px; resize: vertical; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 4px; font: inherit; font-size: 14px; background: var(--surface); color: var(--ink); }
+.checkin-missing { font-size: 12px; color: var(--danger); }
+
+@media (max-width: 720px) {
+  .checkin-overlay { padding: 0; }
+  .checkin-dialog { max-height: none; height: 100%; border-radius: 0; }
+  .checkin-head, .checkin-body, .checkin-foot { padding-left: 14px; padding-right: 14px; }
+  .checkin-dialog .checkin-chip { font-size: 11.5px; padding: 4px 3px; }
+  .today-period h2 { font-size: 22px; }
+  .today-injury { flex-direction: column; align-items: flex-start; }
+}
+.ai-coach .today-readiness h3 { font-family: var(--font-display); font-weight: 400; font-size: 22px; margin: 4px 0 6px; }
+.ai-coach .today-injury h3 { font-family: var(--font-display); font-weight: 400; font-size: 19px; margin: 4px 0; }

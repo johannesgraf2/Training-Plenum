@@ -77,9 +77,9 @@ DEFAULT_PROFILE = {
     'availability': {'preferredWeeklyHours': None, 'indoorWeeklyHours': None, 'absoluteMaxWeeklyHours': None,
                      'outdoorMonths': [], 'defaultAvailability': dict.fromkeys(DAYS), 'trainingDaysPerWeek': None,
                      'noConsecutiveRestDays': False, 'minRideMinutes': {'indoor': None, 'outdoor': None}},
-    'preferences': {'preferredRestDay': None, 'preferredLongSessionDay': None, 'gymAvailability': False},
+    'preferences': {'preferredRestDay': None, 'preferredLongSessionDay': None, 'gymAvailability': False, 'dailyCheckIn': True},
     'limitations': {'notes': ''}, 'currentState': {'notes': ''},
-    'weeklyOverrides': [], 'dailyOverrides': [], 'checkIns': [],
+    'weeklyOverrides': [], 'dailyOverrides': [], 'checkIns': [], 'injuries': [],
 }
 PROFILE_SCHEMA = obj({
     'goal': obj({'type': {'enum': GOAL_TYPES},
@@ -92,7 +92,7 @@ PROFILE_SCHEMA = obj({
                          'trainingDaysPerWeek': num(1, 7, True, True), 'noConsecutiveRestDays': {'type': 'boolean'},
                          'minRideMinutes': obj({place: num(0, 600, True, True) for place in ('indoor', 'outdoor')})}),
     'preferences': obj({'preferredRestDay': {'enum': [None, *DAYS]}, 'preferredLongSessionDay': {'enum': [None, *DAYS]},
-                        'gymAvailability': {'type': 'boolean'}}),
+                        'gymAvailability': {'type': 'boolean'}, 'dailyCheckIn': {'type': 'boolean'}}),
     'limitations': obj({'notes': text(1500)}), 'currentState': obj({'notes': text(1500)}),
 })
 
@@ -112,6 +112,8 @@ def complete_profile(value):
     result['preferences'] = {key: value for key, value in preferences.items() if key not in LEGACY_PREFERENCES}
     for section in ('availability', 'preferences'):
         result[section] = {**copy.deepcopy(DEFAULT_PROFILE[section]), **result.get(section, {})}
+    for key in ('weeklyOverrides', 'dailyOverrides', 'checkIns', 'injuries'):
+        result.setdefault(key, [])
     return result
 
 

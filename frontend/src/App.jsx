@@ -4,6 +4,7 @@ import ActivityDetail from './ActivityDetail';
 import DataHub, { timeAgo } from './DataHub';
 import Dashboard from './Dashboard';
 import AICoach, { isoWeek } from './AICoach';
+import { CheckInDialog, loadToday, shouldAskCheckIn } from './CoachToday';
 import Home from './Home';
 import UserMenu from './UserMenu';
 import WhoopSync from './WhoopSync';
@@ -75,7 +76,12 @@ export default function App() {
   const [calMonth, setCalMonth] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1); });
   const [user, setUser] = useState(null);
   const [profileVersion, setProfileVersion] = useState(0);
-  const [coachTab, setCoachTab] = useState({ tab: 'plan', version: 0 });
+  const [coachTab, setCoachTab] = useState({ tab: 'today', version: 0 });
+  // The morning check-in opens by itself on the first visit of the day; the coach and the start page share its result.
+  const [today, setToday] = useState(null);
+  const [checkInOpen, setCheckInOpen] = useState(false);
+  const [todayVersion, setTodayVersion] = useState(0);
+  const [coachAdjust, setCoachAdjust] = useState(0);
   // The coach stays mounted once opened, so a running proposal or week planning goes on while the athlete
   // looks at other pages. The nav shows that it is working, and that a result waits once it is done.
   const [coachOpened, setCoachOpened] = useState(false);
@@ -158,6 +164,21 @@ export default function App() {
     return () => { clearInterval(timer); window.removeEventListener('focus', loadWhoop); };
   }, [loadWhoop]);
 
+  const refreshToday = useCallback(async ask => {
+    try {
+      const view = await loadToday(API);
+      setToday(view);
+      if (ask && shouldAskCheckIn(view)) setCheckInOpen(true);
+    } catch { /* the coach is optional; without it the app works as before */ }
+  }, []);
+  useEffect(() => {
+    refreshToday(true);
+    // A tab left open overnight asks again on the next morning.
+    const onFocus = () => refreshToday(true);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshToday]);
+
   // Garmin Connect state for the header button. Optional like WHOOP: without it nothing changes.
   // New activities from the automatic sync or from loading the history show up without a reload.
   const garminStamp = useRef(null);
@@ -205,7 +226,9 @@ export default function App() {
     setCoachBusy(label);
     if (!label && !coachVisibleRef.current) setCoachDone(true);
   };
-  const openCoachPlan = () => { setCoachTab(t => ({ tab: 'plan', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
+  const openCoachPlan = () => { setCoachTab(t => ({ tab: 'today', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
+  const checkInSaved = view => { setToday(view); setTodayVersion(v => v + 1); };
+  const adjustAfterCheckIn = () => { setCheckInOpen(false); setCoachAdjust(v => v + 1); openCoachPlan(); };
   const openCoachProfile = () => { setCoachTab(t => ({ tab: 'profile', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
 
   const todayStr = new Date().toDateString();
@@ -332,7 +355,8 @@ export default function App() {
           <Home apiBase={API} activities={activities} plannedWorkouts={plannedWorkouts} workoutLoadError={workoutLoadError}
             onReloadWorkouts={reloadWorkouts} onOpenActivity={openActivity} onOpenWorkout={setWorkoutEditor}
             onEditGoal={openCoachProfile} bestEffortsYear={calMonth.getFullYear()}
-            whoopDays={whoopDays} onOpenWhoop={() => setShowWhoop(true)} onOpenCoach={openCoachPlan} />
+            whoopDays={whoopDays} onOpenWhoop={() => setShowWhoop(true)} onOpenCoach={openCoachPlan}
+            today={today} onOpenCheckIn={() => setCheckInOpen(true)} />
         ) : page === 'calendar' ? (
           <div className="calendar">
             <div className="calendar-toolbar">
@@ -496,8 +520,9 @@ export default function App() {
           </div>
         ) : null}
         {coachOpened && <div hidden={!coachVisible}>
-          <AICoach initialTab={coachTab.tab} tabVersion={coachTab.version} apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
-            onBusyChange={coachBusyChanged}
+          <AICoach initialTab={coachTab.tab} tabVersion={coachTab.version} adjustVersion={coachAdjust} todayVersion={todayVersion}
+            apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
+            onBusyChange={coachBusyChanged} onTodayChanged={setToday}
             onWorkoutsChanged={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })} />
         </div>}
       </main>
@@ -513,6 +538,7 @@ export default function App() {
         onSynced={reloadActivities}
         onClose={imported => { setHub(null); loadGarmin(); if (imported) { setSelected(null); setPage('dashboard'); window.location.hash = ''; } }}
         onOpen={id => { setHub(null); loadGarmin(); openActivity({ id }); }} />}
+      {checkInOpen && today && <CheckInDialog apiBase={API} today={today} onClose={() => setCheckInOpen(false)} onSaved={checkInSaved} onAdjust={adjustAfterCheckIn} />}
       {showWhoop && <WhoopSync apiBase={API} onClose={() => { setShowWhoop(false); loadWhoop(); }} />}
 
       {/* Toast */}

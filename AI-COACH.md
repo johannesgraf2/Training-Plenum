@@ -162,6 +162,26 @@ Powerzonen verwenden die konfigurierte aktuelle FTP, HF-Zonen die aktuelle maxim
 
 Stunden, Distanz und Höhenmeter sind bei teilweise fehlenden Angaben bekannte Teilsummen; fehlende Sessionwerte werden in `dataQuality` gezählt. Cycling-TSS eines Zeitraums wird nur summiert, wenn jede relevante Rad-Session die vorhandene Zuverlässigkeitsprüfung erfüllt: gültige Dauer, Normalized-Power-Faktor und Power-Abdeckung innerhalb von 95–105 % der Timerdauer. Fehlende FTP, unbekannte Dauer oder unvollständige Power führen zu `null` mit Begründung. Für andere Sportarten wird keine TSS erfunden. Die aktuellen Schwellen gelten auch für historische Daten; es existiert keine FTP-Zeitreihe.
 
+## Morgen-Check-in und Tagesampel
+
+Beim ersten Öffnen am Tag erscheint der Morgen-Check-in, solange es für heute noch keinen gibt. **Später** schließt ihn bis zum nächsten Tag; die Startseite und der Tab **Heute** im Coach zeigen ihn weiter als offen. Im Athletenprofil lässt sich das automatische Öffnen abschalten (`preferences.dailyCheckIn`).
+
+Oben steht, wo der Tag in der Saison liegt: Trainingsblock mit Woche X von N, Belastungs- oder Entlastungswoche, Wochenziel und Fokus, der Saisonbalken mit Markierung für heute, die Wochen bis zum Ziel und – mit WHOOP – Readiness und Schlaf. Danach folgen sieben Fragen zum Antippen, jeweils 1–5: Wohlbefinden (sehr schlecht – ausgezeichnet), Erholung (erschöpft – frisch), Stress (entspannt – sehr gestresst), Muskelkater (keiner – extrem), Stimmung (negativ – euphorisch), Ernährung am Vortag (zu wenig – passend – zu viel) und Alkohol am Vorabend (nein, 1–2 Getränke, mehr).
+
+**Beschwerden** werden einmal ausführlich erfasst: Region (Fuß, Knöchel, Schienbein, Wade, Knie, Oberschenkel, Hüfte, Rücken, Schulter, Ellbogen/Hand), Seite, Schmerz 0–10, wann es wehtut (während, außerhalb der Belastung oder beides), Beginn (sofort beim Start, im Verlauf, erst danach) und die gewünschte Auswirkung (normal trainieren, anpassen, pausieren). Danach bleibt die Beschwerde aktiv, und der Check-in fragt nur noch nach dem Verlauf (besser, gleich, schlechter) und dem Schmerz heute, bis sie als ausgeheilt markiert wird. Die Region bestimmt die betroffenen Sportarten: Fuß bis Hüfte Laufen, das Knie Laufen und Radfahren, Schulter und Arm Schwimmen; der Rücken senkt die Belastung allgemein.
+
+Die **Tagesampel** rechnet `backend/coach_wellness.py` mit festen Regeln, ohne KI:
+
+| Stufe | Auslöser |
+| --- | --- |
+| Rot | Wohlbefinden sehr schlecht; eine Beschwerde mit Schmerz ab 5, die sofort bei Belastung einsetzt oder bei der du pausieren willst; drei gelbe Signale zusammen. |
+| Gelb | Wohlbefinden schlecht, erschöpft, sehr hoher Stress, extremer Muskelkater, Alkohol (mehr als 1–2 Getränke), WHOOP-Readiness rot, Schmerz 3–4 oder „anpassen“. Vor einer harten Einheit zählen zusätzlich: müde, hoher Stress, starker Muskelkater, 1–2 Getränke; vor harten oder langen Einheiten auch zu wenig gegessen. |
+| Grün | Keine dieser Signale. Leichte Hinweise (z. B. etwas wenig gegessen, Schmerz unter 3) erscheinen als Notiz. |
+
+Eine schwere Beschwerde (Rot) sperrt ihre Sportarten serverseitig: Neue oder geänderte Einheiten ab heute mit einer betroffenen Sportart werden abgelehnt, bis die Beschwerde abklingt oder ausgeheilt ist. Bei Gelb oder Rot bietet der Check-in **Woche anpassen lassen** an. Das erstellt einen Wochen-Patch mit `trigger: "checkIn"`; die KI bekommt Ampel und Beschwerden als `checkInTrigger` und `selfReported.injuries` und muss heute entlasten, betroffene Einheiten durch eine andere Sportart mit gleichem Ziel ersetzen und darf keinen Umfang nachholen. Wie jeder Vorschlag wird er erst mit der Bestätigung gespeichert.
+
+Der Coach ist in **Heute** (Ampel, heutige Einheiten, Beschwerden), **Woche** (Wochenplan, Wochenabschluss, Ausnahmen), **Saison** (Saisonplan und Trainingsblöcke), **Rückblick** (Kennzahlen und Check-in-Verlauf), **Athletenprofil** und **AI Provider** gegliedert.
+
 ## Verfügbarkeit, Templates und Planänderungen
 
 Die Priorität lautet **Standardwoche → Wochen-Override → Tages-Override**. Wochen werden als `YYYY-Www`, Tage als `YYYY-MM-DD` gespeichert. `available: false` oder ein Tages-`action: "skip"` ergibt null verfügbare Minuten. Overrides ändern die Standardwerte nicht. Die Verfügbarkeit ist ein Zeitrahmen, keine Pflicht: Im Profil legst du zusätzlich fest, an wie vielen Tagen pro Woche du trainieren willst, ob gerade Winter (Rolle), Sommer (draußen) oder gemischt ist, und wie lange eine normale Radeinheit auf der Rolle bzw. draußen mindestens dauert (bei „gemischt“ gilt der kürzere Wert). Regenerationsfahrten sind ausgenommen. TrainHub lehnt AI-Wochen ab, die mehr Trainingstage oder kürzere Radeinheiten enthalten; bestehende, unveränderte Einheiten zählen nicht als Verstoß. Wochen-Overrides werden für höchstens 104 Wochen, Tages-Overrides für 366 Tage und Check-ins für 90 Datumswerte aufbewahrt.
@@ -203,7 +223,9 @@ Alle schreibenden JSON-Anfragen verwenden `Content-Type: application/json`. Die 
 | PUT | `/api/coach/weeks/<week>/missed` | `{"missedSessions":["id"]}` speichert den Wochenrückblick ohne neue Planung; die IDs gehören zu dieser Woche. |
 | PUT | `/api/coach/weekly-overrides/<week>` | `{"overrides":{"thu":{"available":false},"sat":{"maxMinutes":300,"preferLong":true}},"note":"Reisewoche"}`. |
 | PUT | `/api/coach/daily-overrides/<date>` | Zum Beispiel `{"maxMinutes":45,"action":"reduce","note":"Wenig Zeit"}`. |
-| POST | `/api/coach/check-ins` | Datum, `fatigue`, `motivation`, `stress`, `sleepQuality`, `soreness` jeweils 1–5 sowie `notes`. |
+| GET / POST | `/api/coach/check-ins` | GET: Check-ins und Beschwerden eines Zeitraums (`from`, `to`, Standard die letzten 28 Tage). POST: Morgen-Check-in mit `date`, `wellbeing`, `recovery`, `stress`, `soreness`, `mood`, `nutrition` (je 1–5), `alcohol` (0–2), `notes`, `newInjury` (`region`, `side`, `pain` 0–10, `timing`, `onset`, `impact`) und `injuryUpdates` (`id`, `pain`, `trend`, `healed`); Antwort ist die Tagesansicht. Der frühere Check-in mit `fatigue`, `motivation`, `stress`, `sleepQuality`, `soreness` bleibt möglich. |
+| GET | `/api/coach/today` | Tagesansicht (`date` optional): Check-in, Tagesampel, aktive Beschwerden, Einheiten des Tages, Block und Saison (`period`), WHOOP und ob die Woche geplant ist. |
+| PUT | `/api/coach/injuries/<id>` | `{"status":"healed"}` markiert eine Beschwerde als ausgeheilt. |
 | GET / PUT / DELETE | `/api/ai-provider` | Status lesen, `{"provider":"openai","model":"gpt-4.1-mini","reasoningEffort":null,"apiKey":"…"}` speichern (`reasoningEffort`: `null` oder `none`, `minimal`, `low`, `medium`, `high`, `xhigh`) oder gespeicherten Key entfernen. Beim Modellwechsel kann `apiKey` entfallen. |
 | POST | `/api/ai-provider/test` | `{}`; Zugang und Modell prüfen. |
 | GET | `/api/coach/templates` | Template-IDs, Defaults, Parametergrenzen und Dauerregeln. |

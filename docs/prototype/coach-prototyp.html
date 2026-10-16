@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Coach · Klickbarer Prototyp · Training Plēnum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --font-display: 'Newsreader', Georgia, serif; --font-body: 'Instrument Sans', system-ui, sans-serif;
+  --paper: #f3efe6; --surface: #fbf9f4; --surface-sunk: #eee9de; --tint: #e9e3d6; --highlight: #f1e2d3; --track: #e4ddce;
+  --ink: #1b1a17; --ink-2: #3f3b34; --muted: #5f5a50; --line: #d8d1c2; --line-soft: #e6dfd0; --line-strong: #bfb6a3;
+  --accent: #c2410c; --accent-text: #9a3409; --accent-bg: #f6e3d6; --btn-bg: #1b1a17; --btn-fg: #f3efe6;
+  --blue: #2b4c7e; --green: #4d6b2f; --teal: #2a7a7b; --ochre: #a8671e; --planned: #8c857a;
+  --success: #3f6b2a; --success-bg: #e7eedc; --success-line: #bfd0a8; --danger: #a3291b; --danger-bg: #f7e1da; --danger-line: #e4b7aa;
+  --warning: #8a5a12; --warning-bg: #f5e9cf; --warning-line: #e2cc98;
+  --shadow: 0 1px 2px rgba(27,26,23,.04), 0 10px 30px rgba(27,26,23,.06);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.45; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:is(button, input, textarea):focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 400; margin: 0; letter-spacing: -.01em; }
+
+/* Prototype strip */
+.proto { background: var(--ink); color: var(--paper); font-size: 13px; padding: 8px 20px; display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+.proto b { letter-spacing: .08em; font-size: 11px; color: #f6c9a8; }
+.proto .grp { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.proto .grp > span { color: #bdb6a8; margin-right: 4px; }
+.proto button { border: 1px solid #5a554b; background: transparent; color: var(--paper); border-radius: 3px; padding: 4px 9px; font-size: 12px; }
+.proto button.on { background: var(--paper); color: var(--ink); border-color: var(--paper); }
+.proto-hint { background: #2d2b26; color: #e8e2d6; font-size: 13px; padding: 8px 20px; }
+.proto-hint em { color: #f6c9a8; font-style: normal; font-weight: 600; }
+
+/* App header */
+.app-header { display: flex; align-items: center; gap: 48px; min-height: 64px; padding: 0 40px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.wordmark { font-family: var(--font-display); font-style: italic; font-size: 26px; font-weight: 500; }
+.wordmark em { color: var(--accent-text); }
+.app-nav { display: flex; gap: 26px; color: var(--muted); font-size: 15px; }
+.app-nav span.on { color: var(--ink); font-weight: 600; text-decoration: underline 2px var(--accent); text-underline-offset: 8px; }
+.avatar { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.avatar i { width: 32px; height: 32px; border-radius: 50%; background: var(--tint); display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 600; }
+
+main { max-width: 880px; margin: 0 auto; padding: 24px 20px 120px; }
+.crumb { font-size: 13px; color: var(--muted); }
+.title-row { display: flex; align-items: baseline; gap: 12px; margin: 4px 0 14px; }
+.title-row h1 { font-size: 32px; }
+.badge { font-size: 10px; font-weight: 600; letter-spacing: .04em; padding: 4px 7px; border-radius: 2px; background: var(--accent-bg); color: var(--accent-text); }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 20px; overflow-x: auto; }
+.tabs button { border: 0; background: none; padding: 12px 14px; font-size: 14px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs button.on { color: var(--accent-text); border-bottom-color: var(--accent); }
+.tabs .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-left: 6px; vertical-align: middle; }
+
+/* Cards */
+.card { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 6px; padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
+.card.sunk { background: var(--surface-sunk); box-shadow: none; border-color: var(--line); }
+.eyebrow { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: none; }
+.card h2 { font-size: 24px; margin: 2px 0 6px; }
+.card h3 { font-size: 19px; margin: 0 0 8px; }
+.muted { color: var(--muted); font-size: 13px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 4px; padding: 9px 14px; font-size: 14px; font-weight: 500; }
+.btn:hover { border-color: var(--ink); }
+.btn.primary { background: var(--btn-bg); color: var(--btn-fg); border-color: var(--btn-bg); }
+.btn.primary:hover { background: #000; }
+.btn.ghost { border-color: transparent; background: none; text-decoration: underline; text-underline-offset: 3px; padding-left: 4px; padding-right: 4px; }
+.btn.small { padding: 6px 10px; font-size: 13px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Periodisation */
+.period-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.period-head .facts { font-size: 14px; color: var(--ink-2); }
+.whoop { display: flex; gap: 16px; font-size: 13px; color: var(--muted); }
+.whoop strong { display: block; font-family: var(--font-display); font-size: 22px; font-weight: 500; color: var(--ink); line-height: 1.1; }
+.season-bar { position: relative; display: flex; height: 22px; border-radius: 3px; overflow: hidden; margin: 14px 0 6px; gap: 2px; }
+.season-bar > div { height: 100%; color: #fff; font-size: 11px; font-weight: 600; padding: 3px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.season-bar > div.past { opacity: .45; }
+.season-bar .now { position: absolute; top: -3px; bottom: -3px; width: 3px; background: var(--ink); border-radius: 2px; padding: 0; }
+.season-legend { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+
+/* Ampel */
+.ampel { display: flex; gap: 14px; align-items: flex-start; }
+.light { flex: none; width: 18px; height: 18px; border-radius: 50%; margin-top: 6px; box-shadow: 0 0 0 4px rgba(0,0,0,.04); }
+.light.gruen { background: #4f8a2e; } .light.gelb { background: #d9a21b; } .light.rot { background: #c0331f; }
+.ampel-card.gruen { border-left: 4px solid #4f8a2e; } .ampel-card.gelb { border-left: 4px solid #d9a21b; } .ampel-card.rot { border-left: 4px solid #c0331f; }
+.reasons { margin: 6px 0 0; padding-left: 18px; font-size: 14px; color: var(--ink-2); }
+.banner { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 14px 18px; border: 1px solid var(--warning-line); background: var(--warning-bg); color: var(--warning); border-radius: 6px; margin-bottom: 16px; font-size: 14px; }
+
+/* Sessions */
+.sess { border-left: 4px solid var(--planned); padding: 6px 0 6px 12px; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.sess + .sess { margin-top: 8px; }
+.sess .tag { font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+.sess strong { display: block; font-family: var(--font-display); font-size: 18px; font-weight: 500; line-height: 1.2; }
+.sess small { display: block; color: var(--muted); font-size: 13px; }
+.sp-swim { border-color: var(--teal); } .sp-ride { border-color: var(--blue); } .sp-run { border-color: var(--green); }
+.sp-strength { border-color: var(--ochre); } .sp-rest { border-color: var(--line-strong); }
+.sp-brick { border-image: linear-gradient(var(--blue) 60%, var(--green) 60%) 1; }
+.sess .hard { color: var(--accent-text); }
+.status { font-size: 12px; white-space: nowrap; text-align: right; color: var(--muted); }
+.status.done { color: var(--success); } .status.missed { color: var(--danger); } .status.today { color: var(--accent-text); font-weight: 600; }
+.sess[draggable="true"] { cursor: grab; }
+.sess.replaced strong::after { content: ' ↺'; color: var(--accent-text); font-size: 14px; }
+
+/* Week */
+.week-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.week-head h2 { font-size: 26px; }
+.meter { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; margin: 8px 0 2px; }
+.meter > div { height: 100%; background: var(--ink-2); }
+.days { border-top: 1px solid var(--ink); margin-top: 12px; }
+.dayrow { display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; align-items: center; padding: 12px 6px; border-bottom: 1px solid var(--line); transition: background .15s; }
+.dayrow.today { background: var(--highlight); }
+.dayrow.past { opacity: .72; }
+.dayrow.over { background: var(--accent-bg); outline: 2px dashed var(--accent); }
+.dayname b { display: block; font-size: 15px; } .dayname span { font-size: 12px; color: var(--muted); }
+.freeday { color: var(--muted); font-size: 14px; font-style: italic; }
+.dayact { display: flex; gap: 6px; }
+
+/* Coach input */
+.ask { display: flex; gap: 8px; margin-top: 16px; }
+.ask textarea { flex: 1; min-height: 46px; resize: vertical; border: 1px solid var(--line-strong); border-radius: 4px; padding: 11px 12px; font: inherit; font-size: 15px; background: #fff; }
+.examples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.examples button { border: 1px dashed var(--line-strong); background: none; border-radius: 14px; padding: 4px 10px; font-size: 12px; color: var(--ink-2); }
+.examples button:hover { border-color: var(--ink); }
+
+/* Proposal */
+.proposal { border: 1px solid var(--ink-2); }
+.proposal .src { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 7px; border-radius: 2px; background: var(--tint); margin-right: 6px; }
+.proposal .src.coach { background: var(--accent-bg); color: var(--accent-text); }
+.diff { margin-top: 12px; border-top: 1px solid var(--line); }
+.diff-row { display: grid; grid-template-columns: 34px 1fr 20px 1fr; gap: 8px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.diff-row .before { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(0,0,0,.25); }
+.diff-row .after { font-weight: 500; }
+.diff-row small { display: block; font-weight: 400; color: var(--muted); text-decoration: none; }
+.why { margin-top: 12px; font-size: 14px; background: var(--surface-sunk); border-radius: 4px; padding: 10px 14px; }
+.why ul { margin: 4px 0 0; padding-left: 18px; }
+.hinweise { margin-top: 8px; font-size: 13px; color: var(--warning); }
+.warn { padding: 10px 14px; background: var(--warning-bg); color: var(--warning); border-radius: 4px; font-size: 14px; margin: 10px 0 0; }
+.coach-msg { font-size: 14px; }
+.gen { display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 14px; }
+.spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Modal & sheet */
+.overlay { position: fixed; inset: 0; background: rgba(27,26,23,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+.modal { background: var(--paper); width: 100%; max-width: 600px; max-height: calc(100vh - 40px); overflow-y: auto; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.modal-head { background: var(--surface); padding: 20px 22px 14px; border-bottom: 1px solid var(--line); }
+.modal-head h2 { font-size: 28px; }
+.modal-body { padding: 16px 22px 8px; }
+.modal-foot { position: sticky; bottom: 0; background: var(--paper); border-top: 1px solid var(--line); padding: 12px 22px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.q { padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.q-label { font-size: 14px; font-weight: 600; margin-bottom: 6px; display: flex; justify-content: space-between; }
+.q-label span { font-weight: 400; color: var(--muted); font-size: 12px; }
+.chips { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
+.chips.wrap { display: flex; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 4px; min-height: 40px; padding: 6px 6px; font-size: 12.5px; line-height: 1.15; }
+.chips.wrap .chip { padding: 6px 12px; }
+.chip:hover { border-color: var(--ink); }
+.chip.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.injury { margin: 6px 0 4px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.injury .q:last-child { border-bottom: 0; }
+.range { display: flex; gap: 12px; align-items: center; }
+.range input { flex: 1; accent-color: var(--accent); }
+.range output { font-family: var(--font-display); font-size: 22px; min-width: 52px; text-align: right; }
+.missing { font-size: 12px; color: var(--danger); }
+.sheet-wrap { align-items: flex-end; }
+.sheet { background: var(--paper); width: 100%; max-width: 600px; border-radius: 12px 12px 0 0; padding: 18px 22px 22px; max-height: 85vh; overflow-y: auto; }
+@media (min-width: 700px) { .sheet-wrap { align-items: center; } .sheet { border-radius: 10px; } }
+.sheet h3 { font-size: 22px; margin-bottom: 4px; }
+.opt { display: block; width: 100%; text-align: left; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 6px; padding: 12px 14px; margin-top: 8px; }
+.opt:hover { border-color: var(--ink); }
+.opt b { display: block; font-size: 15px; } .opt span { font-size: 13px; color: var(--muted); }
+.opt.open { border-color: var(--ink); }
+.sub { padding: 8px 0 2px; }
+.sub .lbl { font-size: 12px; font-weight: 600; color: var(--muted); margin: 8px 0 4px; }
+
+/* Misc */
+.mix { display: flex; height: 26px; border-radius: 3px; overflow: hidden; margin: 10px 0 4px; }
+.mix > div { color: #fff; font-size: 12px; font-weight: 600; padding: 4px 8px; white-space: nowrap; }
+.blocks { list-style: none; padding: 0; margin: 10px 0 0; }
+.blocks li { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.blocks li i { width: 12px; height: 12px; border-radius: 2px; }
+.blocks li.cur { font-weight: 600; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 500; font-size: 12px; border-bottom-color: var(--ink); }
+.pill { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 11px 18px; border-radius: 6px; font-size: 14px; z-index: 80; box-shadow: 0 8px 24px rgba(0,0,0,.25); max-width: calc(100vw - 32px); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
+.field { font-size: 13px; } .field span { display: block; color: var(--muted); font-size: 12px; } .field b { font-family: var(--font-display); font-size: 20px; font-weight: 500; }
+.next-list .sess { margin-top: 8px; }
+.closing td.missed { color: var(--danger); } .closing td.done { color: var(--success); }
+
+@media (max-width: 720px) {
+  .app-header { padding: 0 16px; gap: 16px; min-height: 54px; }
+  .app-nav, .avatar span { display: none; }
+  .wordmark { font-size: 22px; }
+  main { padding: 16px 12px 120px; }
+  .title-row h1 { font-size: 26px; }
+  .card { padding: 16px; }
+  .dayrow { grid-template-columns: 44px 1fr; }
+  .dayact { grid-column: 2; }
+  .overlay { padding: 0; }
+  .modal { max-height: 100vh; height: 100%; border-radius: 0; }
+  .modal-head, .modal-body, .modal-foot { padding-left: 14px; padding-right: 14px; }
+  .chip { font-size: 11.5px; padding: 4px 3px; }
+  .diff-row { grid-template-columns: 30px 1fr; }
+  .diff-row .arrow { display: none; }
+  .diff-row .after { grid-column: 2; }
+  .grid2 { grid-template-columns: 1fr; }
+  .proto { padding: 8px 12px; } .proto-hint { padding: 8px 12px; }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+'use strict';
+// ---------- Static data ----------
+const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const DAY_NAMES = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+const DATES = [19, 20, 21, 22, 23, 24, 25];
+const SPORT = { swim: 'Schwimmen', ride: 'Rad', run: 'Lauf', brick: 'Koppel', strength: 'Kraft', rest: 'Ruhetag' };
+const SPORT_NOUN = { swim: 'Schwimmen', ride: 'Radfahren', run: 'Laufen', strength: 'Krafttraining' };
+const SPORT_COLOR = { swim: 'var(--teal)', ride: 'var(--blue)', run: 'var(--green)', strength: 'var(--ochre)' };
+const WHOOP = [
+  { rec: 64, sleep: '7:10', hrv: 68 }, { rec: 58, sleep: '6:40', hrv: 61 }, { rec: 41, sleep: '5:55', hrv: 49 },
+  { rec: 66, sleep: '7:20', hrv: 66 }, { rec: 72, sleep: '7:45', hrv: 74 }, { rec: 61, sleep: '8:10', hrv: 63 }, { rec: 58, sleep: '6:50', hrv: 62 }];
+const SCENARIOS = [
+  { day: 0, hint: 'Check-in ausfüllen → <em>Woche</em> → eintippen: „Mittwoch kann ich nicht, dafür Donnerstag – plan da was ein.“ Oder eine Einheit per Drag & Drop / „Kann nicht“ verschieben, oder am freien Donnerstag „+ Einheit“.' },
+  { day: 2, hint: 'Im Check-in <em>Schmerzen: ja</em> wählen, z. B. Knöchel rechts, 6/10, sofort beim Start → der Coach baut die Läufe der Woche um.' },
+  { day: 4, hint: 'Hast du am Mi eine Beschwerde eingetragen, fragt der Check-in nur noch nach dem Verlauf. Dann <em>Woche</em> → „Nächste Woche“ ansehen, übernehmen oder mit Wunsch neu planen.' },
+  { day: 6, hint: '<em>Woche</em> → „Woche abschließen“: geplante Einheiten sind schon automatisch den Aktivitäten zugeordnet, du korrigierst nur.' }];
+const LIB = {
+  swim: { easy: ['Technik + Grundlage', 'Drills · 1.800 m locker'], hard: ['CSS 5×300', '1:52/100 m · 30 s Pause · 2.400 m'], long: ['Grundlage lang', '3.000 m durchgehend Z2'] },
+  ride: { easy: ['Grundlage', 'Z2 · 165–185 W · Trittfrequenz 90'], hard: ['Schwelle 3×12 min', '250–265 W · 5 min Pause'], long: ['Lange Ausfahrt', 'Z2 · ruhig und gleichmäßig'] },
+  run: { easy: ['Lauf locker', 'Z2 · 5:20–5:40/km'], hard: ['Schwelle 3×10 min', '4:25–4:35/km · 3 min Trabpause'], long: ['Langer Lauf', 'Z2 · 5:20–5:40/km'] },
+  strength: { easy: ['Kraft & Mobilität', 'Rumpf, Hüfte, Schulterstabilität'], hard: ['Kraft & Mobilität', 'Rumpf, Hüfte, Schulterstabilität'], long: ['Kraft & Mobilität', 'Rumpf, Hüfte, Schulterstabilität'] } };
+const REGIONS = ['Fuß', 'Knöchel', 'Schienbein', 'Wade', 'Knie', 'Oberschenkel', 'Hüfte', 'Rücken', 'Schulter', 'Ellbogen/Hand'];
+const REGION_SPORTS = { 'Fuß': ['run'], 'Knöchel': ['run'], 'Schienbein': ['run'], 'Wade': ['run'], 'Knie': ['run'], 'Oberschenkel': ['run'], 'Hüfte': ['run'], 'Rücken': [], 'Schulter': ['swim'], 'Ellbogen/Hand': ['swim'] };
+const QUESTIONS = [
+  { k: 'wohl', label: 'Wohlbefinden', opts: ['sehr schlecht', 'schlecht', 'ok', 'gut', 'ausgezeichnet'] },
+  { k: 'erholung', label: 'Erholung', opts: ['erschöpft', 'müde', 'normal', 'erholt', 'frisch'] },
+  { k: 'stress', label: 'Stress', opts: ['entspannt', 'eher ruhig', 'mittel', 'hoch', 'sehr gestresst'] },
+  { k: 'kater', label: 'Muskelkater', opts: ['keiner', 'leicht', 'mittel', 'stark', 'extrem'] },
+  { k: 'stimmung', label: 'Stimmung', opts: ['negativ', 'gedrückt', 'neutral', 'gut', 'euphorisch'] },
+  { k: 'ernaehrung', label: 'Ernährung gestern', opts: ['zu wenig', 'etwas wenig', 'passend', 'etwas viel', 'zu viel'] },
+  { k: 'alkohol', label: 'Alkohol gestern', opts: ['nein', '1–2 Getränke', 'mehr'] }];
+const INJ_FIELDS = [
+  { k: 'region', label: 'Wo?', opts: REGIONS, wrap: true },
+  { k: 'side', label: 'Seite', opts: ['links', 'rechts', 'beide'] },
+  { k: 'timing', label: 'Wann tut es weh?', opts: ['während Belastung', 'außerhalb', 'beides'] },
+  { k: 'onset', label: 'Beginn', opts: ['sofort beim Start', 'im Verlauf', 'erst danach'] },
+  { k: 'impact', label: 'Auswirkung aufs Training', opts: ['normal', 'anpassen', 'pausieren'] }];
+
+let uid = 1;
+const s = (sport, title, detail, min, hard = false, extra = {}) => ({ id: 's' + uid++, sport, title, detail, min, hard, ...extra });
+const day = (avail, ...sessions) => ({ avail, sessions });
+const GOALS = {
+  tri: { name: 'Olympische Distanz', kind: 'Triathlon finishen', date: new Date(2027, 5, 13), dateLabel: '13. Juni 2027', target: 480,
+    mix: [['swim', 25], ['ride', 45], ['run', 30]], sports: ['swim', 'ride', 'run'], focus: 'Schwelle Lauf · Koppeltraining',
+    week: () => [day(60, s('swim', 'Technik + Grundlage', '4×50 Technik · 6×200 locker (2:05/100 m) · 2.000 m', 45)),
+      day(120, s('ride', 'Grundlage', 'Z2 · 165–185 W · Trittfrequenz 90', 90)),
+      day(75, s('run', 'Schwelle 3×10 min', '4:25–4:35/km · 3 min Trabpause', 50, true)),
+      day(90),
+      day(75, s('swim', 'CSS 5×300', '1:52/100 m · 30 s Pause · 2.400 m', 55, true)),
+      day(180, s('brick', 'Koppeleinheit', 'Rad 2:00 Z2 → direkt Lauf 20 min locker', 140, false, { parts: [['ride', 120], ['run', 20]] })),
+      day(120, s('run', 'Langer Lauf', 'Z2 · 5:20–5:40/km', 75))],
+    next: () => [day(60, s('swim', 'Technik', 'Drills · 1.600 m locker', 40)), day(90, s('ride', 'Grundlage', 'Z2 · 165–185 W', 60)),
+      day(75, s('run', 'Lauf locker', 'Z2 · mit 4 Steigerungen', 40)), day(90), day(75, s('swim', 'CSS kurz 4×200', '1:52/100 m · 30 s Pause', 45, true)),
+      day(180, s('ride', 'Grundlage', 'Z2 · flach', 90)), day(120, s('run', 'Lauf locker', 'Z2 · 5:20–5:40/km', 50))] },
+  swim: { name: '3 km Freiwasser', kind: 'Schwimmen finishen', date: new Date(2027, 6, 4), dateLabel: '4. Juli 2027', target: 300,
+    mix: [['swim', 85], ['strength', 15]], sports: ['swim', 'strength'], focus: 'CSS-Tempo · Ausdauer im Wasser',
+    week: () => [day(60, s('swim', 'Technik', 'Drills, Wasserlage · 2.000 m', 45)), day(60, s('strength', 'Kraft & Mobilität', 'Zugseil, Rumpf, Schulterstabilität', 40)),
+      day(75, s('swim', 'CSS 6×300', '1:52/100 m · 20 s Pause · 2.800 m', 60, true)), day(90),
+      day(75, s('swim', 'Grundlage lang', '3.200 m durchgehend Z2 · 3er-Atmung', 60)),
+      day(120, s('swim', 'Freiwasser-Simulation', '3×800 m mit Sichten und Tempowechseln', 70, true)), day(0, s('rest', 'Ruhetag', 'Erholung', 0))],
+    next: () => [day(60, s('swim', 'Technik', 'Drills · 1.600 m', 40)), day(60, s('strength', 'Kraft & Mobilität', 'leicht', 30)),
+      day(75, s('swim', 'CSS kurz 4×200', '1:52/100 m', 45, true)), day(90), day(75, s('swim', 'Grundlage', '2.400 m Z2', 45)),
+      day(120, s('swim', 'Grundlage locker', '2.000 m mit Sichten', 50)), day(0, s('rest', 'Ruhetag', 'Erholung', 0))] },
+  ride: { name: 'Ötztaler Radmarathon', kind: 'Radrennen', date: new Date(2027, 7, 29), dateLabel: '29. Aug. 2027', target: 540,
+    mix: [['ride', 85], ['run', 15]], sports: ['ride', 'run'], focus: 'Schwelle · lange Ausfahrten',
+    week: () => [day(0, s('rest', 'Ruhetag', 'Erholung', 0)), day(120, s('ride', 'Grundlage', 'Z2 · 165–185 W', 90)),
+      day(90, s('ride', 'Schwelle 3×12 min', '250–265 W · 5 min Pause', 75, true)), day(90),
+      day(90, s('ride', 'VO₂max 5×4 min', '300–315 W · 4 min Pause', 70, true)),
+      day(240, s('ride', 'Lange Ausfahrt', 'Z2 · 1.800 Hm', 210)), day(60, s('run', 'Lauf locker', 'Nebenschwerpunkt · Z2', 45))],
+    next: () => [day(0, s('rest', 'Ruhetag', 'Erholung', 0)), day(90, s('ride', 'Grundlage', 'Z2', 60)),
+      day(90, s('ride', 'Sweetspot 2×15 min', '225–240 W', 60, true)), day(90), day(90, s('ride', 'Grundlage', 'Z2', 60)),
+      day(240, s('ride', 'Lange Ausfahrt', 'Z2 · ruhig', 150)), day(60, s('run', 'Lauf locker', 'Z2', 40))] } };
+
+// ---------- State ----------
+const S = { dayIdx: 0, goal: 'tri', tab: 'heute', week: null, checkins: {}, injury: null, injuryLog: [], modal: null, draft: null,
+  sheet: null, proposal: null, generating: null, toast: null, msg: null, ask: '', next: null, closed: false, manualDone: {}, dragFrom: null, firstLoad: true };
+
+function freshNext() { return { open: false, accepted: false, wish: '', draft: null, generating: false, note: '' }; }
+function resetAll() {
+  uid = 1; S.week = GOALS[S.goal].week(); S.checkins = {}; S.injury = null; S.injuryLog = []; S.proposal = null; S.msg = null;
+  S.next = freshNext(); S.closed = false; S.manualDone = {}; S.dayIdx = 0; S.tab = 'heute'; openCheckinIfNeeded();
+}
+function openCheckinIfNeeded() { if (!S.checkins[S.dayIdx]) { S.draft = newDraft(); S.modal = 'checkin'; } else S.modal = null; }
+function newDraft() { return { a: {}, pain: null, inj: { pain: 3 }, follow: { trend: null, pain: S.injury ? S.injury.pain : 0, healed: false }, tried: false }; }
+
+// ---------- Helpers ----------
+const clone = x => JSON.parse(JSON.stringify(x));
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h` : `${m} min`;
+const weekMin = w => w.reduce((t, d) => t + d.sessions.reduce((a, x) => a + x.min, 0), 0);
+const isHard = d => d.sessions.some(x => x.hard);
+const real = d => d.sessions.filter(x => x.sport !== 'rest');
+const hits = (x, aff) => aff.includes(x.sport) || (x.sport === 'brick' && x.parts.some(([sp]) => aff.includes(sp)));
+const affectedBy = inj => inj ? (REGION_SPORTS[inj.region] || []) : [];
+function sportMinutes(w) {
+  const m = {};
+  w.forEach(d => d.sessions.forEach(x => (x.parts || [[x.sport, x.min]]).forEach(([sp, mm]) => { if (sp !== 'rest') m[sp] = (m[sp] || 0) + mm; })));
+  return m;
+}
+function sessionStatus(d) {
+  if (d < S.dayIdx) return S.dayIdx === 6 && d === 4 && !S.manualDone[4] ? 'missed' : 'done';
+  return d === S.dayIdx ? 'today' : 'future';
+}
+function hardConflicts(w) {
+  const out = [];
+  for (let i = Math.max(0, S.dayIdx - 1); i < 6; i++) if (isHard(w[i]) && isHard(w[i + 1])) out.push([i, i + 1]);
+  return out;
+}
+function easyOf(x, f = 1) {
+  if (x.sport === 'brick' || x.sport === 'rest') return x;
+  const [t, det] = LIB[x.sport].easy;
+  return s(x.sport, `${t}`, `${det} · statt ${x.title}`, Math.max(30, Math.round(Math.min(x.min, 60) * f / 5) * 5), false, { replaced: true });
+}
+function replaceFor(x, aff) {
+  if (x.sport === 'brick' && !aff.includes('ride')) return s('ride', 'Grundlage lang', 'Z2 · statt Koppeleinheit, ohne Koppellauf', x.parts[0][1] + 15, false, { replaced: true });
+  const options = ['ride', 'swim', 'run'].filter(sp => !aff.includes(sp));
+  let alt = options[0];
+  if (!x.hard && options.includes('swim') && GOALS[S.goal].sports.includes('swim')) alt = 'swim';
+  const kind = x.hard ? 'hard' : x.min >= 70 ? 'long' : 'easy';
+  const [t, det] = LIB[alt][kind];
+  return s(alt, t, `${det} · statt ${SPORT[x.sport]}`, alt === 'swim' ? Math.min(x.min, 60) : x.min, x.hard, { replaced: true });
+}
+function diffRows(a, b) {
+  const rows = [];
+  for (let d = 0; d < 7; d++) {
+    const ka = JSON.stringify(a[d].sessions.map(x => [x.title, x.min, x.sport])), kb = JSON.stringify(b[d].sessions.map(x => [x.title, x.min, x.sport]));
+    if (ka !== kb) rows.push({ d, before: a[d].sessions, after: b[d].sessions });
+  }
+  return rows;
+}
+function makeProposal(source, title, w, why = [], extra = {}) {
+  return { source, title, rows: diffRows(S.week, w), why, w, before: weekMin(S.week), after: weekMin(w), hinweise: [], ...extra };
+}
+function think(text, fn, ms = 1100) { S.generating = text; S.msg = null; S.proposal = null; render(); setTimeout(() => { S.generating = null; fn(); render(); scrollToProposal(); }, ms); }
+function scrollToProposal() { const el = document.querySelector('#proposal-anchor'); if (el && S.modal == null && S.sheet == null) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+function toast(t) { S.toast = t; render(); clearTimeout(toast.t); toast.t = setTimeout(() => { S.toast = null; render(); }, 2800); }
+function season() {
+  const g = GOALS[S.goal], start = new Date(2026, 9, 19), gm = new Date(g.date);
+  gm.setDate(gm.getDate() - ((gm.getDay() + 6) % 7));
+  const weeksLeft = Math.round((gm - start) / 604800000), R = weeksLeft + 1 - 4, taper = 2, rest = R - taper;
+  const sch = Math.round(rest * .4), vo = Math.round(rest * .25), wks = rest - sch - vo;
+  const blocks = [{ n: 'Grundlage', w: 6, c: 'var(--green)', past: true }, { n: 'Aufbau', w: 6, c: 'var(--ochre)', cur: true },
+    { n: 'Schwelle', w: sch, c: '#d0351f' }, { n: 'VO₂max', w: vo, c: '#7c1a12' }, { n: 'Wettkampfspezifisch', w: wks, c: 'var(--blue)' }, { n: 'Taper', w: taper, c: 'var(--planned)' }];
+  const total = blocks.reduce((t, b) => t + b.w, 0);
+  return { weeksLeft, blocks, total, pos: (8 + (S.dayIdx + .5) / 7) / total };
+}
+
+// ---------- Ampel (fixed rules, no AI) ----------
+function computeAmpel(a, inj, d) {
+  const today = real(S.week[d]), hard = today.some(x => x.hard), long = today.some(x => x.min >= 90);
+  const red = [], yellow = [], notes = [];
+  if (a.wohl === 0) red.push('Wohlbefinden sehr schlecht'); else if (a.wohl === 1) yellow.push('Wohlbefinden schlecht');
+  if (a.erholung === 0) yellow.push('Du fühlst dich erschöpft'); else if (a.erholung === 1 && hard) yellow.push('Müde vor einer harten Einheit');
+  if (a.stress === 4) yellow.push('Sehr hoher Stress'); else if (a.stress === 3 && hard) yellow.push('Hoher Stress vor einer harten Einheit');
+  if (a.kater === 4) yellow.push('Extremer Muskelkater'); else if (a.kater === 3 && hard) yellow.push('Starker Muskelkater vor einer harten Einheit');
+  if (a.ernaehrung === 0 && (hard || long)) yellow.push('Zu wenig gegessen vor einer fordernden Einheit');
+  else if (a.ernaehrung <= 1) notes.push('Heute auf genug Kohlenhydrate achten.');
+  if (a.alkohol === 2) yellow.push('Alkohol gestern'); else if (a.alkohol === 1 && hard) yellow.push('Alkohol gestern vor einer harten Einheit');
+  if (a.stimmung === 0) notes.push('Stimmung negativ – locker bleiben ist heute völlig okay.');
+  if (WHOOP[d].rec < 34) yellow.push(`WHOOP-Erholung niedrig (${WHOOP[d].rec} %)`);
+  const aff = affectedBy(inj);
+  if (inj) {
+    const label = `${inj.region} ${inj.side}`;
+    if (inj.pain >= 5 || (inj.onset === 'sofort beim Start' && inj.timing !== 'außerhalb') || inj.impact === 'pausieren')
+      red.push(`${label}: Schmerz ${inj.pain}/10${inj.onset === 'sofort beim Start' && inj.timing !== 'außerhalb' ? ', setzt sofort bei Belastung ein' : ''}`);
+    else if (inj.pain >= 3 || inj.impact === 'anpassen') yellow.push(`${label}: Schmerz ${inj.pain}/10`);
+    else notes.push(`${label}: ${inj.pain}/10 – weiter beobachten.`);
+  }
+  if (yellow.length >= 3) red.push('Mehrere Warnsignale zusammen');
+  return { level: red.length ? 'rot' : yellow.length ? 'gelb' : 'gruen', reasons: [...red, ...yellow], notes, aff };
+}
+const AMPEL_TEXT = { gruen: 'Grün – alles im Plan', gelb: 'Gelb – etwas zurücknehmen', rot: 'Rot – heute schonen' };
+
+function checkinProposal() {
+  const d = S.dayIdx, amp = S.checkins[d].ampel, aff = amp.aff, w = clone(S.week), why = [];
+  if (amp.level === 'gruen') return null;
+  const inj = S.injury, injuryDriven = inj && aff.length && (amp.level === 'rot' || inj.impact === 'anpassen' || inj.pain >= 3);
+  if (injuryDriven) {
+    const severe = inj.pain >= 7 || inj.impact === 'pausieren';
+    for (let i = d; i < 7; i++) w[i].sessions = w[i].sessions.map(x => (i === d && severe) ? s('rest', 'Ruhetag', 'Pause wegen Beschwerde', 0) : hits(x, aff) ? replaceFor(x, aff) : x);
+    why.push(`${inj.region} ${inj.side} verträgt gerade kein ${aff.map(a => SPORT_NOUN[a]).join('/')}. Betroffene Einheiten bis Sonntag werden ersetzt – möglichst gleicher Reiz, ohne die Region zu belasten.`);
+    if (severe) why.push('Bei so starken Schmerzen heute komplett Pause.');
+    why.push('Morgen fragt der Check-in nach dem Verlauf. Wird es besser, holt der Coach die Einheiten schrittweise zurück.');
+  }
+  const injuryOnly = injuryDriven && amp.reasons.every(r => r.startsWith(`${inj.region} `));
+  if (!injuryOnly) {
+    const t = w[d].sessions;
+    if (amp.level === 'rot') {
+      w[d].sessions = [s('rest', 'Ruhetag', 'Erholung statt Training', 0)];
+      if (d < 6) w[d + 1].sessions = w[d + 1].sessions.map(x => x.hard ? easyOf(x) : x);
+      why.push('Mehrere Signale sprechen heute gegen Belastung: Ruhetag, morgen locker statt hart.');
+    } else if (t.some(x => x.hard)) {
+      w[d].sessions = t.map(x => x.hard ? easyOf(x, .8) : x);
+      why.push('Heute locker statt Intervalle. Die harte Einheit fällt diese Woche aus, statt sie in die nächsten Tage zu quetschen.');
+    } else if (t.some(x => x.min >= 90)) {
+      w[d].sessions = t.map(x => x.min >= 90 && x.sport !== 'brick' ? { ...x, min: Math.round(x.min * .7 / 5) * 5, detail: x.detail + ' · gekürzt', replaced: true } : x);
+      why.push('Lange Einheit um 30 % gekürzt, Intensität bleibt locker.');
+    }
+  }
+  const p = makeProposal('coach', 'Anpassung nach Check-in', w, why);
+  return p.rows.length ? p : null;
+}
+
+// ---------- Week operations ----------
+function planMove(from, to, coach) {
+  const w = clone(S.week), moved = real(w[from]), why = [], hinweise = [];
+  if (!moved.length) return { block: `Am ${DAY_NAMES[from]} ist nichts geplant.` };
+  w[from].sessions = []; w[from].avail = 0;
+  const existing = real(w[to]);
+  if (!coach && w[to].avail === 0) return { block: `${DAY_NAMES[to]} ist in deiner Verfügbarkeit als Ruhetag/nicht verfügbar eingetragen.` };
+  if (existing.length) {
+    if (coach) { why.push(`${DAY_NAMES[to]}: ${existing.map(x => x.title).join(', ')} entfällt zugunsten der wichtigeren Einheit.`); w[to].sessions = moved; }
+    else w[to].sessions = [...existing, ...moved];
+  } else w[to].sessions = moved;
+  if (!w[to].avail) w[to].avail = 90;
+  const total = w[to].sessions.reduce((t, x) => t + x.min, 0);
+  let overTime = null;
+  if (total > w[to].avail) {
+    if (coach) { const x = w[to].sessions[w[to].sessions.length - 1]; x.min = Math.max(30, x.min - (total - w[to].avail)); x.detail += ' · gekürzt'; why.push(`Am ${DAY_NAMES[to]} hast du nur ${fmtMin(w[to].avail)} – Einheit entsprechend gekürzt.`); }
+    else overTime = `${DAY_NAMES[to]}: ${fmtMin(total)} geplant, aber nur ${fmtMin(w[to].avail)} verfügbar.`;
+  }
+  let conf = hardConflicts(w);
+  if (coach && conf.length) {
+    const movedIds = moved.map(x => x.id);
+    conf.forEach(([a, b]) => {
+      const bHasMoved = w[b].sessions.some(x => movedIds.includes(x.id));
+      const idx = bHasMoved ? a : b;
+      if (idx < S.dayIdx) return;
+      const old = w[idx].sessions.find(x => x.hard);
+      w[idx].sessions = w[idx].sessions.map(x => x.hard ? easyOf(x) : x);
+      why.push(`${DAY_NAMES[a]} und ${DAY_NAMES[b]} wären zwei harte Tage hintereinander → ${DAY_NAMES[idx]} wird locker, „${old.title}“ entfällt diese Woche.`);
+    });
+    conf = hardConflicts(w);
+  }
+  if (coach) {
+    why.unshift(`${moved.map(x => `„${x.title}“`).join(', ')} wandert von ${DAY_NAMES[from]} auf ${DAY_NAMES[to]} – das ist der Schlüsselreiz der Woche.`);
+    const q = w.filter(isHard).length;
+    if (q < 2) hinweise.push('Diese Woche bleibt damit nur eine Qualitätseinheit (Aufbau sieht zwei vor). Nachgeholt wird nicht, weil KW 44 eine Entlastungswoche ist.');
+  }
+  return { w, why, hinweise, conf, overTime };
+}
+function ruleMove(from, to) {
+  const r = planMove(from, to, false);
+  if (r.block) { S.proposal = { source: 'rule', title: 'Verschieben nicht möglich', rows: [], why: [], warn: r.block, w: null, retry: { from, to } }; S.tab = 'woche'; render(); scrollToProposal(); return; }
+  if (!r.conf.length && !r.overTime) {
+    S.week = r.w; S.proposal = null; toast(`Verschoben auf ${DAY_NAMES[to]} · Regeln geprüft, ohne KI · Kalender & Garmin aktualisiert`); return;
+  }
+  const warn = [r.overTime, ...r.conf.map(([a, b]) => `${DAY_NAMES[a]} (${S.week[a] && real(r.w[a]).find(x => x.hard)?.title}) und ${DAY_NAMES[b]} (${real(r.w[b]).find(x => x.hard)?.title}) wären zwei harte Tage hintereinander.`)].filter(Boolean).join(' ');
+  S.proposal = makeProposal('rule', 'Verschieben prüfen', r.w, [], { warn, retry: { from, to } });
+  S.tab = 'woche'; render(); scrollToProposal();
+}
+function coachMove(from, to) {
+  think('Der Coach plant deine Woche um …', () => {
+    if (to == null) {
+      const cands = [];
+      for (let d = Math.max(S.dayIdx, 0); d < 7; d++) if (d !== from && !real(S.week[d]).length && S.week[d].avail > 0) cands.push(d);
+      if (!cands.length) {
+        const w = clone(S.week); const removed = real(w[from]); w[from].sessions = []; w[from].avail = 0;
+        S.proposal = makeProposal('coach', `${DAY_NAMES[from]} fällt aus`, w, [`Kein freier Tag mehr in dieser Woche. „${removed.map(x => x.title).join(', ')}“ entfällt, der Rest der Woche bleibt unverändert.`]);
+        return;
+      }
+      cands.sort((a, b) => planMove(from, a, false).conf.length - planMove(from, b, false).conf.length || Math.abs(a - from) - Math.abs(b - from));
+      to = cands[0];
+    }
+    const r = planMove(from, to, true);
+    if (r.block) { S.msg = r.block; return; }
+    S.proposal = makeProposal('coach', `${DAY_NAMES[from]} → ${DAY_NAMES[to]}`, r.w, r.why, { hinweise: r.hinweise });
+  });
+}
+function chooseForAdd(w, d) {
+  const g = GOALS[S.goal], m = sportMinutes(w), total = Object.values(m).reduce((a, b) => a + b, 0) || 1, aff = affectedBy(S.injury);
+  const ranked = g.mix.filter(([sp]) => !aff.includes(sp)).map(([sp, pct]) => [sp, pct, Math.round((m[sp] || 0) / total * 100)]).sort((a, b) => (b[1] - b[2]) - (a[1] - a[2]));
+  const [sport, pct, cur] = ranked[0];
+  const neighborsHard = (d > 0 && isHard(w[d - 1])) || (d < 6 && isHard(w[d + 1]));
+  const quality = w.filter(isHard).length;
+  const kind = sport !== 'strength' && quality < 2 && !neighborsHard ? 'hard' : 'easy';
+  const why = [`${SPORT_NOUN[sport]} liegt diese Woche unter dem Zielanteil (${cur} % statt ${pct} %).`,
+    kind === 'hard' ? 'Es fehlt noch eine Qualitätseinheit und die Nachbartage sind locker – deshalb Intervalle.' : neighborsHard ? 'Ein Nachbartag ist hart, deshalb locker.' : 'Die Woche hat schon genug harte Einheiten, deshalb locker.'];
+  if (aff.length) why.push(`${SPORT_NOUN[aff[0]]} lässt der Coach wegen der Beschwerde (${S.injury.region} ${S.injury.side}) weg.`);
+  return { sport, kind, why };
+}
+function planAdd(d, spec) {
+  const w = clone(S.week); let why = [], source = 'rule';
+  if (!spec) { const c = chooseForAdd(w, d); spec = { sport: c.sport, kind: c.kind, min: Math.min(w[d].avail || 60, c.kind === 'hard' ? 60 : 60) }; why = c.why; source = 'coach'; }
+  const [t, det] = LIB[spec.sport][spec.kind];
+  const x = s(spec.sport, t, det, spec.min, spec.kind === 'hard');
+  w[d].sessions = [...real(w[d]), x];
+  if (!w[d].avail) w[d].avail = 90;
+  const conf = hardConflicts(w), warn = [];
+  if (conf.length) warn.push(conf.map(([a, b]) => `${DAY_NAMES[a]} und ${DAY_NAMES[b]} wären zwei harte Tage hintereinander.`).join(' '));
+  if (spec.min > w[d].avail) warn.push(`${DAY_NAMES[d]}: nur ${fmtMin(w[d].avail)} verfügbar.`);
+  const aff = affectedBy(S.injury);
+  if (aff.includes(spec.sport)) warn.push(`Achtung: aktive Beschwerde (${S.injury.region} ${S.injury.side}) betrifft ${SPORT_NOUN[spec.sport]}.`);
+  return makeProposal(source, `Neue Einheit am ${DAY_NAMES[d]}`, w, why, { warn: warn.join(' ') || null, addDay: d });
+}
+function planRemove(d) {
+  const w = clone(S.week); const removed = real(w[d]); w[d].sessions = []; w[d].avail = 0;
+  return makeProposal('rule', `${DAY_NAMES[d]} streichen`, w, [], { warn: `„${removed.map(x => x.title).join(', ')}“ entfällt ersatzlos.` });
+}
+function planReduce(d, mins) {
+  const w = clone(S.week); const why = [];
+  w[d].avail = mins;
+  w[d].sessions = w[d].sessions.map(x => {
+    if (x.min <= mins) return x;
+    if (x.sport === 'brick') { const run = 20, ride = Math.max(30, mins - run); why.push(`Koppeleinheit auf ${fmtMin(ride)} Rad + ${run} min Lauf gekürzt – der Koppelreiz bleibt, nur das Rad wird kürzer.`); return { ...x, min: ride + run, detail: `Rad ${fmtMin(ride)} Z2 → direkt Lauf 20 min locker`, parts: [['ride', ride], ['run', run]], replaced: true }; }
+    why.push(`„${x.title}“ auf ${fmtMin(mins)} gekürzt.`); return { ...x, min: mins, detail: x.detail + ' · gekürzt', replaced: true };
+  });
+  if (!why.length) return { msg: `Am ${DAY_NAMES[d]} passt der Plan schon in ${fmtMin(mins)}.` };
+  why.push('Die fehlende Zeit wird nicht auf andere Tage verteilt – lieber etwas weniger Umfang als zwei überladene Tage.');
+  return makeProposal('coach', `${DAY_NAMES[d]} nur ${fmtMin(mins)}`, w, why);
+}
+
+// Very small stand-in for the AI's intent parsing.
+function interpret(text) {
+  const t = text.toLowerCase();
+  const found = [];
+  DAY_NAMES.forEach((n, i) => { const idx = t.indexOf(n.toLowerCase()); if (idx >= 0) found.push({ i, idx }); });
+  const h = t.search(/\bheute\b/); if (h >= 0) found.push({ i: S.dayIdx, idx: h });
+  const mo = t.search(/\bmorgen\b/); if (mo >= 0 && S.dayIdx < 6) found.push({ i: S.dayIdx + 1, idx: mo });
+  found.sort((a, b) => a.idx - b.idx);
+  const neg = /(kann ich nicht|kann nicht|geht nicht|fällt aus|keine zeit|nicht trainieren|klappt nicht|bin weg)/.test(t);
+  const sport = /schwimm/.test(t) ? 'swim' : /(rad|bike|fahr|rolle)/.test(t) ? 'ride' : /(lauf|laufen|joggen|run)/.test(t) ? 'run' : /kraft/.test(t) ? 'strength' : null;
+  const kind = /(intervall|hart|schwelle|vo2|css)/.test(t) ? 'hard' : /(lang)/.test(t) ? 'long' : 'easy';
+  const mm = t.match(/nur\s+(\d+(?:[.,]\d+)?)\s*(min|minuten|h|std|stunde|stunden)/);
+  const days = [...new Set(found.map(f => f.i))];
+  if (days.some(d => d < S.dayIdx)) return { msg: `${DAY_NAMES[days.find(d => d < S.dayIdx)]} liegt schon hinter dir – ich plane nur ab heute.` };
+  if (neg && days.length >= 2) {
+    const [from, to] = days;
+    if (sport && !real(S.week[from]).some(x => x.sport === sport)) {
+      const w = planAdd(to, { sport, kind, min: Math.min(S.week[to].avail || 60, 60) }).w; w[from].sessions = []; w[from].avail = 0;
+      return makeProposal('coach', `${DAY_NAMES[from]} fällt aus, ${SPORT_NOUN[sport]} am ${DAY_NAMES[to]}`, w, [`Wie gewünscht ${SPORT_NOUN[sport]} am ${DAY_NAMES[to]}.`]);
+    }
+    return { move: [from, to] };
+  }
+  if (neg && days.length === 1) return { move: [days[0], null] };
+  if (mm && days.length) { let v = parseFloat(mm[1].replace(',', '.')); if (/^(h|std|stunde)/.test(mm[2])) v *= 60; return planReduce(days[0], Math.round(v)); }
+  if (days.length && (sport || /(plan|einheit|training|ein)/.test(t))) {
+    const d = days[0];
+    if (real(S.week[d]).length && !sport) return { msg: `Am ${DAY_NAMES[d]} ist schon „${real(S.week[d])[0].title}“ geplant. Soll etwas ersetzt werden? Sag z. B. „${DAY_NAMES[d]} kann ich nicht“.` };
+    if (sport) { const p = planAdd(d, { sport, kind, min: Math.min(S.week[d].avail || 60, kind === 'long' ? 90 : 60) }); p.source = 'coach'; p.why = [`${SPORT_NOUN[sport]} am ${DAY_NAMES[d]}, wie gewünscht.`]; return p; }
+    return planAdd(d, null);
+  }
+  return { msg: 'Im Prototyp versteht der Coach nur einfache Sätze: Tage verschieben („Mittwoch kann ich nicht, dafür Donnerstag“), Einheiten hinzufügen („Plan am Donnerstag eine Schwimmeinheit ein“) oder Zeit kürzen („Samstag habe ich nur 90 Minuten“). Im echten Coach übernimmt das die KI.' };
+}
+function submitAsk(text) {
+  if (!text.trim()) return;
+  think('Der Coach liest deinen Wunsch und plant die Woche …', () => {
+    const r = interpret(text);
+    if (r.move) { S.generating = null; coachMove(r.move[0], r.move[1]); return; }
+    if (r.msg) S.msg = r.msg; else S.proposal = r;
+  });
+}
+
+// ---------- Next week ----------
+function buildNext() {
+  let w = GOALS[S.goal].next(); const notes = [];
+  const aff = affectedBy(S.injury);
+  if (S.injury && aff.length) { w = w.map(d => ({ ...d, sessions: d.sessions.map(x => hits(x, aff) ? replaceFor(x, aff) : x) })); notes.push(`An die Beschwerde (${S.injury.region} ${S.injury.side}) angepasst: kein ${aff.map(a => SPORT_NOUN[a]).join('/')}.`); }
+  const wish = S.next.wish.toLowerCase();
+  const sport = /schwimm/.test(wish) ? 'swim' : /(rad|bike)/.test(wish) ? 'ride' : /lauf/.test(wish) ? 'run' : null;
+  if (sport) {
+    const i = w.findIndex((d, idx) => idx > 0 && d.sessions.some(x => !x.hard && x.sport !== sport && x.sport !== 'rest'));
+    if (i >= 0) { const [t, det] = LIB[sport].easy; const old = w[i].sessions[0]; w[i].sessions = [s(sport, t, det, old.min, false, { replaced: true })]; notes.push(`Wunsch berücksichtigt: ${DAY_NAMES[i]} ${SPORT_NOUN[sport]} statt ${old.title}.`); }
+  } else if (wish.trim()) notes.push('Wunsch notiert (im Prototyp werden nur Sportart-Wünsche umgesetzt).');
+  S.next.draft = w; S.next.note = notes.join(' ');
+}
+
+// ---------- Rendering ----------
+function sessHTML(x, d, opts = {}) {
+  const st = opts.status;
+  let status = '';
+  if (st === 'done') status = `<div class="status done">✓ Garmin · ${fmtMin(Math.max(0, x.min + ((d * 7) % 5) - 2))}</div>`;
+  if (st === 'missed') status = `<div class="status missed">keine Aktivität gefunden<br><button class="btn ghost small" data-a="markDone" data-d="${d}">doch gemacht</button></div>`;
+  if (st === 'today') status = `<div class="status today">heute</div>`;
+  if (x.sport === 'rest') status = st === 'today' ? status : '';
+  const drag = opts.draggable && x.sport !== 'rest' ? `draggable="true" data-drag="${d}"` : '';
+  return `<div class="sess sp-${x.sport} ${x.replaced ? 'replaced' : ''}" ${drag}><div>
+    <span class="tag">${SPORT[x.sport]}${x.hard ? ' · <span class="hard">hart</span>' : ''}</span>
+    <strong>${esc(x.title)}</strong><small>${esc(x.detail)}${x.min ? ' · ' + fmtMin(x.min) : ''}</small></div>${status}</div>`;
+}
+const listHTML = arr => arr.length ? arr.map(x => `${esc(x.title)}<small>${SPORT[x.sport]}${x.min ? ' · ' + fmtMin(x.min) : ''}${x.hard ? ' · hart' : ''}</small>`).join('') : '<span class="muted">—</span>';
+
+function periodHTML(compact) {
+  const g = GOALS[S.goal], se = season(), wh = WHOOP[S.dayIdx];
+  return `<div class="period-head"><div>
+      <div class="eyebrow">${DAY_NAMES[S.dayIdx]}, ${DATES[S.dayIdx]}. Oktober · KW 43</div>
+      <h2>Aufbau · Woche 3 von 6</h2>
+      <div class="facts">Belastungswoche · Wochenziel ${fmtMin(g.target)} · Fokus: ${g.focus}</div>
+    </div>
+    <div class="whoop"><div><strong>${wh.rec} %</strong>WHOOP Erholung</div><div><strong>${wh.sleep}</strong>Schlaf</div>${compact ? '' : `<div><strong>${wh.hrv}</strong>HRV ms</div>`}</div></div>
+    <div class="season-bar" aria-label="Saisonplan">${se.blocks.map(b => `<div class="${b.past ? 'past' : ''}" style="flex:${b.w};background:${b.c}" title="${b.n} · ${b.w} Wochen">${b.n}</div>`).join('')}<div class="now" style="left:calc(${(se.pos * 100).toFixed(2)}% - 1px)"></div></div>
+    <div class="season-legend"><span>Saisonstart 24. Aug.</span><span><b>Noch ${se.weeksLeft} Wochen</b> bis ${g.name} · ${g.dateLabel}</span></div>`;
+}
+
+function ampelHTML(c) {
+  const a = c.ampel;
+  return `<section class="card ampel-card ${a.level}"><div class="ampel"><span class="light ${a.level}"></span><div style="flex:1">
+    <div class="eyebrow">Tagesampel · aus Check-in ${c.time}, WHOOP und Plan · feste Regeln, keine KI</div>
+    <h3>${AMPEL_TEXT[a.level]}</h3>
+    ${a.reasons.length ? `<ul class="reasons">${a.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : '<p class="muted" style="margin:0">Keine Warnsignale. Viel Spaß beim Training!</p>'}
+    ${a.notes.length ? `<p class="muted">${a.notes.map(esc).join(' ')}</p>` : ''}
+    <div class="actions"><button class="btn small" data-a="editCheckin">Check-in ändern</button></div></div></div></section>`;
+}
+
+function proposalHTML(p) {
+  if (!p) return '';
+  const coach = p.source === 'coach';
+  let buttons;
+  if (!p.w) buttons = `<button class="btn primary" data-a="propCoach">Coach fragen</button><button class="btn" data-a="propDiscard">Abbrechen</button>`;
+  else if (!coach && p.retry) buttons = `<button class="btn" data-a="propAccept">Trotzdem verschieben</button><button class="btn primary" data-a="propCoach">Coach passt den Rest an</button><button class="btn ghost" data-a="propDiscard">Abbrechen</button>`;
+  else buttons = `<button class="btn primary" data-a="propAccept">Übernehmen</button>${coach ? '<button class="btn" data-a="propOther">Anders machen …</button>' : ''}<button class="btn ghost" data-a="propDiscard">Verwerfen</button>`;
+  return `<section class="card proposal" id="proposal-anchor">
+    <div><span class="src ${coach ? 'coach' : ''}">${coach ? 'Coach-Vorschlag · KI' : 'Regelprüfung · ohne KI'}</span><span class="eyebrow">${esc(p.title)}</span></div>
+    ${p.warn ? `<p class="warn">${esc(p.warn)}</p>` : ''}
+    ${p.rows && p.rows.length ? `<div class="diff">${p.rows.map(r => `<div class="diff-row"><b>${DAYS[r.d]}</b><div class="before">${listHTML(r.before)}</div><div class="arrow">→</div><div class="after">${listHTML(r.after)}</div></div>`).join('')}</div>` : ''}
+    ${p.why && p.why.length ? `<div class="why"><b>Warum</b><ul>${p.why.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>` : ''}
+    ${p.hinweise && p.hinweise.length ? `<p class="hinweise">⚑ ${p.hinweise.map(esc).join(' ')}</p>` : ''}
+    ${p.w ? `<p class="muted">Wochenumfang ${fmtMin(p.before)} → ${fmtMin(p.after)} · Nichts ändert sich, bis du übernimmst.</p>` : ''}
+    <div class="actions">${buttons}</div></section>`;
+}
+const genHTML = () => S.generating ? `<section class="card gen" id="proposal-anchor"><span class="spinner"></span>${esc(S.generating)}</section>` : '';
+const msgHTML = () => S.msg ? `<section class="card coach-msg" id="proposal-anchor"><div class="eyebrow">Coach</div><p style="margin:4px 0 0">${esc(S.msg)}</p><div class="actions"><button class="btn small" data-a="msgClose">OK</button></div></section>` : '';
+
+function tabHeute() {
+  const c = S.checkins[S.dayIdx], d = S.dayIdx, w = S.week;
+  let h = `<section class="card">${periodHTML()}</section>`;
+  if (!c) h += `<div class="banner"><span><b>Check-in für heute fehlt.</b> Ohne Check-in plant der Coach nur nach Plan und WHOOP.</span><button class="btn primary small" data-a="openCheckin">Jetzt ausfüllen</button></div>`;
+  else h += ampelHTML(c);
+  h += genHTML() + proposalHTML(S.proposal);
+  h += `<section class="card"><div class="eyebrow">Heute · ${DAY_NAMES[d]}</div>${real(w[d]).length ? w[d].sessions.map(x => sessHTML(x, d)).join('') : w[d].sessions.length ? w[d].sessions.map(x => sessHTML(x, d)).join('') : `<p class="freeday">Heute ist nichts geplant${w[d].avail ? ` (${fmtMin(w[d].avail)} verfügbar)` : ''}.</p>`}
+    <div class="actions">${real(w[d]).length ? `<button class="btn small" data-a="toast" data-t="Workout an Garmin gesendet">Auf Garmin</button><button class="btn small" data-a="cant" data-d="${d}">Heute kann ich nicht</button>` : w[d].avail ? `<button class="btn small" data-a="add" data-d="${d}">+ Einheit</button>` : ''}<button class="btn ghost small" data-a="tab" data-t="woche">Zur Woche</button></div></section>`;
+  if (S.injury) h += `<section class="card"><div class="eyebrow">Aktive Beschwerde</div><h3>${S.injury.region} ${S.injury.side} · ${S.injury.pain}/10</h3>
+    <p class="muted" style="margin:0">Seit ${DAY_NAMES[S.injury.since]} · ${S.injury.timing}, ${S.injury.onset} · Verlauf: ${S.injury.history.map(x => `${DAYS[x.d]} ${x.pain}`).join(' → ')}<br>Betrifft: ${affectedBy(S.injury).map(a => SPORT_NOUN[a]).join(', ') || 'allgemein'}</p></section>`;
+  if (d < 6) h += `<section class="card sunk"><div class="eyebrow">Morgen · ${DAY_NAMES[d + 1]}</div>${w[d + 1].sessions.length ? w[d + 1].sessions.map(x => sessHTML(x, d + 1)).join('') : '<p class="freeday">frei</p>'}</section>`;
+  return h;
+}
+
+function tabWoche() {
+  const w = S.week, g = GOALS[S.goal], planned = weekMin(w);
+  let h = `<section class="card"><div class="week-head"><div><div class="eyebrow">KW 43 · 19.–25. Oktober</div><h2>Aufbau 3/6 · Belastungswoche</h2></div>
+    <div class="muted">Geplant <b>${fmtMin(planned)}</b> von ${fmtMin(g.target)}</div></div>
+    <div class="meter"><div style="width:${Math.min(100, planned / g.target * 100)}%"></div></div>
+    <div class="days">${w.map((dd, d) => {
+      const st = sessionStatus(d), past = d < S.dayIdx;
+      const body = dd.sessions.length ? dd.sessions.map(x => sessHTML(x, d, { status: st === 'future' ? null : st, draggable: !past })).join('') : `<div class="freeday">${dd.avail ? `frei · ${fmtMin(dd.avail)} verfügbar` : 'nicht verfügbar'}</div>`;
+      const act = past ? '' : real(dd).length ? `<button class="btn small" data-a="cant" data-d="${d}">Kann nicht</button>` : `<button class="btn small" data-a="add" data-d="${d}">+ Einheit</button>`;
+      return `<div class="dayrow ${d === S.dayIdx ? 'today' : ''} ${past ? 'past' : ''}" data-drop="${past ? '' : d}"><div class="dayname"><b>${DAYS[d]}</b><span>${DATES[d]}.10.</span></div><div>${body}</div><div class="dayact">${act}</div></div>`;
+    }).join('')}</div>
+    <p class="muted">Tipp: Einheiten lassen sich auf einen anderen Tag ziehen. Einfache Verschiebungen prüft der Server sofort – ohne KI.</p>
+    <div class="ask"><textarea id="ask" rows="1" placeholder="Sag dem Coach, was sich geändert hat …">${esc(S.ask)}</textarea><button class="btn primary" data-a="ask">Senden</button></div>
+    <div class="examples">${['Mittwoch kann ich nicht, dafür Donnerstag – plan da was ein', 'Plan am Donnerstag eine Schwimmeinheit ein', 'Samstag habe ich nur 90 Minuten', 'Freitag fällt aus']
+      .map(e => `<button data-a="example" data-t="${esc(e)}">${esc(e)}</button>`).join('')}</div></section>`;
+  h += genHTML() + msgHTML() + proposalHTML(S.proposal);
+  h += nextWeekHTML();
+  if (S.dayIdx === 6) h += closingHTML();
+  return h;
+}
+
+function nextWeekHTML() {
+  const n = S.next;
+  if (S.dayIdx < 4) return `<section class="card sunk"><div class="eyebrow">Nächste Woche · KW 44</div><p class="muted" style="margin:4px 0 0">Der Entwurf für KW 44 (Aufbau 4/6 · Entlastung) erscheint ab Freitag. Im Prototyp oben den Tag auf <b>Fr</b> stellen.</p></section>`;
+  if (!n.draft) buildNext();
+  const mins = weekMin(n.draft);
+  return `<section class="card"><div class="week-head"><div><div class="eyebrow">Nächste Woche · KW 44 · 26. Okt. – 1. Nov. · ${n.accepted ? 'übernommen' : 'Entwurf'}</div><h2>Aufbau 4/6 · Entlastung</h2></div><div class="muted">${fmtMin(mins)} · etwa 65 % der Belastungswoche</div></div>
+    <p class="muted">${Object.entries(n.draft.flatMap(real).reduce((acc, x) => { acc[SPORT[x.sport]] = (acc[SPORT[x.sport]] || 0) + 1; return acc; }, {})).map(([k, v]) => `${v}× ${k}`).join(' · ')} · ${n.draft.filter(isHard).length} kurze Qualitätseinheit</p>
+    ${n.note ? `<p class="hinweise">⚑ ${esc(n.note)}</p>` : ''}
+    ${n.generating ? `<div class="gen"><span class="spinner"></span>Der Coach plant KW 44 neu …</div>` : n.open ? `<div class="next-list">${n.draft.map((d, i) => `<div class="dayrow" style="grid-template-columns:44px 1fr"><div class="dayname"><b>${DAYS[i]}</b><span>${26 + i > 31 ? 26 + i - 31 + '.11.' : 26 + i + '.10.'}</span></div><div>${d.sessions.length ? d.sessions.map(x => sessHTML(x, i)).join('') : '<div class="freeday">frei</div>'}</div></div>`).join('')}</div>` : ''}
+    <div class="actions">${n.open ? '<button class="btn small" data-a="nextToggle">Zuklappen</button>' : '<button class="btn" data-a="nextToggle">Ansehen</button>'}
+      ${n.accepted ? '<span class="muted">✓ Im Kalender und auf Garmin</span>' : '<button class="btn primary" data-a="nextAccept">Übernehmen</button>'}</div>
+    <div class="ask"><textarea id="nextwish" rows="1" placeholder="Wunsch für KW 44, z. B. „mehr Schwimmen“">${esc(n.wish)}</textarea><button class="btn" data-a="nextReplan">Neu planen</button></div></section>`;
+}
+
+function closingHTML() {
+  const w = S.week; let planned = 0, done = 0; const rows = [];
+  for (let d = 0; d < 6; d++) real(w[d]).forEach(x => { planned += x.min; const st = sessionStatus(d); if (st === 'done') done += x.min; rows.push({ d, x, st }); });
+  const cis = Object.values(S.checkins);
+  const avg = k => cis.length ? (cis.reduce((t, c) => t + c.a[k], 0) / cis.length) : null;
+  const word = (k, v) => v == null ? '–' : QUESTIONS.find(q => q.k === k).opts[Math.round(v)];
+  return `<section class="card closing"><div class="eyebrow">Sonntag · Wochenabschluss</div><h2>KW 43 abschließen</h2>
+    ${S.closed ? `<p>✓ Woche abgeschlossen. ${S.next.accepted ? 'KW 44 ist übernommen.' : 'KW 44 liegt als Entwurf oben bereit.'}</p>` : `
+    <table><thead><tr><th>Tag</th><th>Geplant</th><th>Zuordnung</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${DAYS[r.d]}</td><td>${esc(r.x.title)} · ${fmtMin(r.x.min)}</td><td class="${r.st}">${r.st === 'done' ? '✓ automatisch zugeordnet' : `✗ keine Aktivität · <button class="btn ghost small" data-a="markDone" data-d="${r.d}">doch gemacht</button>`}</td></tr>`).join('')}
+    </tbody></table>
+    <p class="muted">Geplant ${fmtMin(planned)} · absolviert ${fmtMin(done)} (${planned ? Math.round(done / planned * 100) : 0} %) · Check-ins: ${cis.length}/7${cis.length ? ` · Wohlbefinden ⌀ ${word('wohl', avg('wohl'))} · Erholung ⌀ ${word('erholung', avg('erholung'))}` : ''}${S.injuryLog.length || S.injury ? ` · Beschwerde: ${(S.injury || S.injuryLog.at(-1)).history.map(x => x.pain).join(' → ')}` : ''}</p>
+    <div class="actions"><button class="btn primary" data-a="closeWeek">Woche abschließen${S.next.accepted ? '' : ' & KW 44 übernehmen'}</button></div>`}</section>`;
+}
+
+function tabSaison() {
+  const g = GOALS[S.goal], se = season();
+  let start = new Date(2026, 7, 24);
+  const items = se.blocks.map(b => { const from = new Date(start); start = new Date(start.getTime() + b.w * 604800000); return { ...b, from }; });
+  const m = g.mix;
+  return `<section class="card">${periodHTML(true)}</section>
+  <section class="card"><div class="eyebrow">Ziel</div><h2>${g.name}</h2><p class="muted" style="margin:0">${g.kind} · ${g.dateLabel}</p>
+    <div class="mix">${m.map(([sp, p]) => `<div style="flex:${p};background:${SPORT_COLOR[sp]}">${SPORT_NOUN[sp]} ${p} %</div>`).join('')}</div>
+    <p class="muted">Aus dem Ziel ergibt sich, welche Sportarten der Coach plant und wie er die Zeit verteilt${S.goal === 'tri' ? ' – inklusive Koppeleinheiten Rad → Lauf' : ''}.</p>
+    <div class="sub"><div class="lbl">Ziel ändern (im Prototyp: Woche wird neu aufgebaut)</div><div class="chips wrap">${Object.entries(GOALS).map(([k, v]) => `<button class="chip ${S.goal === k ? 'on' : ''}" data-a="goal" data-g="${k}">${v.kind}: ${v.name}</button>`).join('')}</div></div></section>
+  <section class="card"><div class="eyebrow">Saisonplan · Blöcke</div><ul class="blocks">${items.map(b => `<li class="${b.cur ? 'cur' : ''}"><i style="background:${b.c}"></i><span>${b.n}${b.cur ? ' · läuft (Woche 3 von 6)' : b.past ? ' · abgeschlossen' : ''}</span><span class="muted">${b.w} Wo. · ab ${b.from.getDate()}.${b.from.getMonth() + 1}.${String(b.from.getFullYear()).slice(2)}</span></li>`).join('')}</ul>
+    <p class="muted">Bleibt wie heute: Saisonplan vorschlagen lassen, anpassen, Block für Block übernehmen.</p></section>`;
+}
+
+function tabRueckblick() {
+  const entries = Object.entries(S.checkins).sort((a, b) => a[0] - b[0]);
+  const color = { gruen: '#4f8a2e', gelb: '#d9a21b', rot: '#c0331f' };
+  return `<section class="card"><div class="eyebrow">Check-in-Verlauf · KW 43</div><h3>Wie ging es dir?</h3>
+    ${entries.length ? `<div style="overflow-x:auto"><table><thead><tr><th>Tag</th><th>Ampel</th><th>Wohlbefinden</th><th>Erholung</th><th>Stress</th><th>Muskelkater</th><th>Schmerz</th></tr></thead><tbody>
+    ${entries.map(([d, c]) => `<tr><td>${DAYS[d]}</td><td><span class="pill" style="background:${color[c.ampel.level]}"></span></td>${['wohl', 'erholung', 'stress', 'kater'].map(k => `<td>${QUESTIONS.find(q => q.k === k).opts[c.a[k]]}</td>`).join('')}<td>${c.painLabel || '–'}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Noch keine Check-ins in dieser Woche.</p>'}
+    <p class="muted">Im fertigen Produkt: Verläufe über den ganzen Block, neben Trainingsumfang und WHOOP – plus der bestehende Blockrückblick.</p></section>
+    ${S.injuryLog.length ? `<section class="card"><div class="eyebrow">Ausgeheilte Beschwerden</div>${S.injuryLog.map(i => `<p style="margin:4px 0">${i.region} ${i.side}: ${i.history.map(x => `${DAYS[x.d]} ${x.pain}`).join(' → ')} ✓</p>`).join('')}</section>` : ''}`;
+}
+
+function tabProfil() {
+  const g = GOALS[S.goal];
+  return `<section class="card"><div class="eyebrow">Referenzwerte je Sportart</div><div class="grid2" style="margin-top:8px">
+    <div class="field"><span>Rad · FTP</span><b>265 W</b></div><div class="field"><span>Lauf · Schwellentempo / max. HF</span><b>4:30/km · 188</b></div>
+    <div class="field"><span>Schwimmen · CSS-Tempo <em style="color:var(--accent-text);font-style:normal">neu</em></span><b>1:52/100 m</b></div><div class="field"><span>Schwimmen · Beckenlänge <em style="color:var(--accent-text);font-style:normal">neu</em></span><b>25 m</b></div></div></section>
+    <section class="card"><div class="eyebrow">Verfügbarkeit (Standardwoche)</div>
+    <table><tbody>${GOALS[S.goal].week().map((d, i) => `<tr><td>${DAY_NAMES[i]}</td><td>${d.avail ? fmtMin(d.avail) : 'Ruhetag'}</td></tr>`).join('')}</tbody></table>
+    <p class="muted">Wie bisher pro Nutzer. Einschränkungen wie Schwimmbad-Zeiten trägt jeder hier selbst ein – keine Sonderlogik nötig.</p></section>
+    <section class="card sunk"><div class="eyebrow">AI Provider</div><p class="muted" style="margin:4px 0 0">Unverändert, wandert nur hierher in die Einstellungen.</p></section>`;
+}
+
+function checkinModal() {
+  const dr = S.draft, a = dr.a, inj = S.injury;
+  const q = (k, label, opts, sel, wrap, hint) => `<div class="q"><div class="q-label">${label}${hint ? `<span>${hint}</span>` : ''}</div><div class="chips ${wrap ? 'wrap' : ''}">${opts.map((o, i) => `<button class="chip ${sel === i || sel === o ? 'on' : ''}" data-a="ans" data-k="${k}" data-v="${i}">${o}</button>`).join('')}</div></div>`;
+  const prev = Object.keys(S.checkins).map(Number).filter(d => d < S.dayIdx).sort((x, y) => y - x)[0];
+  let body = QUESTIONS.map(x => q(x.k, x.label, x.opts, a[x.k])).join('');
+  if (inj) {
+    const f = dr.follow;
+    body += `<div class="q"><div class="q-label">${inj.region} ${inj.side}<span>seit ${DAY_NAMES[inj.since]} · zuletzt ${inj.pain}/10</span></div>
+      <div class="injury">${q('f_trend', 'Im Vergleich zu gestern', ['besser', 'gleich', 'schlechter'], f.trend)}
+      <div class="q"><div class="q-label">Schmerz heute</div><div class="range"><input type="range" min="0" max="10" value="${f.pain}" data-in="fpain"><output id="fpain-out">${f.pain}/10</output></div></div>
+      <button class="btn small ${f.healed ? 'primary' : ''}" data-a="healed">${f.healed ? '✓ ausgeheilt' : 'Ist ausgeheilt'}</button></div></div>`;
+  } else {
+    body += q('pain', 'Schmerzen / Verletzung', ['nein', 'ja'], dr.pain);
+    if (dr.pain === 1) body += `<div class="injury">${INJ_FIELDS.map(fd => q('i_' + fd.k, fd.label, fd.opts, dr.inj[fd.k], fd.wrap)).join('')}
+      <div class="q"><div class="q-label">Wie stark?<span>0 = keine, 10 = stärkste</span></div><div class="range"><input type="range" min="0" max="10" value="${dr.inj.pain}" data-in="ipain"><output id="ipain-out">${dr.inj.pain}/10</output></div></div></div>`;
+  }
+  const missing = checkinMissing();
+  return `<div class="overlay"><div class="modal" role="dialog" aria-label="Morgen-Check-in">
+    <div class="modal-head"><div class="eyebrow">Guten Morgen · Morgen-Check-in</div>${periodHTML(true)}</div>
+    <div class="modal-body">${prev != null ? `<div class="row" style="justify-content:space-between"><span class="muted">Etwa 20 Sekunden. Tippe einfach an.</span><button class="btn ghost small" data-a="likeYesterday">Wie ${DAYS[prev]} übernehmen</button></div>` : '<p class="muted" style="margin:0 0 4px">Etwa 20 Sekunden. Tippe einfach an.</p>'}${body}</div>
+    <div class="modal-foot"><button class="btn ghost" data-a="later">Später</button>${dr.tried && missing ? `<span class="missing">Noch ${missing} offen</span>` : ''}<button class="btn primary" data-a="submitCheckin">Fertig →</button></div></div></div>`;
+}
+function checkinMissing() {
+  const dr = S.draft; let n = QUESTIONS.filter(x => dr.a[x.k] == null).length;
+  if (S.injury) { if (dr.follow.trend == null && !dr.follow.healed) n++; }
+  else if (dr.pain == null) n++;
+  else if (dr.pain === 1) n += INJ_FIELDS.filter(f => dr.inj[f.k] == null).length;
+  return n;
+}
+function resultModal() {
+  const c = S.checkins[S.dayIdx], d = S.dayIdx;
+  return `<div class="overlay"><div class="modal" role="dialog" aria-label="Ergebnis Check-in">
+    <div class="modal-head"><div class="eyebrow">Check-in gespeichert · ${c.time}</div><h2>${AMPEL_TEXT[c.ampel.level]}</h2></div>
+    <div class="modal-body">${ampelHTML(c).replace('<button class="btn small" data-a="editCheckin">Check-in ändern</button>', '')}
+      ${S.generating ? `<section class="card gen"><span class="spinner"></span>${esc(S.generating)}</section>` : ''}
+      ${S.proposal ? proposalHTML(S.proposal).replace(' id="proposal-anchor"', '') : ''}
+      ${!S.generating && !S.proposal && c.ampel.level !== 'gruen' ? '<p class="muted">Keine Planänderung nötig – heute einfach locker halten.</p>' : ''}
+      <section class="card"><div class="eyebrow">Heute · ${DAY_NAMES[d]}</div>${S.week[d].sessions.length ? S.week[d].sessions.map(x => sessHTML(x, d)).join('') : '<p class="freeday">Heute ist nichts geplant.</p>'}</section></div>
+    <div class="modal-foot"><span class="muted">${S.proposal ? 'Ohne Übernahme bleibt der Plan, wie er ist.' : ''}</span><button class="btn ${S.proposal ? '' : 'primary'}" data-a="closeModal">${S.proposal ? 'Wie geplant trainieren' : 'Los geht’s'}</button></div></div></div>`;
+}
+
+function sheetHTML() {
+  const sh = S.sheet, d = sh.d, pick = sh.pick || {};
+  const future = [...Array(7).keys()].filter(i => i >= S.dayIdx && i !== d);
+  const chips = (k, opts, labels) => `<div class="chips wrap">${opts.map((o, i) => `<button class="chip ${pick[k] === o ? 'on' : ''}" data-a="pick" data-k="${k}" data-v="${o}">${labels ? labels[i] : o}</button>`).join('')}</div>`;
+  const sports = GOALS[S.goal].sports.concat(GOALS[S.goal].sports.includes('strength') ? [] : ['strength']);
+  const chooser = (target) => `<div class="sub"><div class="lbl">Sportart</div>${chips('sport', sports, sports.map(x => SPORT_NOUN[x]))}
+      <div class="lbl">Art</div>${chips('kind', ['easy', 'hard', 'long'], ['locker', 'Intervalle', 'lang'])}
+      <div class="lbl">Dauer</div>${chips('min', ['30', '45', '60', '90'], ['30 min', '45 min', '60 min', '90 min'])}
+      ${target ? `<div class="lbl">An welchem Tag?</div>${chips('to', future.map(String), future.map(i => DAYS[i]))}` : ''}
+      <div class="actions"><button class="btn primary" data-a="${target ? 'cantOwnGo' : 'addOwnGo'}" ${pick.sport && pick.kind && pick.min && (!target || pick.to) ? '' : 'disabled'}>Einplanen</button></div></div>`;
+  let inner;
+  if (sh.type === 'cant') {
+    const x = real(S.week[d]);
+    inner = `<div class="eyebrow">${DAY_NAMES[d]} · ${x.map(y => esc(y.title)).join(', ')}</div><h3>${DAY_NAMES[d]} kann ich nicht. Was soll passieren?</h3>
+      <button class="opt ${sh.open === 'move' ? 'open' : ''}" data-a="open" data-o="move"><b>Auf einen anderen Tag verschieben</b><span>Du wählst den Tag. Der Server prüft die Regeln sofort, ohne KI.</span></button>
+      ${sh.open === 'move' ? `<div class="sub">${chips('to', future.map(String), future.map(i => `${DAYS[i]} ${S.week[i].sessions.length ? '· belegt' : '· frei'}`))}<div class="actions"><button class="btn primary" data-a="moveGo" ${pick.to ? '' : 'disabled'}>Verschieben</button></div></div>` : ''}
+      <button class="opt" data-a="coachReplan"><b>Coach plant den Rest der Woche neu</b><span>Die KI sucht den besten Tag und passt bei Bedarf andere Einheiten an.</span></button>
+      <button class="opt ${sh.open === 'own' ? 'open' : ''}" data-a="open" data-o="own"><b>Ich wähle selbst, was stattdessen kommt</b><span>Schwimmen, Rad, Lauf … an einem anderen Tag.</span></button>
+      ${sh.open === 'own' ? chooser(true) : ''}
+      <button class="opt" data-a="removeGo"><b>Einheit streichen</b><span>Ersatzlos, der Rest bleibt.</span></button>`;
+  } else {
+    inner = `<div class="eyebrow">${DAY_NAMES[d]} · ${S.week[d].avail ? fmtMin(S.week[d].avail) + ' verfügbar' : 'eigentlich nicht verfügbar'}</div><h3>Einheit am ${DAY_NAMES[d]} einplanen</h3>
+      <button class="opt" data-a="addCoach"><b>Coach entscheidet</b><span>Die KI kennt Block, Phase und den Rest der Woche und wählt, was fehlt.</span></button>
+      <button class="opt ${sh.open === 'own' ? 'open' : ''}" data-a="open" data-o="own"><b>Ich wähle selbst</b><span>Sportart, Art und Dauer vorgeben – der Coach füllt die Details.</span></button>
+      ${sh.open === 'own' ? chooser(false) : ''}`;
+  }
+  return `<div class="overlay sheet-wrap" data-a="sheetBg"><div class="sheet" role="dialog">${inner}<div class="actions"><button class="btn ghost" data-a="sheetClose">Abbrechen</button></div></div></div>`;
+}
+
+function render() {
+  const tabs = [['heute', 'Heute'], ['woche', 'Woche'], ['saison', 'Saison'], ['rueckblick', 'Rückblick'], ['profil', 'Profil & Provider']];
+  const body = { heute: tabHeute, woche: tabWoche, saison: tabSaison, rueckblick: tabRueckblick, profil: tabProfil }[S.tab]();
+  const sc = SCENARIOS.find(x => x.day === S.dayIdx);
+  document.getElementById('app').innerHTML = `
+  <div class="proto"><b>PROTOTYP</b>
+    <div class="grp"><span>Tag:</span>${SCENARIOS.map(x => `<button class="${S.dayIdx === x.day ? 'on' : ''}" data-a="day" data-d="${x.day}">${DAYS[x.day]} ${DATES[x.day]}.10.</button>`).join('')}</div>
+    <div class="grp"><span>Ziel:</span>${Object.entries(GOALS).map(([k, v]) => `<button class="${S.goal === k ? 'on' : ''}" data-a="goal" data-g="${k}">${{ tri: 'Triathlon', swim: 'Schwimmen', ride: 'Rad' }[k]}</button>`).join('')}</div>
+    <div class="grp"><button data-a="reset">Zurücksetzen</button></div></div>
+  <div class="proto-hint">Probier: ${sc ? sc.hint : ''}</div>
+  <header class="app-header"><span class="wordmark">Training <em>Plēnum</em></span><nav class="app-nav"><span>Startseite</span><span>Kalender</span><span>Dashboard</span><span class="on">AI Coach</span></nav><div class="avatar"><i>DA</i><span>Demo Athlet</span></div></header>
+  <main><div class="crumb">Training Plēnum / Dein Training, mit Kontext</div>
+    <div class="title-row"><h1>AI Coach</h1><span class="badge">ENTWURF</span></div>
+    <nav class="tabs">${tabs.map(([k, l]) => `<button class="${S.tab === k ? 'on' : ''}" data-a="tab" data-t="${k}">${l}${k === 'heute' && !S.checkins[S.dayIdx] ? '<span class="dot" aria-label="Check-in offen"></span>' : ''}${k === 'woche' && S.proposal ? '<span class="dot" aria-label="Vorschlag offen"></span>' : ''}</button>`).join('')}</nav>
+    ${body}</main>
+  ${S.modal === 'checkin' ? checkinModal() : ''}${S.modal === 'result' ? resultModal() : ''}${S.sheet ? sheetHTML() : ''}
+  ${S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : ''}`;
+}
+
+// ---------- Events ----------
+const A = {
+  day: el => { S.dayIdx = +el.dataset.d; S.proposal = null; S.msg = null; S.sheet = null; if (S.dayIdx >= 4 && !S.next.accepted) S.next.draft = null; S.tab = 'heute'; openCheckinIfNeeded(); },
+  goal: el => { if (S.goal === el.dataset.g) return; S.goal = el.dataset.g; resetAll(); },
+  reset: () => resetAll(),
+  tab: el => { S.tab = el.dataset.t; },
+  toast: el => toast(el.dataset.t),
+  openCheckin: () => { S.draft = newDraft(); S.modal = 'checkin'; },
+  editCheckin: () => { const c = S.checkins[S.dayIdx]; S.draft = newDraft(); S.draft.a = { ...c.a }; S.modal = 'checkin'; },
+  later: () => { S.modal = null; S.tab = 'heute'; },
+  likeYesterday: () => { const prev = Object.keys(S.checkins).map(Number).filter(d => d < S.dayIdx).sort((x, y) => y - x)[0]; S.draft.a = { ...S.checkins[prev].a }; },
+  ans: el => {
+    const k = el.dataset.k, v = +el.dataset.v, dr = S.draft;
+    if (k === 'pain') dr.pain = v;
+    else if (k === 'f_trend') { dr.follow.trend = v; dr.follow.healed = false; }
+    else if (k.startsWith('i_')) { const f = INJ_FIELDS.find(x => 'i_' + x.k === k); dr.inj[f.k] = f.opts[v]; }
+    else dr.a[k] = v;
+  },
+  healed: () => { S.draft.follow.healed = !S.draft.follow.healed; if (S.draft.follow.healed) S.draft.follow.pain = 0; },
+  submitCheckin: () => {
+    const dr = S.draft; dr.tried = true;
+    if (checkinMissing()) return;
+    const d = S.dayIdx; let painLabel = null;
+    if (S.injury) {
+      if (dr.follow.healed) { S.injury.history.push({ d, pain: 0 }); S.injuryLog.push(S.injury); painLabel = `${S.injury.region}: ausgeheilt`; S.injury = null; }
+      else { S.injury.pain = dr.follow.pain; S.injury.history.push({ d, pain: dr.follow.pain }); painLabel = `${S.injury.region} ${dr.follow.pain}/10`; }
+    } else if (dr.pain === 1) { S.injury = { ...dr.inj, since: d, history: [{ d, pain: dr.inj.pain }] }; painLabel = `${S.injury.region} ${S.injury.pain}/10`; }
+    const ampel = computeAmpel(dr.a, S.injury, d);
+    S.checkins[d] = { a: { ...dr.a }, ampel, time: ['07:12', '06:58', '07:31', '07:05', '06:47', '08:20', '08:02'][d], painLabel };
+    S.modal = 'result'; S.proposal = null; S.next.draft = S.next.accepted ? S.next.draft : null;
+    if (ampel.level !== 'gruen') { S.generating = 'Der Coach prüft, was das für heute und die Woche bedeutet …'; setTimeout(() => { S.generating = null; S.proposal = checkinProposal(); render(); }, 1200); }
+  },
+  closeModal: () => { S.modal = null; },
+  propAccept: () => { const p = S.proposal; S.week = p.w; S.proposal = null; if (S.modal === 'result') S.modal = null; toast('Übernommen · Kalender und Garmin aktualisiert'); },
+  propDiscard: () => { S.proposal = null; },
+  propOther: () => { S.proposal = null; if (S.modal) S.modal = null; S.tab = 'woche'; S.ask = ''; setTimeout(() => { const t = document.getElementById('ask'); if (t) { t.focus(); t.placeholder = 'Was soll anders sein? z. B. „Lass Freitag hart, mach Donnerstag locker“'; } }, 30); },
+  propCoach: () => { const r = S.proposal.retry; S.proposal = null; coachMove(r.from, r.to); },
+  msgClose: () => { S.msg = null; },
+  ask: () => { const t = document.getElementById('ask').value; S.ask = ''; submitAsk(t); },
+  example: el => { S.ask = el.dataset.t; S.tab = 'woche'; render(); submitAsk(el.dataset.t); S.ask = ''; },
+  cant: el => { S.sheet = { type: 'cant', d: +el.dataset.d, pick: {} }; },
+  add: el => { S.sheet = { type: 'add', d: +el.dataset.d, pick: {} }; },
+  open: el => { S.sheet.open = S.sheet.open === el.dataset.o ? null : el.dataset.o; },
+  pick: el => { S.sheet.pick[el.dataset.k] = el.dataset.v; },
+  sheetClose: () => { S.sheet = null; },
+  sheetBg: (el, e) => { if (e.target === el) S.sheet = null; },
+  moveGo: () => { const { d, pick } = S.sheet; S.sheet = null; ruleMove(d, +pick.to); },
+  coachReplan: () => { const d = S.sheet.d; S.sheet = null; S.tab = 'woche'; coachMove(d, null); },
+  removeGo: () => { const d = S.sheet.d; S.sheet = null; S.tab = 'woche'; S.proposal = planRemove(d); },
+  cantOwnGo: () => { const { d, pick } = S.sheet; S.sheet = null; S.tab = 'woche'; const p = planAdd(+pick.to, { sport: pick.sport, kind: pick.kind, min: +pick.min }); p.w[d].sessions = []; p.w[d].avail = 0; S.proposal = makeProposal('rule', `${DAY_NAMES[d]} fällt aus · ${SPORT_NOUN[pick.sport]} am ${DAY_NAMES[+pick.to]}`, p.w, [], { warn: p.warn }); },
+  addOwnGo: () => { const { d, pick } = S.sheet; S.sheet = null; S.tab = 'woche'; S.proposal = planAdd(d, { sport: pick.sport, kind: pick.kind, min: +pick.min }); },
+  addCoach: () => { const d = S.sheet.d; S.sheet = null; S.tab = 'woche'; think('Der Coach überlegt, was der Woche fehlt …', () => { S.proposal = planAdd(d, null); }); },
+  markDone: el => { S.manualDone[+el.dataset.d] = true; toast('Als absolviert markiert'); },
+  nextToggle: () => { S.next.open = !S.next.open; },
+  nextAccept: () => { S.next.accepted = true; toast('KW 44 übernommen · Kalender und Garmin aktualisiert'); },
+  nextReplan: () => { S.next.wish = document.getElementById('nextwish').value; S.next.generating = true; S.next.accepted = false; render(); setTimeout(() => { buildNext(); S.next.generating = false; S.next.open = true; render(); }, 1100); },
+  closeWeek: () => { S.closed = true; S.next.accepted = true; toast('KW 43 abgeschlossen · KW 44 übernommen'); },
+};
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-a]'); if (!el || !A[el.dataset.a]) return;
+  if (el.dataset.a === 'sheetBg' && e.target !== el) return;
+  const r = A[el.dataset.a](el, e); if (r !== false) render();
+});
+document.addEventListener('input', e => {
+  const k = e.target.dataset.in;
+  if (k === 'ipain') { S.draft.inj.pain = +e.target.value; document.getElementById('ipain-out').textContent = e.target.value + '/10'; }
+  if (k === 'fpain') { S.draft.follow.pain = +e.target.value; S.draft.follow.healed = false; document.getElementById('fpain-out').textContent = e.target.value + '/10'; }
+  if (e.target.id === 'ask') S.ask = e.target.value;
+  if (e.target.id === 'nextwish') S.next.wish = e.target.value;
+});
+document.addEventListener('keydown', e => { if (e.target.id === 'ask' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); A.ask(); render(); } });
+document.addEventListener('dragstart', e => { const el = e.target.closest('[data-drag]'); if (el) { S.dragFrom = +el.dataset.drag; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', el.dataset.drag); } });
+document.addEventListener('dragover', e => { const row = e.target.closest('[data-drop]'); if (row && row.dataset.drop !== '' && S.dragFrom != null) { e.preventDefault(); document.querySelectorAll('.dayrow.over').forEach(r => r !== row && r.classList.remove('over')); row.classList.add('over'); } });
+document.addEventListener('dragleave', e => { const row = e.target.closest('[data-drop]'); if (row && !row.contains(e.relatedTarget)) row.classList.remove('over'); });
+document.addEventListener('drop', e => { const row = e.target.closest('[data-drop]'); if (!row || row.dataset.drop === '' || S.dragFrom == null) return; e.preventDefault(); const to = +row.dataset.drop, from = S.dragFrom; S.dragFrom = null; if (to !== from) ruleMove(from, to); else render(); });
+document.addEventListener('dragend', () => { S.dragFrom = null; document.querySelectorAll('.dayrow.over').forEach(r => r.classList.remove('over')); });
+
+resetAll(); render();
+</script>
+</body>
+</html>

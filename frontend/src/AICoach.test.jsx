@@ -43,7 +43,13 @@ const submit = async form => { await act(async () => Simulate.submit(form)); };
 const choice = title => [...container.querySelectorAll('button.coach-choice')].find(b => b.querySelector('strong').textContent === title);
 const radio = value => container.querySelector(`input[type="radio"][value="${value}"]`);
 const startBlock = async () => { await click(radio('nach_pause')); await click(button('Weiter')); await click(choice('Schlag mir was vor')); await click(button('Vorschläge erstellen')); };
-const render = async (props = {}) => { await act(async () => root.render(<AICoach apiBase="http://coach.test" onWorkoutsChanged={changed} {...props} />)); };
+const render = async (props = {}) => { await act(async () => root.render(<AICoach apiBase="http://coach.test" initialTab="season" onWorkoutsChanged={changed} {...props} />)); };
+const tab = async name => { await click([...container.querySelectorAll('.coach-tabs button')].find(b => b.textContent === name)); };
+const todayView = { date: '2026-09-23', checkIn: null, previousCheckIn: null, injuries: [], whoop: null, weekPlanned: true, dailyCheckIn: true,
+  readiness: { source: 'calculated', level: 'green', reasons: [], notes: [], affectedSports: [], checkedIn: false },
+  sessions: [{ id: 'session-1', source: 'coach', name: 'Grundlage', sport: 'ride', durationMin: 60, hard: false, locked: false }],
+  period: { week: '2026-W39', goal: { type: 'fitness', sports: ['ride'], name: 'Fit bleiben', date: null }, weeksToGoal: null, plannedHours: 8, season: null,
+    block: { id: 'block-1', blockType: 'aufbau', typeName: 'Aufbau', secondaryName: null, weekNumber: 2, totalWeeks: 3, phase: 'build', deload: false, targetHours: 9, focus: 'Schwelle', startDate: '2026-09-14', endDate: '2026-10-04' } } };
 
 beforeEach(() => {
   jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-23T12:00:00Z'));
@@ -65,6 +71,9 @@ beforeEach(() => {
     else if (path === '/api/coach/block-types') data = catalog;
     else if (path === '/api/coach/blocks/block-1/timeline') data = timeline;
     else if (path === '/api/coach/blocks/old-block/review') data = { ...blockReview, ...(method === 'PUT' ? { reflection: { source: 'athlete', ...body, date: '2026-09-23' } } : {}) };
+    else if (path === '/api/coach/today') data = todayView;
+    else if (path === '/api/coach/check-ins') data = method === 'POST' ? { ...todayView, checkIn: { ...body, version: 2 }, readiness: { ...todayView.readiness, level: 'yellow', reasons: ['Alkohol gestern'], checkedIn: true } }
+      : { checkIns: [{ version: 2, date: '2026-09-22', wellbeing: 4, recovery: 2, stress: 3, soreness: 1, mood: 4, nutrition: 3, alcohol: 1, readiness: { level: 'yellow' } }], injuries: [] };
     else if (path === '/api/coach/feedback') data = { week: new URL(url).searchParams.get('week'), partial: true, planned: { hours: 8 }, completed: { hours: 2 } };
     else if (path === '/api/coach/proposals') data = body.kind === 'block' ? blockProposal : { id: 'proposal-1', kind: body.kind, hinweise: ['Kurze Woche.'], before: weekPlan, after: { ...weekPlan, targetHours: 7, sessions: [{ ...session, params: { durationMin: 45 }, rendered: { ...session.rendered, durationMin: 45 } }] } };
     else if (path.endsWith('/confirm')) data = { revision: 1, blocks: [macro], weeks: {} };
@@ -93,7 +102,6 @@ test('ISO week dates remain correct at year boundaries', () => {
 
 test('a proposal is human-readable and only saves after explicit confirmation', async () => {
   await render();
-  expect(container.textContent).toContain('6,5 h');
   expect(container.textContent).toContain('Neuen Trainingsblock starten');
   expect(button('Weiter').disabled).toBe(true);
   await startBlock();
@@ -141,8 +149,9 @@ test('the week card stays usable while the coach plans the block weeks', async (
   await click(container.querySelector('[aria-label="Planvorschlag prüfen"] input[value="mehr"]'));
   await click(button('Diese Option übernehmen'));
   expect(container.textContent).toContain('Woche 1 von 2 wird geplant · 2026-W39');
-  expect(button('Woche anpassen').disabled).toBe(true);
   expect(button('Block löschen').disabled).toBe(true);
+  await tab('Woche');
+  expect(button('Woche anpassen').disabled).toBe(true);
   expect(container.textContent).toContain('Während der Coach die Wochen plant');
   const next = container.querySelector('[aria-label="Nächste Woche"]');
   expect(next.disabled).toBe(false);
@@ -155,6 +164,7 @@ test('the week card stays usable while the coach plans the block weeks', async (
     .toEqual([['2026-W39', ''], ['2026-W39', 'Samstag lang'], ['2026-W40', 'Samstag lang']]);
   expect(container.textContent).toContain('2 Wochen geplant.');
   expect(container.textContent).not.toContain('Während der Coach die Wochen plant');
+  await tab('Saison');
   expect(button('Block löschen').disabled).toBe(false);
 });
 
@@ -162,8 +172,9 @@ test('the remaining weeks are planned on request and a failing week stops with a
   initialPlan = { revision: 1, blocks: [activeBlock], weeks: { '2026-W39': weekPlan } };
   let calls = 0;
   responses['POST /api/coach/proposals'] = async () => { calls += 1; return { ok: false, json: async () => ({ error: 'Regel verletzt.' }) }; };
-  await render();
+  await render(); await tab('Woche');
   expect(container.textContent).toContain('Ausnahme für diese Woche');
+  await tab('Saison');
   await click(button('Restliche Wochen planen (1)'));
   await act(async () => {});
   expect(calls).toBe(2);
@@ -205,7 +216,7 @@ test('discarding the preview returns to the unchanged choice', async () => {
 
 test('changing availability removes a preview and blocks AI planning until the override is saved', async () => {
   initialPlan = { revision: 2, blocks: [macro], weeks: { '2026-W39': weekPlan } };
-  await render(); await click(button('Woche anpassen'));
+  await render(); await tab('Woche'); await click(button('Woche anpassen'));
   expect(container.textContent).toContain('Geändert: Grundlage');
   expect(container.textContent).toContain('Kurze Woche.');
   await change(container.querySelector('[aria-label="Do Verfügbarkeit diese Woche"]'), 'no');
@@ -248,7 +259,7 @@ test('a rejected provider save clears the secret and exposes a useful error', as
 test('new workout context invalidates an outstanding proposal and locking refreshes the calendar', async () => {
   const workout = { id: 'own-workout', date: '2026-09-26', name: 'Gruppenausfahrt', locked: false };
   initialPlan = { revision: 2, blocks: [macro], weeks: { '2026-W39': weekPlan } };
-  await render({ workouts: [workout] }); await click(button('Woche anpassen'));
+  await render({ workouts: [workout] }); await tab('Woche'); await click(button('Woche anpassen'));
   await render({ workouts: [{ ...workout, locked: true }] });
   expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).toBeNull();
   expect(container.textContent).toContain('Eigene Einheit');
@@ -323,7 +334,7 @@ test('the profile stores sports, goal, outdoor months with their own volume and 
   expect(body.availability).toMatchObject({ trainingDaysPerWeek: 4, noConsecutiveRestDays: true, outdoorMonths: [4, 5, 6, 7, 8, 9, 10],
     preferredWeeklyHours: 8, indoorWeeklyHours: 5, minRideMinutes: { indoor: 60, outdoor: 90 } });
   expect(body.availability.defaultAvailability.sat).toBe(240);
-  expect(body.preferences).toEqual({ preferredRestDay: null, preferredLongSessionDay: null, gymAvailability: false });
+  expect(body.preferences).toEqual({ preferredRestDay: null, preferredLongSessionDay: null, gymAvailability: false, dailyCheckIn: true });
 });
 
 test('outdoor months are shown as ranges, also over the new year', () => {
@@ -484,6 +495,7 @@ test('an active block shows the current block week and German planning actions',
   await render();
   expect(container.textContent).toContain('Woche 2 von 3');
   expect(container.textContent).toContain('Erholung');
+  await tab('Woche');
   expect(button('Woche planen').disabled).toBe(false);
   expect(button('Woche anpassen').disabled).toBe(true);
   expect(container.querySelector('[aria-label="Planungswoche"]').max).toBe('2026-W40');
@@ -494,7 +506,7 @@ test('an active block shows the current block week and German planning actions',
 
 test('the week buttons step through the block weeks', async () => {
   initialPlan = { revision: 1, blocks: [activeBlock], weeks: {} };
-  await render();
+  await render(); await tab('Woche');
   const weekInput = () => container.querySelector('[aria-label="Planungswoche"]');
   const step = label => container.querySelector(`[aria-label="${label}"]`);
   expect(weekInput().value).toBe('2026-W39');
@@ -512,6 +524,7 @@ test('an upcoming block opens on its first week', async () => {
   initialPlan = { revision: 1, blocks: [{ ...macro, startDate: '2026-10-05' }], weeks: {} };
   await render();
   expect(container.textContent).toContain('Startet am');
+  await tab('Woche');
   expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W41');
 });
 
@@ -523,8 +536,9 @@ test('a replaced block is history; the next block and its type are shown', async
   await render();
   expect(container.textContent).toContain('Startet am');
   expect(container.querySelector('.coach-block-type').textContent).toBe('VO2max + Kraft');
-  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W40');
   expect(container.querySelector('details .coach-wizard').textContent).toContain('Wo stehst du gerade?');
+  await tab('Woche');
+  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W40');
 });
 
 test('an ended block offers the next block instead of week planning', async () => {
@@ -559,40 +573,40 @@ test('the block timeline compares planned and completed hours and selects a week
   expect(weeks[2].querySelector('.target').className).toContain('open');
   expect(container.querySelector('.coach-table').textContent).toContain('5 h (Blockziel)');
   await click(weeks[0].querySelector('button'));
-  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W38');
   expect(chart.querySelector('[aria-pressed="true"]').getAttribute('aria-label')).toContain('Woche 1');
+  await tab('Woche');
+  expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W38');
 });
 
-test('coach sessions are locked at the session; daily change and check-in need a planned week', async () => {
+test('coach sessions are locked at the session; a daily change needs a planned week', async () => {
   const planned = { ...session, rendered: { ...session.rendered, workout: { id: 'session-1' } } };
   initialPlan = { revision: 1, blocks: [activeBlock], weeks: {} };
-  await render({ workouts: [{ id: 'session-1', date: '2026-09-22', name: 'Grundlage', locked: false }] });
-  expect(container.textContent).not.toContain('Heute zählt auch');
+  await render({ workouts: [{ id: 'session-1', date: '2026-09-22', name: 'Grundlage', locked: false }] }); await tab('Woche');
+  expect(container.textContent).not.toContain('Ein Tag sieht anders aus');
   expect(container.textContent).not.toContain('Einheiten fixieren');
   expect(container.querySelector('.coach-session-note')).toBeNull();
   initialPlan = { revision: 2, blocks: [activeBlock], weeks: { '2026-W39': { ...weekPlan, sessions: [planned] } } };
   await act(async () => root.unmount()); root = createRoot(container);
-  await render({ workouts: [{ id: 'session-1', date: '2026-09-22', name: 'Grundlage', locked: false }] });
-  expect(container.textContent).toContain('Heute zählt auch');
+  await render({ workouts: [{ id: 'session-1', date: '2026-09-22', name: 'Grundlage', locked: false }] }); await tab('Woche');
+  expect(container.textContent).toContain('Ein Tag sieht anders aus');
+  expect(container.textContent).not.toContain('Check-in speichern');
   expect(container.textContent).not.toContain('Eigene Einheit');
   expect(container.querySelector('.coach-session-note').textContent).toBe('Verpflegung (LIT): Optional nur Wasser. Danach Protein.');
   await click(container.querySelector('[aria-label="Grundlage fixieren"]'));
   expect(requests.find(r => r.path === '/api/workouts/session-1/lock').body).toEqual({ locked: true });
 });
 
-test('from Friday the week is closed with review, check-in and planning the next week', async () => {
+test('from Friday the week is closed with review and planning the next week', async () => {
   jest.setSystemTime(new Date('2026-09-25T12:00:00Z'));
   initialPlan = { revision: 1, blocks: [activeBlock], weeks: { '2026-W39': weekPlan } };
-  await render();
+  await render(); await tab('Woche');
   const card = () => container.querySelector('[aria-label="Woche abschließen"]');
   expect(card().textContent).toContain('2026-W39 → 2026-W40');
   expect(requests.some(r => r.path === '/api/coach/feedback')).toBe(true);
   expect(card().textContent).toContain('Absolviert (bis heute)');
   await click([...card().querySelectorAll('label')].find(l => l.textContent.includes('Grundlage')).querySelector('input'));
   expect(card().textContent).toContain('1 Einheit');
-  await click(button('Weiter zum Check-in'));
-  expect(card().textContent).toContain('Müdigkeit');
-  await click(button('Weiter'));
+  await click(button('Weiter zur nächsten Woche'));
   expect(card().textContent).toContain('Erholung · Ziel 5 h');
   await click(button('Nächste Woche planen'));
   expect(requests.filter(r => r.path === '/api/coach/proposals').pop().body).toEqual({ kind: 'week', week: '2026-W40', instruction: '', feedbackWeek: '2026-W39', missedSessions: ['session-1'] });
@@ -604,11 +618,10 @@ test('an already planned next week is adjusted or kept after the weekly review',
   const nextWeek = { ...weekPlan, week: '2026-W40', sessions: [{ ...session, id: 'session-2' }] };
   initialPlan = { revision: 1, blocks: [activeBlock], weeks: { '2026-W39': weekPlan, '2026-W40': nextWeek } };
   responses['PUT /api/coach/weeks/2026-W39/missed'] = async body => ({ ok: true, json: async () => ({ ...initialPlan, weeks: { ...initialPlan.weeks, '2026-W39': { ...weekPlan, ...body } } }) });
-  await render();
+  await render(); await tab('Woche');
   const card = () => container.querySelector('[aria-label="Woche abschließen"]');
   await click([...card().querySelectorAll('label')].find(l => l.textContent.includes('Grundlage')).querySelector('input'));
-  await click(button('Weiter zum Check-in'));
-  await click(button('Weiter'));
+  await click(button('Weiter zur nächsten Woche'));
   expect(card().textContent).toContain('Die Woche ist schon geplant.');
   expect(button('Nächste Woche planen')).toBeUndefined();
   await click(button('Nächste Woche anpassen'));
@@ -624,7 +637,7 @@ test('an already planned next week is adjusted or kept after the weekly review',
 test('an open current week after a planned one starts the rhythm right away', async () => {
   jest.setSystemTime(new Date('2026-09-28T09:00:00Z'));
   initialPlan = { revision: 1, blocks: [activeBlock], weeks: { '2026-W39': weekPlan } };
-  await render();
+  await render(); await tab('Woche');
   expect(container.querySelector('[aria-label="Woche abschließen"]').textContent).toContain('2026-W39 → 2026-W40');
   jest.setSystemTime(new Date('2026-09-23T12:00:00Z'));
 });
@@ -687,7 +700,6 @@ test('a season block without a plan is created from the season strip, in order',
   expect(segments).toHaveLength(3);
   expect(container.querySelector('.coach-jump-card')).toBeNull();
   expect(container.querySelector('.coach-block-card')).not.toBeNull();
-  expect(container.textContent).toContain('Deine Trainingswoche');
   expect(container.textContent).not.toContain('Absolviertes Training berücksichtigen');
   await click(segments[2]);
   expect(container.querySelector('.coach-jump-card').textContent).toContain('Als Nächstes kommt VO2max ab 23. Nov.');
@@ -696,7 +708,6 @@ test('a season block without a plan is created from the season strip, in order',
   expect(container.querySelectorAll('button.coach-season-segment')[1].getAttribute('aria-pressed')).toBe('true');
   // The opened season block takes the place of the Grundlage block and its weeks.
   expect(container.querySelector('.coach-block-card')).toBeNull();
-  expect(container.textContent).not.toContain('Deine Trainingswoche');
   await click(button('Weiter'));
   let resolveProposal;
   responses['POST /api/coach/proposals'] = () => new Promise(resolve => { resolveProposal = resolve; });
@@ -724,9 +735,11 @@ test('the athlete jumps between blocks and deletes one with its workouts', async
   expect(container.textContent).toContain('Aktueller Trainingsblock');
   await click(switcher()[1]);
   expect(container.textContent).toContain('Kommender Trainingsblock');
+  await tab('Woche');
   expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W42');
   expect(container.querySelector('[aria-label="Planungswoche"]').min).toBe('2026-W42');
   expect(button('Woche anpassen').disabled).toBe(false);
+  await tab('Saison');
   await click(button('Block löschen'));
   expect(container.querySelector('.coach-confirm-delete').textContent).toContain('Die geplante Woche und 1 Workout im Kalender werden entfernt');
   await click(button('Endgültig löschen'));
@@ -735,6 +748,7 @@ test('the athlete jumps between blocks and deletes one with its workouts', async
   expect(changed).toHaveBeenCalled();
   expect(container.querySelector('.coach-block-switch')).toBeNull();
   expect(container.textContent).toContain('Aktueller Trainingsblock');
+  await tab('Woche');
   expect(container.querySelector('[aria-label="Planungswoche"]').value).toBe('2026-W40');
 });
 
@@ -808,4 +822,41 @@ test('the season editor takes a one-week taper and fits the other blocks to the 
   await click(button('Saisonplan speichern'));
   expect(requests.find(r => r.path === '/api/coach/season').body.segments.map(item => [item.blockType, item.weeks]))
     .toEqual([['grundlage', 8], ['vo2max', 5], ['wettkampfspezifisch', 4], ['taper', 1]]);
+});
+
+test('today shows the block week, asks for the check-in and adapts the week to it', async () => {
+  initialPlan = { revision: 1, blocks: [activeBlock], weeks: { '2026-W39': weekPlan } };
+  await render({ initialTab: 'today' });
+  expect(container.querySelector('.coach-today-period h2').textContent).toBe('Aufbau · Woche 2 von 3');
+  expect(container.querySelector('.coach-today-period').textContent).toContain('Belastungswoche · Wochenziel 9 h · Fokus: Schwelle');
+  expect(container.querySelector('.coach-tabs [aria-label="Check-in offen"]')).not.toBeNull();
+  await click(button('Check-in ausfüllen'));
+  const dialog = () => container.querySelector('[role="dialog"]');
+  const chip = (question, answer) => [...dialog().querySelectorAll('fieldset')].find(f => f.querySelector('legend').textContent.startsWith(question))
+    .querySelectorAll('button').forEach(b => { if (b.textContent === answer) b.click(); });
+  await click(button('Fertig'));
+  expect(dialog().textContent).toContain('Noch 8 offen');
+  await act(async () => {
+    for (const [question, answer] of [['Wohlbefinden', 'gut'], ['Erholung', 'normal'], ['Stress', 'mittel'], ['Muskelkater', 'leicht'], ['Stimmung', 'gut'],
+      ['Ernährung gestern', 'passend'], ['Alkohol gestern', 'mehr'], ['Schmerzen oder Verletzung?', 'nein']]) chip(question, answer);
+  });
+  await click(button('Fertig'));
+  expect(requests.find(r => r.path === '/api/coach/check-ins' && r.method === 'POST').body).toEqual({ date: '2026-09-23', wellbeing: 4, recovery: 3, stress: 3, soreness: 2, mood: 4,
+    nutrition: 3, alcohol: 2, notes: '', newInjury: null, injuryUpdates: [] });
+  expect(dialog().textContent).toContain('Gelb – etwas zurücknehmen');
+  await click(button('Woche anpassen lassen'));
+  expect(dialog()).toBeNull();
+  expect(requests.filter(r => r.path === '/api/coach/proposals').pop().body).toEqual({ kind: 'patch', week: '2026-W39', instruction: '', trigger: 'checkIn' });
+  // The proposal shows on Heute, right below the traffic light.
+  expect(container.querySelector('.coach-today-period')).not.toBeNull();
+  expect(container.querySelector('[aria-label="Planvorschlag prüfen"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label="Tagesampel"]').textContent).toContain('Alkohol gestern');
+});
+
+test('the review tab shows the measured context and the check-ins of the last weeks', async () => {
+  await render({ initialTab: 'review' });
+  expect(container.textContent).toContain('6,5 h');
+  const history = container.querySelector('[aria-label="Check-in-Verlauf"]');
+  expect([...history.querySelectorAll('tbody td')].map(td => td.textContent)).toEqual(['Di., 22.9.', '', 'gut', 'müde', 'mittel', 'keiner', 'gut', 'passend', '1–2 Getränke']);
+  expect(history.querySelector('.today-dot.yellow')).not.toBeNull();
 });

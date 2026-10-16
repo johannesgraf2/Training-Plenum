@@ -617,6 +617,68 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual((result['season'], result['blocks'], result['weeks'], result['deletedWorkouts']), (None, [], {}, 2))
         self.assertEqual(self.client.get('/api/workouts').json, [])
 
+    def morning(self, **changes):
+        return {'date': date.today().isoformat(), 'wellbeing': 4, 'recovery': 4, 'stress': 2, 'soreness': 2, 'mood': 4,
+                'nutrition': 3, 'alcohol': 0, 'notes': '', 'newInjury': None, 'injuryUpdates': [], **changes}
+
+    def test_morning_check_in_feeds_the_traffic_light_and_the_today_view(self):
+        empty = self.client.get('/api/coach/today').get_json()
+        self.assertIsNone(empty['checkIn'])
+        self.assertTrue(empty['dailyCheckIn'])
+        self.assertFalse(empty['readiness']['checkedIn'])
+        result = self.client.post('/api/coach/check-ins', json=self.morning(recovery=1, alcohol=2))
+        self.assertEqual(result.status_code, 200, result.get_json())
+        view = result.get_json()
+        self.assertEqual(view['checkIn']['recovery'], 1)
+        self.assertEqual((view['readiness']['level'], view['readiness']['reasons']), ('yellow', ['Du fühlst dich erschöpft', 'Alkohol gestern']))
+        self.assertEqual(view['checkIn']['readiness']['level'], 'yellow')
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        self.assertEqual(self.client.post('/api/coach/check-ins', json=self.morning(date=tomorrow)).status_code, 400)
+        self.assertEqual(self.client.post('/api/coach/check-ins', json=self.morning(wellbeing=0)).status_code, 400)
+        history = self.client.get('/api/coach/check-ins').get_json()
+        self.assertEqual([c['date'] for c in history['checkIns']], [date.today().isoformat()])
+        self.assertEqual(self.client.get('/api/coach/today').get_json()['previousCheckIn'], None)
+
+    def test_today_shows_the_block_week_and_the_sessions_of_the_day(self):
+        self.week_plan()
+        view = self.client.get('/api/coach/today?date=' + self.start.isoformat()).get_json()
+        block = view['period']['block']
+        self.assertEqual((block['typeName'], block['weekNumber'], block['totalWeeks'], block['phase'], block['deload']),
+                         ('Wiedereinstieg', 1, 2, 'base', False))
+        self.assertEqual([(s['source'], s['sport'], s['hard'], s['durationMin']) for s in view['sessions']], [('coach', 'ride', False, 60)])
+        self.assertTrue(view['weekPlanned'])
+        self.assertEqual(view['period']['plannedHours'], 1)
+
+    def test_a_severe_complaint_keeps_its_sport_out_of_the_plan_until_it_heals(self):
+        self.block()
+        ankle = {'region': 'ankle', 'side': 'right', 'pain': 6, 'timing': 'during', 'onset': 'immediate', 'impact': 'adjust'}
+        view = self.client.post('/api/coach/check-ins', json=self.morning(newInjury=ankle)).get_json()
+        self.assertEqual(view['readiness']['level'], 'red')
+        injury = view['injuries'][0]
+        self.assertEqual((injury['label'], injury['pain'], injury['severe'], injury['affectedSports']), ('Knöchel rechts', 6, True, ['run']))
+        run = {**self.session('lauf', 'tue', 45, 'run_easy')}
+        rejected = {'week': self.week, 'targetHours': 1.75, 'focus': 'Locker', 'hinweise': [], 'sessions': [self.session(), run]}
+        provider = Mock()
+        provider.generate.return_value = rejected
+        with patch('coach_api.get_provider', return_value=provider):
+            response = self.client.post('/api/coach/proposals', json={'kind': 'week', 'week': self.week})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Knöchel rechts', response.get_json()['error'])
+        proposal, provider = self.propose({'kind': 'week', 'week': self.week},
+                                          {'week': self.week, 'targetHours': 1, 'focus': 'Locker', 'hinweise': [], 'sessions': [self.session()]})
+        context = provider.generate.call_args.args[3]
+        self.assertEqual(context['selfReported']['injuries'][0]['region'], 'Knöchel rechts')
+        self.assertEqual(context['selfReported']['readinessToday']['level'], 'red')
+        self.confirm(proposal)
+        # Only the running week adapts to today's check-in.
+        self.propose({'kind': 'patch', 'week': self.week, 'trigger': 'checkIn'}, {}, expected=400)
+        healed = self.client.put('/api/coach/injuries/' + injury['id'], json={'status': 'healed'}).get_json()
+        self.assertEqual(healed['injuries'], [])
+        self.propose({'kind': 'patch', 'week': self.week}, {'week': self.week, 'targetHours': 1.75, 'focus': 'Locker', 'hinweise': [],
+                                                            'operations': [{'op': 'add', 'sessionId': 'lauf', 'session': run}]})
+        history = self.client.get('/api/coach/check-ins').get_json()
+        self.assertEqual(history['injuries'][0]['status'], 'healed')
+
     def test_overrides_are_separate_checkins_are_athlete_data(self):
         self.client.put('/api/coach/weekly-overrides/' + self.week, json={'overrides': {'thu': {'available': False}}, 'note': 'Arbeit'})
         checkin = {'date': self.start.isoformat(), 'fatigue': 3, 'motivation': 5, 'stress': 2, 'sleepQuality': 4, 'soreness': 2, 'notes': 'Müde'}
