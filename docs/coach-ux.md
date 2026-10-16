@@ -11,6 +11,7 @@ Stand: 16.10.2026 · Status: abgestimmt, noch nicht implementiert. Orientiert si
 5. **Alles bleibt später änderbar.** Jede Eingabe aus dem Onboarding ist in den Einstellungen mit demselben Editor erreichbar.
 6. **Jede Woche und jede Einheit sagt, warum.** Ein Satz zum Zweck, sichtbar ohne Aufklappen.
 7. **Der Plan ist sofort aktiv.** Die Zusammenfassung vor dem Erstellen ist die Bestätigung. Nur spätere Anpassungen zeigen ein Vorher/Nachher.
+8. **Anpassen per Chat.** Wer am Plan etwas ändern will, schreibt es dem Coach in eigenen Worten. Es gibt keine Formulare für Anpassungen.
 
 ## 2. Begriffe in der Oberfläche
 
@@ -25,6 +26,7 @@ Stand: 16.10.2026 · Status: abgestimmt, noch nicht implementiert. Orientiert si
 | Verfügbarkeiten | Wiederkehrende Zeitfenster pro Wochentag mit den dort möglichen Sportarten, dazu einmalige Ausnahmen. |
 | Check-in | Morgendliche Abfrage mit Tagesampel (wie bisher). |
 | Wochenrückblick | Kurze Abfrage am Wochenende, danach wird nachgeplant. |
+| Coach-Chat | Fenster, in dem der Nutzer Fragen stellt und den Plan in eigenen Worten anpasst. |
 
 ## 3. Sportarten
 
@@ -51,6 +53,8 @@ Der Coach hat drei Bereiche:
 - **Heute:** Check-in, Ampel, heutige Einheit(en), Ausblick auf die nächsten Tage.
 - **Plan:** Phasenleiste bis zum Event, Wochen, Events, Verlauf.
 - **Einstellungen:** Athletenprofil, Sportarten, Leistungsdaten, Verfügbarkeiten, Events und Ziele, Datenquellen, AI-Provider, Coach-Verhalten.
+
+Dazu kommt der **Coach-Chat** (Abschnitt 9): ein fester Button „Coach fragen“ in Heute und Plan, der den Chat als Fenster über dem aktuellen Bereich öffnet.
 
 Ohne Plan zeigen „Heute“ und „Plan“ eine Startkarte: „Lass uns deinen Plan bauen“ → Onboarding.
 
@@ -131,8 +135,8 @@ Prüfungen: Enddatum ≥ Startdatum. Distanz und Zeit passen grob zum Untertyp. 
 | C (Standard) | nichts | ersetzt die harte Einheit der Woche | 1 Tag locker |
 | C (Alternative) | nichts | als lockere Teilnahme | normal weiter |
 
-### B3 Wähle deine Sportarten
-„Wähle die Sportarten, die du in deinen Trainingsplan aufnehmen möchtest.“
+### B3 Welche Sportarten willst du trainieren?
+„Wähle die Sportarten, die du trainieren willst.“
 - **Basierend auf deinen Events:** vorausgewählt und gesperrt (Schloss-Symbol)
 - **Multisport** und **Einzelne Sportarten:** wählbar, vorausgewählt aus A1
 - **Details** pro gewählter Sportart: Primärmetrik (Leistung/HF/Pace) und Schwellenwert. Fehlt er: **Selbst eintragen** oder **Testen lassen** (siehe A3)
@@ -150,7 +154,7 @@ Prüfungen: Enddatum ≥ Startdatum. Distanz und Zeit passen grob zum Untertyp. 
 
 Liste Montag bis Sonntag, je Tag „+ Neue Verfügbarkeit“ und die vorhandenen Einträge („Di 18:00–19:00 · Bike, Run“).
 
-**Vorschlag aus den Daten** (eigene Idee): „Du trainierst meist Di und Do abends und am Wochenende lang. Übernehmen?“ Das füllt typische Zeitfenster aus den Startzeiten der letzten 8 Wochen vor.
+Der Nutzer entscheidet selbst. Es gibt keine Vorschläge und keine Vorauswahl aus den Trainingsdaten.
 
 **Neue Verfügbarkeit**, Unterablauf mit 2 Schritten:
 1. „Wann trainierst du?“
@@ -194,19 +198,55 @@ Fortschritt in Schritten: „Phasen festlegen … Woche 1 planen … Woche 2 …
 - **Auslassen**
 - **Behalten** (früher „Fixieren“: bleibt bei Anpassungen unangetastet)
 
-**Woche anpassen:** Gründe als Chips (Keine Zeit, Krank, Müde, Reise, Mehr Zeit als geplant, Anderes) und optional Freitext → Vorher/Nachher → **Übernehmen** oder **Verwerfen**.
+**Woche anpassen** öffnet den Coach-Chat mit der Woche als Bezug (Abschnitt 9). Ein eigenes Formular gibt es nicht.
 
-**Ausnahme eintragen:** „Ich bin weg / habe weniger Zeit“ mit Zeitraum. Betroffene Wochen werden angepasst (Vorher/Nachher).
+**Ausnahmen** wie Urlaub, Reise oder weniger Zeit sagt der Nutzer ebenfalls im Chat („Vom 10. bis 17.04. bin ich auf Mallorca, da kann ich draußen viel fahren“). Ausnahmen, die er schon kennt, kann er auch unter Einstellungen → Verfügbarkeiten eintragen.
 
 ## 8. Bereich Heute
 
 1. Check-in, solange offen (Ablauf und Ampel wie heute)
 2. Ampel und Einordnung: „Woche 3 von 41 · Grundlage · Belastungswoche“
-3. Heutige Einheit(en) mit Zweck. Bei Gelb oder Rot: **Heute anpassen** (kürzer, lockerer, Ruhetag, auf morgen schieben) und **Woche anpassen**
+3. Heutige Einheit(en) mit Zweck. Bei Gelb oder Rot: Schnellbuttons **Kürzer**, **Lockerer**, **Ruhetag**, **Auf morgen** und **Coach fragen**. Ein Schnellbutton schickt eine vorbereitete Nachricht in den Chat, die Antwort kommt sofort mit Änderungskarte.
 4. Ausblick: die nächsten 3 Tage
 5. Hinweiskarte, wenn etwas ansteht: Wochenrückblick offen, Woche +3 neu geplant, Event in 7 Tagen
 
-## 9. Wochenrückblick und Nachplanen
+## 9. Coach-Chat
+
+Der Chat ist der eine Weg, den Plan zu ändern oder nachzufragen.
+
+**Erreichbar**
+- Button **Coach fragen** in Heute und Plan, öffnet den Chat als Fenster (auf dem Handy als Vollbild-Sheet)
+- Aus einer Einheit oder Woche heraus: Der Chat startet mit einem Bezug-Chip, z. B. „Über: Do, 22.10. · Sweetspot 3×12“ oder „Über: Woche 2“. Der Chip lässt sich entfernen.
+
+**Was der Coach im Chat kann**
+- **Anpassen:** Einheiten verschieben, tauschen, kürzen, streichen, Wochen umbauen, Ausnahmen für einen Zeitraum berücksichtigen
+- **Erklären:** „Warum heute Sweetspot?“, „Was heißt 3×13×30/15?“, „Wie soll ich das Gruppentraining fahren?“
+- **Einordnen:** „Bin ich auf Kurs für das NorthCape?“ mit Bezug auf geplante und absolvierte Wochen
+- **Dauerhafte Änderungen vorschlagen**, etwa neue Verfügbarkeiten, ein neues Event oder eine neue FTP. Das kommt als Karte mit „In Einstellungen übernehmen“.
+
+**Ablauf einer Änderung**
+1. Der Nutzer schreibt: „Morgen schaffe ich nur 45 Minuten.“
+2. Der Coach antwortet kurz und hängt eine **Änderungskarte** an: betroffene Tage, Vorher/Nachher, neue Wochenstunden.
+3. **Übernehmen**, **Verwerfen** oder weiterschreiben („Lieber Samstag dafür länger“). Dann kommt eine neue Karte, und die alte verfällt.
+4. Erst **Übernehmen** ändert Plan und Kalender. Im Verlauf steht danach „✓ übernommen“.
+
+**Schnellantworten** über dem Eingabefeld, passend zum Bezug: Keine Zeit · Krank · Müde · Reise · Mehr Zeit · Warum diese Einheit?
+
+**Grenzen**
+- Die Prüfregeln des Servers gelten unverändert. Verstößt ein Wunsch dagegen (Verfügbarkeit, Wochenmaximum, eine gesperrte Sportart wegen Beschwerde, Entlastungswoche), sagt der Coach das in einem Satz und bietet eine Alternative an.
+- Ohne verbundenen Provider ist das Eingabefeld gesperrt, mit Link zu Einstellungen → AI-Provider.
+- Nachrichten laufen über den eigenen Provider-Zugang (BYOK).
+
+**Verlauf**
+- Der Chatverlauf bleibt pro Plan erhalten, übernommene Änderungen sind darin markiert.
+- „Neuer Chat“ leert die Ansicht. Der Plan bleibt davon unberührt.
+
+**Beispiel**
+> **Du:** Nächste Woche bin ich Mi bis Fr auf Dienstreise, kein Rad.
+> **Coach:** Dann verlege ich die Sweetspot-Einheit vom Do auf Di und mache Sa etwas länger. Mi bis Fr bleiben frei. Die Woche hat damit 7 h statt 8,5 h; nachholen würde ich nichts.
+> *[Änderungskarte: Di + Sweetspot 3×12 · Mi Gruppenfahrt entfällt · Do entfällt · Sa 3:00 → 3:30 · 8,5 h → 7 h]* **Übernehmen** · **Verwerfen**
+
+## 10. Wochenrückblick und Nachplanen
 
 **Wochenrückblick** (am Sonntag als Karte in Heute, jederzeit auch aus dem Plan):
 - Geplant vs. absolviert (Stunden, Einheiten, ausgelassene Einheiten)
@@ -221,7 +261,7 @@ Fortschritt in Schritten: „Phasen festlegen … Woche 1 planen … Woche 2 …
 
 Ergebnis: Die neue Woche erscheint direkt (aktiv) mit einem Hinweis „Woche 4 geplant – 8,5 h, Fokus Sweetspot“. Weicht die abgelaufene Woche stark ab (krank, deutlich weniger), passt der Coach auch die bereits ausgearbeiteten Wochen 2–3 an und zeigt das als Vorher/Nachher.
 
-## 10. Einstellungen
+## 11. Einstellungen
 
 Gleiche Editoren wie im Onboarding, einzeln erreichbar:
 - Athletenprofil (Sportarten, Gewicht, Alter)
@@ -235,7 +275,7 @@ Gleiche Editoren wie im Onboarding, einzeln erreichbar:
 
 **Änderungen mit Auswirkung auf den Plan** (Verfügbarkeiten, Events, Leistungsdaten, Sportarten) fragen nach dem Speichern: „Soll ich deinen Plan daran anpassen?“ → Vorher/Nachher der ausgearbeiteten Wochen und ggf. neue Phasenleiste. „Später“ ist möglich; der Plan zeigt dann einen Hinweis.
 
-## 11. Lebenszyklus des Plans
+## 12. Lebenszyklus des Plans
 
 | Situation | Verhalten |
 | --- | --- |
@@ -246,7 +286,7 @@ Gleiche Editoren wie im Onboarding, einzeln erreichbar:
 | A-Event vorbei | Erholungswoche, danach Karte „Wie geht's weiter?“ → Plan neu erstellen (Wizard vorausgefüllt) oder nächstes A-Event. |
 | Mehrere A-Events | Der Plan endet mit dem letzten A-Event. Zwischen A-Events plant der Coach Taper, Erholung und Wiederaufbau. |
 
-## 12. Was vom heutigen Coach wegfällt bzw. umzieht
+## 13. Was vom heutigen Coach wegfällt bzw. umzieht
 
 | Heute | Künftig |
 | --- | --- |
@@ -256,12 +296,13 @@ Gleiche Editoren wie im Onboarding, einzeln erreichbar:
 | Trainingsblock anlegen, Blocktypen, „Schlag mir was vor / Ich weiß, was ich will“ | entfällt; Phasen entstehen beim Plan erstellen |
 | Saisonplan mit 2–3 Optionen, Editor, „Wochen angleichen“, „Block N von M“ | entfällt; Phasenleiste als Anzeige |
 | Vorschlag prüfen & übernehmen beim ersten Plan | entfällt; „Los geht's“ ist die Bestätigung |
-| Vorher/Nachher bei Wochenänderungen | bleibt |
+| Vorher/Nachher bei Wochenänderungen | bleibt, als Änderungskarte im Chat |
+| „Woche anpassen“ mit Formular, Overrides für Wochen und Tage | Coach-Chat |
 | Fixieren | heißt „Behalten“ |
 | Morgen-Check-in, Ampel, Beschwerden | bleibt unverändert |
 | Wochenabschluss | wird Wochenrückblick mit Nachplanen |
 
-## 13. Auswirkungen auf Backend und Daten (grob)
+## 14. Auswirkungen auf Backend und Daten (grob)
 
 - **Sportarten:** neue Templates für Swim, XC Ski, Hyrox, Kraft mit Equipment und Koppeleinheiten (Bike→Run) für Tri und Duathlon. Garmin-Export für Swim und Strength prüfen.
 - **Events:** eigenes Modell statt eines Zieldatums im Profil: Sportart, Untertyp, Start/Ende, Priorität, Umgang bei B/C, Distanz (bis 10.000 km), Zeit (Tage möglich), Höhenmeter, Ort.
@@ -269,12 +310,44 @@ Gleiche Editoren wie im Onboarding, einzeln erreichbar:
 - **Planerstellung in einem Durchgang:** Phasen (aus den bestehenden Blockregeln) und 3 ausgearbeitete Wochen, direkt gespeichert.
 - **Rollierendes Nachplanen:** Job bzw. Auslöser je nach Einstellung, plant Woche +3.
 - **Primärmetrik pro Sportart** steuert die Ziele der Templates.
+- **Coach-Chat:** Endpunkt für Nachrichten mit Plan-Kontext (Snapshot, ausgearbeitete Wochen, Bezug). Die Antwort ist strukturiert: Text plus optional ein Wochen-Patch bzw. Vorschlag für Einstellungen. Patches laufen durch dieselbe Prüfung wie heute und werden erst mit Bestätigung gespeichert. Der Verlauf wird pro Plan gespeichert.
 - **Migration:** bestehende Blöcke und Saisonpläne werden zu Phasen eines Plans; vorhandene Wochen und Workouts bleiben.
 
-## 14. Entscheidungen (abgestimmt am 16.10.2026)
+## 15. Entscheidungen (abgestimmt am 16.10.2026)
 
 1. **Planlänge:** keine feste Obergrenze, so lang wie der Nutzer will.
 2. **Primärmetrik Laufen:** Pace als Vorgabe, HF und Leistung wählbar.
 3. **Fehlende Leistungsdaten:** Der Nutzer trägt sie zu Beginn selbst ein oder lässt einen Test in Woche 1 einplanen.
 4. **Ohne Event:** Standardlänge 12 Wochen, änderbar.
 5. **Umsetzung:** zuerst der neue Ablauf mit Fokus Rad. Lauf und Kraft laufen mit den bestehenden Vorlagen mit. Swim, XC Ski, Hyrox sowie Tri und Duathlon folgen in einer zweiten Stufe. Die Sportarten erscheinen im Onboarding erst, wenn ihre Vorlagen fertig sind.
+6. **Sportarten im Plan (B3):** Gefragt wird, welche Sportarten der Nutzer trainieren will.
+7. **Verfügbarkeiten (B5):** Der Nutzer trägt sie selbst ein, ohne Vorschläge aus den Daten.
+8. **Anpassungen:** über den Coach-Chat statt über Formulare.
+
+## Anhang: Beispielablauf eines neuen Nutzers
+
+Rad, Ziel NorthCape 4000, erste Stufe. Heute ist Freitag, der 16.10.2026.
+
+1. **Erster Start:** Karte „Lass uns deinen Plan bauen · ca. 5 Minuten“ → Los geht's.
+2. **A1 Sportarten:** Bike (optional Run, Strength & Core).
+3. **A2 Daten:** Garmin verbinden, der Import läuft im Hintergrund. Ohne Datenquelle: Überspringen.
+4. **A3 Leistungsdaten:** Gewicht, Alter, max. HF. FTP aus Daten bestätigen, selbst eintragen oder **Testen lassen** (FTP-Test in Woche 1).
+5. **A4 Provider:** Key einfügen, Verbindung testen ✓.
+6. **B1 Hintergrund:** „Das sehe ich in deinen Daten: Radfahrer · Ø 7,8 h/Woche · Intervalle Rad ja, zuletzt 03.10.“ → Stimmt so. Ohne Daten: MATS-Fragen.
+7. **B2 Ziel:** + Event: NorthCape 4000 · Bike · 29.07.–12.08.2027 · A · Ultra · 4000 km · 10 d 12 h · 30.000 hm. Optional Gran Fondo im Mai als B (Mini-Taper).
+8. **B3 Welche Sportarten willst du trainieren?** Radfahren gesperrt (vom Event), optional Kraft. Primärmetrik Leistung.
+9. **B4 Zeitraum:** 19.10.2026 bis 12.08.2027, Zeitstrahl mit Gran Fondo (B) und NorthCape (A).
+10. **B5 Verfügbarkeiten:** selbst eingetragen:
+    - Di 18:00–19:30 Bike (Rolle), auch für Do übernommen
+    - Mi Gruppentraining 18–20 Uhr
+    - Sa ganzer Tag
+    - So 08–12 Uhr
+    - Mo und Fr nicht verfügbar
+    - max. 10 h/Woche · Ruhetag Mo · lange Einheit Sa
+11. **B6 Bereit:** Zusammenfassung → Los geht's.
+12. **B7:** Phasen ✓, Woche 1–3 ✓ → **Plan** öffnet sich, der Plan ist aktiv, und die Einheiten stehen im Kalender.
+13. **Mo 19.10. Heute:** Check-in → Grün · „Woche 1 von 40 · Grundlage · heute Ruhetag“.
+14. **Di:** Check-in → Gelb → Schnellbutton **Kürzer** → im Chat erscheint die Änderungskarte (1:15 → 0:50 locker) → Übernehmen.
+15. **Unter der Woche:** Im Chat: „Do schaffe ich nicht, kann ich das Sa machen?“ → Änderungskarte → Übernehmen.
+16. **So 25.10. Wochenrückblick:** 7:20 von 8 h · Anstrengung 3/5 · Wenig Zeit → Absenden → „Woche 4 geplant · 8,5 h · Fokus Sweetspot“.
+17. **Später:** Urlaub, Krankheit oder Fragen laufen über den Chat. Geänderte Verfügbarkeiten oder Events in den Einstellungen führen zu „Soll ich deinen Plan anpassen?“. Nach dem NorthCape kommt eine Erholungswoche und dann „Wie geht's weiter?“.
