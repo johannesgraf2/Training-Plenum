@@ -66,3 +66,26 @@ test('a running coach request goes on while the athlete looks at the calendar an
   expect(container.querySelector('.app-nav-status')).toBeNull();
   expect(mockMounts).toBe(1);
 });
+
+test('the morning check-in opens by itself once a day and leads into the coach', async () => {
+  const day = { date: '2026-10-21', checkIn: null, previousCheckIn: null, injuries: [], whoop: null, weekPlanned: true, dailyCheckIn: true, sessions: [],
+    readiness: { level: 'green', reasons: [], notes: [], affectedSports: [], checkedIn: false }, period: { week: '2026-W43', goal: {}, block: null, season: null, weeksToGoal: null } };
+  window.localStorage.clear();
+  global.fetch = jest.fn(async url => {
+    const path = url.replace('http://localhost:5000', '').split('?')[0];
+    if (path === '/api/activities' || path === '/api/workouts') return { ok: true, json: async () => [] };
+    if (path === '/api/whoop') return { ok: true, json: async () => ({ connected: false }) };
+    if (path === '/api/coach/today') return { ok: true, json: async () => day };
+    throw new Error(`Unexpected request ${path}`);
+  });
+  await act(async () => root.render(<App />));
+  expect(container.querySelector('[aria-label="Morgen-Check-in"]')).not.toBeNull();
+  expect(container.querySelector('.today-strip.open')).not.toBeNull();  // The start page shows it, too.
+  click([...container.querySelectorAll('button')].find(b => b.textContent === 'Später'));
+  expect(container.querySelector('[aria-label="Morgen-Check-in"]')).toBeNull();
+  // Coming back to the tab the same day does not ask again.
+  await act(async () => { window.dispatchEvent(new Event('focus')); });
+  expect(container.querySelector('[aria-label="Morgen-Check-in"]')).toBeNull();
+  click([...container.querySelectorAll('.today-strip button')][0]);
+  expect(container.querySelector('[aria-label="Morgen-Check-in"]')).not.toBeNull();
+});

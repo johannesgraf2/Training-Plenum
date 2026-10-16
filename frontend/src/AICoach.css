@@ -272,3 +272,8 @@
 .coach-season-volume > div { border: 1px solid var(--bd-e2e8f0); border-radius: 4px; padding: 14px 14px 0; }
 .coach-season-volume h4 { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
 @media (max-width: 650px) { .coach-season-volume.two { grid-template-columns: 1fr; } }
+
+/* Today tab */
+.coach-tab-dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.coach-checkin-open { justify-content: space-between; flex-wrap: wrap; }
+.coach-checkin-open button { margin-left: auto; }
