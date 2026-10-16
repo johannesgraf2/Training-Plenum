@@ -1,6 +1,6 @@
 # AI Coach: UX-Spezifikation (Entwurf)
 
-Stand: 16.10.2026 · Status: in Abstimmung, noch nicht implementiert. Orientiert sich am Ablauf von MATS, ergänzt um eigene Stärken: vorhandene Trainingsdaten, Morgen-Check-in mit Ampel, BYOK, Garmin-Export.
+Stand: 16.10.2026 · Status: abgestimmt, noch nicht implementiert. Orientiert sich am Ablauf von MATS, ergänzt um eigene Stärken: vorhandene Trainingsdaten, Morgen-Check-in mit Ampel, BYOK, Garmin-Export.
 
 ## 1. Leitlinien
 
@@ -34,7 +34,7 @@ Wie bei MATS:
 | --- | --- | --- | --- | --- |
 | Swim | Einzeln | Becken, Freiwasser, Custom | Pace (CSS), RPE | Freiwasser auch möglich |
 | Bike | Einzeln | Kriterium, Cyclocross, Zeitfahren, Cross Country, Straßenrennen, Gran Fondo, XC Marathon, Gravel, Ultra, Custom | Leistung, Herzfrequenz | Rolle, draußen |
-| Run | Einzeln | 5 km, 10 km, Halbmarathon, Marathon, Trail, Ultra, Custom | Pace, Herzfrequenz, Leistung | Laufband, draußen |
+| Run | Einzeln | 5 km, 10 km, Halbmarathon, Marathon, Trail, Ultra, Custom | Pace (Vorgabe), Herzfrequenz, Leistung | Laufband, draußen |
 | Strength & Core | Einzeln | (kein Event) | RPE | Equipment: Studio, Kurzhanteln, Kettlebell, Eigengewicht |
 | XC Ski | Einzeln | Klassisch, Skating, Volkslauf/Marathon, Custom | Herzfrequenz | Skiroller, Schnee |
 | Hyrox | Multisport | Open, Pro, Doubles, Relay | Herzfrequenz, RPE | Equipment wie Kraft |
@@ -72,7 +72,11 @@ Karten mit Status „Verbunden“ oder „Verbinden“ und dem, was sie liefern 
 Der Schritt lässt sich überspringen. Ohne Daten fragt Teil B nach statt vorzufüllen.
 
 ### A3 Deine Leistungsdaten
-Gewicht, Alter, max. HF und je gewählter Sportart der Schwellenwert: FTP (Bike), Schwellenpace (Run), CSS (Swim). Jeder Wert zeigt seine Herkunft: „aus deinen Daten: 285 W, abgeleitet aus 20-min-Bestwert vom 12.09.“ oder „von dir eingetragen“. „Weiß ich nicht“ ist erlaubt. Dann plant der Coach einen Test in den ersten Wochen ein.
+Gewicht, Alter, max. HF und je gewählter Sportart der Schwellenwert: FTP (Bike), Schwellenpace (Run), CSS (Swim). Jeder Wert zeigt seine Herkunft: „aus deinen Daten: 285 W, abgeleitet aus 20-min-Bestwert vom 12.09.“ oder „von dir eingetragen“. Fehlt ein Wert, hat der Nutzer zwei Optionen:
+- **Selbst eintragen**
+- **Testen lassen:** Der Coach plant den passenden Test (z. B. FTP-Test, 30-min-Lauftest, CSS-Test) in die erste Planwoche. Bis zum Ergebnis sind die Ziele dieser Sportart nur nach Gefühl (RPE) angegeben.
+
+Dieselbe Abfrage erscheint in B3, falls beim Plan erstellen für eine gewählte Sportart der Schwellenwert noch fehlt.
 
 ### A4 Dein AI-Provider
 Provider, Modell, API-Key und Verbindungstest (wie heute, nur als Schritt). Ein Satz zu BYOK: „Deine Anfragen laufen über deinen eigenen Zugang und werden dort abgerechnet.“ Ohne verbundenen Provider kann Teil B nicht abgeschlossen werden. Der Schritt erscheint deshalb spätestens vor „Plan erstellen“.
@@ -131,14 +135,15 @@ Prüfungen: Enddatum ≥ Startdatum. Distanz und Zeit passen grob zum Untertyp. 
 „Wähle die Sportarten, die du in deinen Trainingsplan aufnehmen möchtest.“
 - **Basierend auf deinen Events:** vorausgewählt und gesperrt (Schloss-Symbol)
 - **Multisport** und **Einzelne Sportarten:** wählbar, vorausgewählt aus A1
-- **Details** pro gewählter Sportart: Primärmetrik (Leistung/HF/Pace)
+- **Details** pro gewählter Sportart: Primärmetrik (Leistung/HF/Pace) und Schwellenwert. Fehlt er: **Selbst eintragen** oder **Testen lassen** (siehe A3)
 
 ### B4 Zeitraum
 „Wähle Start- und Enddatum deines Plans.“
 - Startdatum: Vorgabe ist der nächste Montag bzw. nach der Erholung von einem kürzlichen Event
-- Plan-Enddatum: Vorgabe ist das Ende des letzten A-Events
+- Plan-Enddatum: Vorgabe ist das Ende des letzten A-Events, ohne Event 12 Wochen nach dem Start
+- **Keine feste Obergrenze:** Der Plan ist so lang, wie der Nutzer will
 - **Zeitstrahl** mit allen Events im Zeitraum (A groß, B und C klein), damit B- und C-Events sichtbar eingeplant sind
-- Hinweis bei Grenzen: „Das Plan-Enddatum darf nicht später als … sein.“
+- Liegt das Enddatum nach dem letzten A-Event, gibt es einen Hinweis, aber keine Sperre: „Nach dem A-Event plane ich Erholung und danach Grundlage bis zum Planende.“
 
 ### B5 Verfügbarkeiten
 „Sag mir, wann du trainieren kannst.“
@@ -266,10 +271,10 @@ Gleiche Editoren wie im Onboarding, einzeln erreichbar:
 - **Primärmetrik pro Sportart** steuert die Ziele der Templates.
 - **Migration:** bestehende Blöcke und Saisonpläne werden zu Phasen eines Plans; vorhandene Wochen und Workouts bleiben.
 
-## 14. Offene Fragen
+## 14. Entscheidungen (abgestimmt am 16.10.2026)
 
-1. **Planlänge:** MATS begrenzt auf 1 Jahr. Sollen wir länger erlauben (heute bis 104 Wochen)?
-2. **Primärmetrik Laufen:** Pace als Vorgabe, oder HF wie bisher?
-3. **Leistungstest:** Wenn FTP, Schwellenpace oder CSS fehlen, Test in Woche 1 einplanen oder aus Daten schätzen und später nachschärfen?
-4. **Ohne Event und ohne Datenquelle:** Reicht „Ziel ohne Event“ plus Zeitraum, oder geben wir eine Standardlänge vor (z. B. 12 Wochen)?
-5. **Reihenfolge der Umsetzung:** zuerst Onboarding und Plan für die heutigen Sportarten (Bike, Run, Kraft) und danach die neuen Sportarten, oder alles zusammen?
+1. **Planlänge:** keine feste Obergrenze, so lang wie der Nutzer will.
+2. **Primärmetrik Laufen:** Pace als Vorgabe, HF und Leistung wählbar.
+3. **Fehlende Leistungsdaten:** Der Nutzer trägt sie zu Beginn selbst ein oder lässt einen Test in Woche 1 einplanen.
+4. **Ohne Event:** Standardlänge 12 Wochen, änderbar.
+5. **Umsetzung:** zuerst der neue Ablauf mit Fokus Rad. Lauf und Kraft laufen mit den bestehenden Vorlagen mit. Swim, XC Ski, Hyrox sowie Tri und Duathlon folgen in einer zweiten Stufe. Die Sportarten erscheinen im Onboarding erst, wenn ihre Vorlagen fertig sind.
