@@ -34,7 +34,7 @@ const SITUATION_HINTS = { nach_pause: 'Du steigst nach Krankheit, Urlaub oder Pa
 const WIZARD_STEPS = ['Ausgangslage', 'Weg', 'Auswahl', 'Vorschau'];
 const SEASON_WIZARD_STEPS = ['Ausgangslage', 'Block gestalten', 'Vorschau'];
 const EMPTY_WORKOUTS = [];
-const MODEL_PRESETS = ['gpt-6-sol', 'gpt-5-mini', 'gpt-5', 'gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'];
+const MODEL_PRESETS = ['gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5-mini', 'gpt-5', 'gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'];
 const REASONING_LEVELS = [['', 'Standard des Modells'], ['low', 'Niedrig'], ['medium', 'Mittel'], ['high', 'Hoch']];
 const number = value => value === '' || value == null ? null : Number(value);
 const fmt = value => value == null ? '—' : Number(value).toLocaleString('de-DE', { maximumFractionDigits: 1 });
