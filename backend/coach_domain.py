@@ -206,6 +206,25 @@ def effective_availability(profile, week):
     return result
 
 
+def open_wish_days(profile, week, wish_days):
+    """Days the athlete's wish for this week opens or extends, as a weekly override; a wish never takes time away."""
+    limits = effective_availability(profile, week)
+    opened = [item for item in wish_days if item['maxMinutes'] > (limits[item['day']]['maxMinutes'] or 0)]
+    if len({item['day'] for item in wish_days}) < len(wish_days):
+        raise CoachError('Jeder Tag darf nur einmal freigegeben werden.')
+    if not opened:
+        return profile, []
+    result = copy.deepcopy(profile)
+    override = next((o for o in result['weeklyOverrides'] if o['week'] == week), None)
+    if override is None:
+        override = {'week': week, 'overrides': {}, 'note': ''}
+        result['weeklyOverrides'] = sorted(result['weeklyOverrides'] + [override], key=lambda o: o['week'])[-104:]
+    for item in opened:
+        override['overrides'][item['day']] = {**override['overrides'].get(item['day'], {}), 'available': True,
+                                              'maxMinutes': item['maxMinutes']}
+    return result, opened
+
+
 BLOCK_WEEKS_SCHEMA = {'type': 'array', 'minItems': 1, 'maxItems': 12, 'items': obj({
     'week': num(1, 12, integer=True), 'phase': {'enum': ['base', 'build', 'peak', 'taper', 'recovery']},
     'targetHours': num(0, 80), 'focus': text(160)})}
@@ -213,13 +232,19 @@ BLOCK_WEEKS_SCHEMA = {'type': 'array', 'minItems': 1, 'maxItems': 12, 'items': o
 HINWEISE_SCHEMA = {'type': 'array', 'maxItems': 5, 'items': text(300)}
 
 
+# Days the athlete's wish asks to train on although the standard week gives them no or too little time.
+WISH_DAYS_SCHEMA = {'type': 'array', 'maxItems': 7, 'items': obj({'day': {'enum': DAYS}, 'maxMinutes': num(15, 1440, integer=True)})}
+
+
 def response_schemas(session_schema):
     week = obj({'week': text(8), 'targetHours': num(0, 80), 'focus': text(160),
-                'sessions': {'type': 'array', 'maxItems': 21, 'items': session_schema}, 'hinweise': HINWEISE_SCHEMA})
+                'sessions': {'type': 'array', 'maxItems': 21, 'items': session_schema}, 'wishDays': WISH_DAYS_SCHEMA,
+                'hinweise': HINWEISE_SCHEMA})
     operation = obj({'op': {'enum': ['add', 'replace', 'remove']}, 'sessionId': text(80),
                      'session': {'anyOf': [session_schema, {'type': 'null'}]}})
     patch = obj({'week': text(8), 'targetHours': num(0, 80), 'focus': text(160),
-                 'operations': {'type': 'array', 'maxItems': 21, 'items': operation}, 'hinweise': HINWEISE_SCHEMA})
+                 'operations': {'type': 'array', 'maxItems': 21, 'items': operation}, 'wishDays': WISH_DAYS_SCHEMA,
+                 'hinweise': HINWEISE_SCHEMA})
     return {'week': week, 'patch': patch}
 
 

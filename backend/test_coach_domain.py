@@ -210,12 +210,13 @@ class PatchTests(unittest.TestCase):
 
     def test_ai_schemas_require_exact_types_and_forbid_extra_workout_fields(self):
         schema = response_schemas(SESSION_SCHEMA)['week']
-        data = {'week': '2026-W40', 'targetHours': 1, 'focus': 'Grundlage', 'hinweise': [], 'sessions': [
+        data = {'week': '2026-W40', 'targetHours': 1, 'focus': 'Grundlage', 'hinweise': [], 'wishDays': [], 'sessions': [
             {'id': 'mon', 'day': 'mon', 'template': 'bike_z2', 'params': dict.fromkeys(PARAM_NAMES)}]}
         validate(data, schema)
         for bad in ({**data, 'targetHours': True}, {**data, 'sessions': None},
                     {**data, 'sessions': [{**data['sessions'][0], 'locked': False}]},
-                    {**data, 'sessions': [{**data['sessions'][0], 'day': 'monday'}]}):
+                    {**data, 'sessions': [{**data['sessions'][0], 'day': 'monday'}]},
+                    {**data, 'wishDays': [{'day': 'wed', 'maxMinutes': 5}]}):
             with self.assertRaises(CoachError):
                 validate(bad, schema)
         with self.assertRaises(CoachError):

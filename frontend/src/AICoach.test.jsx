@@ -227,6 +227,22 @@ test('changing availability removes a preview and blocks AI planning until the o
   expect(button('Woche anpassen').disabled).toBe(false);
 });
 
+test('a wish opens a day without time; the preview names it and the week keeps it as an exception', async () => {
+  initialPlan = { revision: 2, blocks: [macro], weeks: { '2026-W39': weekPlan } };
+  const wished = { overrides: { wed: { available: true, maxMinutes: 90 } }, note: '' };
+  responses['POST /api/coach/proposals'] = body => ({ ok: true, json: async () => ({ id: 'proposal-1', kind: body.kind, hinweise: [], wishDays: [{ day: 'wed', maxMinutes: 90 }], before: weekPlan, after: weekPlan }) });
+  await render(); await tab('Woche');
+  await change(inputFor('Wunsch für die Planung'), 'Diese Woche muss ich am Mittwoch trainieren.');
+  await click(button('Woche anpassen'));
+  expect(requests.find(r => r.path === '/api/coach/proposals').body).toEqual({ kind: 'patch', week: '2026-W39', instruction: 'Diese Woche muss ich am Mittwoch trainieren.' });
+  const preview = container.querySelector('[aria-label="Planvorschlag prüfen"]');
+  expect(preview.textContent).toContain('Auf deinen Wunsch für diese Woche freigegeben: Mi bis 90 min');
+  responses['GET /api/athlete-profile'] = () => ({ ok: true, json: async () => ({ ...profile, weeklyOverrides: [{ week: '2026-W39', ...wished }] }) });
+  await click(button('Änderungen bestätigen und übernehmen'));
+  expect(container.querySelector('[aria-label="Mi Verfügbarkeit diese Woche"]').value).toBe('yes');
+  expect(container.querySelector('[aria-label="Mi Minuten diese Woche"]').value).toBe('90');
+});
+
 test('provider keys are transient and never included in a later model-only save', async () => {
   const storageSpy = jest.spyOn(Storage.prototype, 'setItem');
   await render(); await click(button('AI Provider'));

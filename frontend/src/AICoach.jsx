@@ -748,6 +748,7 @@ function Proposal({ value, busy, onConfirm, onDiscard }) {
     <div className="coach-section-heading"><div><span className="coach-eyebrow">AI-Empfehlung · Noch nicht gespeichert</span><h2>{PROPOSAL_TITLES[value.kind] || 'Vorschlag prüfen'}</h2></div><span className="coach-badge recommendation">Vorschau</span></div>
     <p>Prüfe den Vorschlag und übernimm ihn ausdrücklich. Bis dahin ändert sich nichts.</p>
     <Hinweise items={value.hinweise} />
+    {value.wishDays?.length > 0 && <p className="coach-muted">Auf deinen Wunsch für diese Woche freigegeben: {value.wishDays.map(d => `${DAYS.find(([day]) => day === d.day)?.[1] || d.day} bis ${d.maxMinutes} min`).join(', ')}. Mit dem Übernehmen wird das als Ausnahme der Woche gespeichert.</p>}
     {changes.length > 0 && <ul className="coach-change-list">{changes.map((change, i) => <li key={i}>{change}</li>)}</ul>}
     <div className="coach-compare"><div><h3>Bisher</h3><SessionList value={value.before} /></div><div><h3>Vorgeschlagen</h3><SessionList value={value.after} /></div></div>
     <div className="coach-actions"><button className="coach-primary" disabled={busy} onClick={() => onConfirm()}>Änderungen bestätigen und übernehmen</button><button disabled={busy} onClick={onDiscard}>Vorschlag verwerfen</button></div>
@@ -920,11 +921,17 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
   function discardProposal() {
     return run('Vorschlag wird verworfen …', async () => { await request(`/api/coach/proposals/${proposal.id}/discard`, 'POST', {}); setProposal(null); setNotice('Vorschlag verworfen.'); });
   }
+  // Days opened on the athlete's wish are saved by the backend as an exception of their week.
+  async function refreshWeeklyOverrides(confirmed) {
+    if (!confirmed.wishDays?.length) return;
+    const saved = await request('/api/athlete-profile');
+    setProfile(p => ({ ...p, weeklyOverrides: saved.weeklyOverrides }));
+  }
   function confirmProposal(optionId, segments) {
     return run('Plan wird übernommen …', async () => {
       try {
         const saved = await request(`/api/coach/proposals/${proposal.id}/confirm`, 'POST', { confirm: true, ...(optionId ? { optionId } : {}), ...(segments ? { segments } : {}) });
-        setPlan(saved); setProposal(null); await onWorkoutsChanged?.();
+        setPlan(saved); setProposal(null); await onWorkoutsChanged?.(); await refreshWeeklyOverrides(proposal);
         if (proposal.kind === 'season') setNotice('Saisonplan übernommen. Du planst weiterhin Block für Block.');
         else if (proposal.kind === 'block') {
           const chosen = proposal.after.options.find(option => option.id === optionId).block;
@@ -945,6 +952,7 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
       const next = await request(path, 'POST', body).catch(() => request(path, 'POST', body));
       try {
         keepNewer(await request(`/api/coach/proposals/${next.id}/confirm`, 'POST', { confirm: true }));
+        await refreshWeeklyOverrides(next);
         return next;
       } catch (e) {
         // An edit of the athlete in the meantime makes the proposal stale; the week is planned again with it.
@@ -1120,7 +1128,7 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
     });
   }
   instructionRef.current = instruction;
-  const wishField = <Field label="Wunsch für die Planung"><textarea maxLength={2000} value={instruction} placeholder="z. B. Donnerstag und Freitag frei halten, die lange Ausfahrt am Samstag beibehalten." onChange={e => { invalidate(); setInstruction(e.target.value); }} /></Field>;
+  const wishField = <Field label="Wunsch für die Planung"><textarea maxLength={2000} value={instruction} placeholder="z. B. Diese Woche am Mittwoch trainieren, Donnerstag frei halten, die lange Ausfahrt am Samstag beibehalten." onChange={e => { invalidate(); setInstruction(e.target.value); }} /></Field>;
   const season = plan?.season;
   // Blocks are laid out in order: the first season block without a plan is the one that can be created next.
   const nextOpenSegment = season?.aligned ? season.segments.find(segment => !segment.blockId && segment.startDate >= season.openFrom) : null;

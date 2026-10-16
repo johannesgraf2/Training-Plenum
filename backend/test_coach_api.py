@@ -67,7 +67,10 @@ class CoachAPITests(unittest.TestCase):
 
     def propose(self, body, decision, expected=201):
         provider = Mock()
-        provider.generate.return_value = copy.deepcopy(decision)
+        decision = copy.deepcopy(decision)
+        if body['kind'] in ('week', 'patch'):
+            decision.setdefault('wishDays', [])
+        provider.generate.return_value = decision
         with patch('coach_api.get_provider', return_value=provider):
             response = self.client.post('/api/coach/proposals?timezone=Europe/Berlin', json=body)
         self.assertEqual(response.status_code, expected, response.get_json())
@@ -454,6 +457,34 @@ class CoachAPITests(unittest.TestCase):
                                                     'sports': ['ride', 'run'], 'environment': 'outdoor', 'minRideMinutes': 90})
         self.assertIn('rideMinutesMedian', context['recentPattern'])
 
+    def test_wish_opens_a_day_without_time_for_this_week(self):
+        self.block()
+        free = dict.fromkeys(DAYS, 120) | {'wed': 0}
+        self.assertEqual(self.client.put('/api/athlete-profile', json={'availability': {
+            'defaultAvailability': free, 'trainingDaysPerWeek': 2}}).status_code, 200)
+        sessions = [self.session('a', 'mon', 60), self.session('b', 'wed', 90)]
+        decision = {'week': self.week, 'targetHours': 2.5, 'focus': 'Basis', 'hinweise': [], 'sessions': sessions}
+        wish = {'kind': 'week', 'week': self.week, 'instruction': 'Diese Woche muss ich am Mittwoch trainieren.'}
+        response, _ = self.propose(wish, decision, expected=400)
+        self.assertIn('wed', response['error'])
+        response, _ = self.propose({'kind': 'week', 'week': self.week}, {**decision, 'wishDays': [{'day': 'wed', 'maxMinutes': 90}]},
+                                   expected=400)
+        self.assertIn('Wunsch', response['error'])
+        proposal, provider = self.propose(wish, {**decision, 'wishDays': [{'day': 'wed', 'maxMinutes': 90}]})
+        context = provider.generate.call_args.args[3]
+        self.assertEqual(context['athleteWish'], {'source': 'athlete', 'text': wish['instruction']})
+        self.assertNotIn('instruction', context)
+        self.assertEqual(proposal['wishDays'], [{'day': 'wed', 'maxMinutes': 90}])
+        self.confirm(proposal)
+        overrides = self.client.get('/api/athlete-profile').json['weeklyOverrides']
+        self.assertEqual(overrides, [{'week': self.week, 'overrides': {'wed': {'available': True, 'maxMinutes': 90}}, 'note': ''}])
+        # The wish may add its day on top of the usual training days, but no other one.
+        third = {**decision, 'targetHours': 4.5, 'sessions': [*sessions, self.session('c', 'tue', 60), self.session('d', 'fri', 60)]}
+        response, _ = self.propose({**wish, 'week': iso_week(self.start + timedelta(weeks=1))},
+                                   {**third, 'week': iso_week(self.start + timedelta(weeks=1)), 'wishDays': [{'day': 'wed', 'maxMinutes': 90}]},
+                                   expected=400)
+        self.assertIn('Höchstens 2 Trainingstage', response['error'])
+
     def test_indoor_months_bring_their_own_volume_and_minimum_ride(self):
         self.block()
         month = (self.start + timedelta(days=3)).month  # The Thursday decides the week's month.
@@ -657,7 +688,8 @@ class CoachAPITests(unittest.TestCase):
         injury = view['injuries'][0]
         self.assertEqual((injury['label'], injury['pain'], injury['severe'], injury['affectedSports']), ('Knöchel rechts', 6, True, ['run']))
         run = {**self.session('lauf', 'tue', 45, 'run_easy')}
-        rejected = {'week': self.week, 'targetHours': 1.75, 'focus': 'Locker', 'hinweise': [], 'sessions': [self.session(), run]}
+        rejected = {'week': self.week, 'targetHours': 1.75, 'focus': 'Locker', 'hinweise': [], 'wishDays': [],
+                    'sessions': [self.session(), run]}
         provider = Mock()
         provider.generate.return_value = rejected
         with patch('coach_api.get_provider', return_value=provider):
