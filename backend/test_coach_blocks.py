@@ -100,6 +100,8 @@ class WeekRuleTests(unittest.TestCase):
             check_week_rules(block, {'phase': 'build'}, [session('bike_vo2'), session('bike_z2')])
         check_week_rules(block, {'phase': 'build'}, [session('bike_vo2'), session('bike_vo2'), session('bike_z2')])
         check_week_rules(block, {'phase': 'recovery'}, [session('bike_z2')])
+        # A runner meets the rule with running VO2 sessions; before there were none, so a run plan could never pass.
+        check_week_rules(block, {'phase': 'build'}, [session('run_vo2'), session('run_vo2_short'), session('run_easy'), session('run_long')])
         with self.assertRaisesRegex(CoachError, 'höchstens 1×'):
             check_week_rules(block, {'phase': 'build'}, [session('bike_vo2'), session('bike_vo2'),
                                                          session('bike_sweetspot'), session('bike_threshold')])

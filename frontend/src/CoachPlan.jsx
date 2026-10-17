@@ -40,6 +40,8 @@ export const PURPOSES = {
   run_easy: 'Lockerer Lauf für Grundlage und Laufökonomie.',
   run_threshold: 'Tempo an der Schwelle: macht dich auf längeren Strecken schneller.',
   run_long: 'Langer Lauf für Ausdauer und einen belastbaren Bewegungsapparat.',
+  run_vo2: 'Hebt deine maximale Sauerstoffaufnahme: Minuten nahe VO2max machen dich auf allen Strecken schneller.',
+  run_vo2_short: 'Kurze schnelle Wechsel: viel Zeit nahe VO2max, ohne lange zu leiden.',
   strength_general: 'Kraft und Stabilität beugen Verletzungen vor und stützen die Leistung.',
   rest: 'Ruhe gehört zum Training: Jetzt passt sich dein Körper an.',
   bike_ftp_test: 'Misst deine FTP, damit alle Radziele stimmen.',

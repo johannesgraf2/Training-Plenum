@@ -41,12 +41,15 @@ def _intervals(name, sport, intervals, work, recovery, intensity, intensity_rang
 
 
 def _micro(name, sets, reps, work, rest, intensity, intensity_range, *, sets_range, reps_range, work_range, rest_range,
-           margin, hint):
+           margin, hint, sport='ride', set_rest=5):
     """Short work/rest repeats in sets, e.g. 3×13×30/15; each set is one repeat block on the device."""
-    return {'name': name, 'sport': 'ride', 'kind': 'micro', 'fuel': 'hit', 'margin': margin, 'hint': hint,
-            'defaults': {'sets': sets, 'reps': reps, 'workSec': work, 'restSec': rest, 'setRestMin': 5, 'intensity': intensity},
-            'params': {'sets': sets_range, 'reps': reps_range, 'workSec': work_range, 'restSec': rest_range, 'setRestMin': [2, 10],
-                       'intensity': intensity_range, 'cadence': [60, 120], 'durationMin': [30, MAX_RIDE_MINUTES]}}
+    params = {'sets': sets_range, 'reps': reps_range, 'workSec': work_range, 'restSec': rest_range, 'setRestMin': [2, 10],
+              'intensity': intensity_range}
+    if sport == 'ride':
+        params.update(cadence=[60, 120], durationMin=[30, MAX_RIDE_MINUTES])
+    return {'name': name, 'sport': sport, 'kind': 'micro', 'fuel': 'hit', 'margin': margin, 'hint': hint,
+            'defaults': {'sets': sets, 'reps': reps, 'workSec': work, 'restSec': rest, 'setRestMin': set_rest, 'intensity': intensity},
+            'params': params}
 
 
 TEMPLATES = {
@@ -73,6 +76,15 @@ TEMPLATES = {
     'run_easy': _steady('Lockerer Lauf', 'run', 45, [15, 120], .70, [.60, .78]),
     'run_threshold': _intervals('Schwellenlauf', 'run', 3, 8, 3, .88, [.83, .92]),
     'run_long': _steady('Langer Lauf', 'run', 90, [45, 240], .72, [.60, .80]),
+    # Running VO2max work: intensity .95 of max HR is about 7 % faster than threshold pace (3-5 km race pace).
+    'run_vo2': {**_intervals('VO2-Intervalle Lauf', 'run', 5, 3, 3, .95, [.92, 1.0], fuel='hit'),
+                'hint': 'Running VO2max intervals of 2-5 min with jogging recovery about as long as the work; progress time at '
+                        'pace, e.g. 5x3 -> 6x3 -> 5x4 -> 6x4 min.'},
+    'run_vo2_short': _micro('Kurze VO2-Intervalle Lauf', 2, 8, 30, 30, 1.0, [.95, 1.05],
+                            sets_range=[1, 4], reps_range=[4, 15], work_range=[15, 90], rest_range=[15, 90], margin=.03,
+                            sport='run', set_rest=3,
+                            hint='Short running VO2max repeats with jogging rest, e.g. 30/30 or 60/60 in sets; progress reps per '
+                                 'set (e.g. 2x8 -> 2x10 -> 3x8).'),
     'strength_general': {'name': 'Allgemeines Krafttraining', 'sport': 'strength', 'kind': 'strength', 'fuel': 'strength',
                          'defaults': {'durationMin': 45}, 'params': {'durationMin': [10, 120]}},
     'rest': {'name': 'Ruhetag', 'sport': 'rest', 'kind': 'rest', 'defaults': {}, 'params': {}},
@@ -109,6 +121,7 @@ DURATION_RULES = {
     ('intervals', 'ride'): '10 min warmup + work + recoveries between intervals + 10 min cooldown',
     ('intervals', 'run'): '10 min warmup + work + recoveries between intervals + 5 min cooldown',
     ('micro', 'ride'): '10 min warmup + sets x reps x (workSec + restSec) + setRestMin between sets + 10 min cooldown',
+    ('micro', 'run'): '10 min warmup + sets x reps x (workSec + restSec) + setRestMin between sets + 5 min cooldown',
     ('sprints', 'ride'): 'durationMin includes warmup and cooldown; reps sprints of workSec spread evenly through the easy part',
     ('test', 'ride'): 'fixed 55 min protocol including warmup and cooldown; all params null',
     ('test', 'run'): 'fixed 55 min protocol including warmup and cooldown; all params null',

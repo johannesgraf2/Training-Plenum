@@ -196,6 +196,20 @@ class UltraAndPaceTests(unittest.TestCase):
                 render_session('run_easy', {}, DAY, threshold_pace=bad)
         self.assertIn('pace', next(t for t in template_catalog() if t['id'] == 'run_easy')['targets'])
 
+    def test_running_vo2_sessions_run_faster_than_threshold_pace(self):
+        long = render_session('run_vo2', {}, DAY, max_hr=190, threshold_pace=270)
+        self.assertEqual((long['name'], long['durationMin']), ('VO2-Intervalle Lauf 5×3 min', 42))
+        work = [s for s in long['workout']['steps'] if s['intensity'] == 'interval']
+        # 95 % of max HR: about 7 % faster than a 4:30 threshold pace, roughly 5 km race pace.
+        self.assertEqual(work[0]['target'], {'type': 'pace', 'low': 246, 'high': 258})
+        short = render_session('run_vo2_short', {'sets': 3, 'reps': 6, 'workSec': 60, 'restSec': 60}, DAY, max_hr=190)
+        self.assertEqual((short['name'], short['durationMin']), ('Kurze VO2-Intervalle Lauf 3×6×60/60', 10 + 36 + 2 * 3 + 5))
+        self.assertEqual(short['workout']['steps'][1]['steps'][0]['target']['type'], 'heart_rate')
+        with self.assertRaises(TemplateError):
+            render_session('run_vo2_short', {'cadence': 90}, DAY)  # Cadence and an embedding easy ride are for the bike.
+        catalog = {t['id']: t for t in template_catalog()}
+        self.assertIn('5 min cooldown', catalog['run_vo2_short']['durationRule'])
+
     def test_pace_targets_export_as_speed_ranges(self):
         workout = render_session('run_threshold', {}, DAY, max_hr=190, threshold_pace=270)['workout']
         self.assertTrue(export_workout(workout).startswith(bytes([14])))

@@ -24,7 +24,7 @@ SHORT_QUALITY_MINUTES = 75
 _SPORT = {sport: {key for key, spec in TEMPLATES.items() if spec['sport'] == sport} for sport in ('ride', 'run')}
 _TEMPO = {'bike_tempo', 'bike_sweetspot'}
 _THRESHOLD = {'bike_threshold', 'bike_threshold_intervals', 'run_threshold'}
-_VO2 = {'bike_vo2', 'bike_vo2_micro'}
+_VO2 = {'bike_vo2', 'bike_vo2_micro', 'run_vo2', 'run_vo2_short'}
 GROUPS = {
     'easy': {'bike_recovery', 'bike_z2', 'bike_z2_short', 'bike_z2_long', 'bike_z2_sprints', 'bike_long', 'run_easy', 'run_long'},
     'tempo': _TEMPO,
@@ -87,7 +87,9 @@ BLOCK_TYPES = {
                               '(bike_vo2), micro intervals 3x9x30/15 -> 3x11x30/15 -> 3x13x30/15, later 3x10x40/20 '
                               '(bike_vo2_micro); vary formats (4x4, 5x5, 30/15, 40/20) week to week. High cadence (90-110 rpm) '
                               'suits VO2 work. Keep a short SIT or sprint touch every week or two. Deload weeks keep one short VO2 '
-                              'session.'),
+                              'session. Runners do the same with run_vo2 (for example 5x3 -> 6x3 -> 5x4 -> 6x4 min) and '
+                              'run_vo2_short (for example 2x8x30/30 -> 2x10x30/30 -> 3x6x60/60), with easy runs and the long '
+                              'run in between; a VO2 session counts for the sport it is done in.'),
     'wettkampfspezifisch': _block('Wettkampfspezifisch', 'Wettkampfbelastungen üben und frisch am Start stehen.', 4, 2, 12,
                                   taper_drop=.3, ends_by_goal=True,
                                   guidance='Rehearse race demands with long rides at race intensity and race-like efforts '
