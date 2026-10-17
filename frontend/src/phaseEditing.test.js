@@ -1,4 +1,4 @@
-import { add, body, editorState, grow, layout, move, remove, setTaper, shrink } from './planEditor';
+import { add, body, editorState, grow, layout, move, remove, setTaper, shrink } from './phaseEditing';
 
 // 15 weeks from 19.10.2026; the A event lies in plan week 13. Week 1 runs.
 const weeks = Array.from({ length: 15 }, (_, i) => ({ startDate: new Date(Date.UTC(2026, 9, 19 + 7 * i)).toISOString().slice(0, 10), state: i === 0 ? 'current' : 'future' }));
