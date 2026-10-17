@@ -162,9 +162,9 @@ function AvailabilitySection({ ctx }) {
   });
   const saveWindows = list => store({ windows: list, ...fittedWish(availability, list, availability.maxWeeklyHours) }, 'Zeitfenster gespeichert.', () => setForm(null));
   return <Section title="Verfügbarkeiten" intro="Wann du trainieren kannst. Der Coach plant darin und nutzt nicht jedes Fenster.">
-    {!form && <WeekPanel week={week} windows={windows} events={events} background={profile.background} onChange={setWeek}>
+    {!form && <WeekPanel week={week} windows={windows} events={events} background={profile.background} request={ctx.request} onChange={setWeek}>
       <div className="coach-actions"><button type="button" disabled={!!ctx.busy || !!problem}
-        onClick={() => store({ ...weekValues(week, maximum), ...fittedWish(availability, windows, maximum) }, 'Wochenwerte gespeichert.')}>Wochenwerte speichern</button></div>
+        onClick={() => store({ ...weekValues(week, maximum, windows), ...fittedWish(availability, windows, maximum) }, 'Wochenwerte gespeichert.')}>Wochenwerte speichern</button></div>
     </WeekPanel>}
     {!form && <h3>Deine Tage</h3>}
     <WindowEditor windows={windows} sports={planSports(profile)} busy={!!ctx.busy} form={form} onForm={setForm} onSave={saveWindows} />

@@ -181,3 +181,15 @@
   .plan-editor-item { grid-template-columns: 12px minmax(0, 1fr); }
   .plan-editor-weeks, .plan-editor-actions { grid-column: 2; }
 }
+
+/* Weekly volume by hand: the scale for all weeks and the editor of one week below the chart. */
+.plan-hours-legend i.own { background: transparent; border: 1.5px solid var(--accent); }
+.plan-hours-bar.own { stroke: var(--accent); stroke-width: 1.5; }
+.plan-hours-hit.editable { cursor: pointer; }
+.plan-hours-scale { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 6px 0 10px; font-size: 12px; color: var(--ink-2); }
+.plan-hours-scale small { flex-basis: 100%; font-size: 11px; }
+.plan-week-editor { display: grid; gap: 10px; margin: 10px 0 4px; padding: 12px 14px; border: 1px solid var(--card-line); border-radius: 6px; background: var(--surface-sunk); }
+.plan-week-editor-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; }
+.plan-week-editor-hours { display: grid; gap: 4px; max-width: 180px; font-size: 11px; font-weight: 600; }
+.plan-week-editor small { font-size: 11px; }
+.plan-week-editor .coach-actions { margin: 0; }

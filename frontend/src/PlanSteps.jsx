@@ -3,7 +3,7 @@ import { DateField, Field, PlanTimeline, StepFooter, ThresholdFields, Tiles, Yes
 import { Icon } from './icons';
 import {
   BACKGROUND_TYPES, DAYS, EQUIPMENT, EVENT_SPORTS, GOALS, HANDLING, INTENSITIES, METRICS, METRIC_NAMES, OPTIONS, PRIORITIES, REPLAN_DEFAULT,
-  SPORT_NAMES, SUBTYPES, clockLabel, dateLabel, defaultEnd, defaultStart, eventDates, eventHints, eventSummary, hoursHint, hoursLabel, jobState, recommendedHours,
+  SPORT_NAMES, SUBTYPES, clockLabel, dateLabel, defaultEnd, defaultStart, eventDates, eventHints, eventSummary, forcedRestPairs, hoursLabel, jobState, recommendedHours,
   dayNames, joinDuration, lastAEvent, newId, splitDuration, splitEvents, weeksLabel, windowHours, windowLabel, windowMinutes,
 } from './coachOnboarding';
 import { localDate } from './workoutModel';
@@ -359,9 +359,12 @@ function DayPicker({ label, days, hint, onChange }) {
     </div>{hint && <small>{hint}</small>}</div>;
 }
 
-/** The time budget, rest days and long days for the whole week, as strings and lists while editing. */
-export function WeekFields({ week, total, onChange }) {
+/** The time budget, rest days and long days for the whole week, as strings and lists while editing. Two days in a row
+ * without time make two rest days in a row unavoidable, so "keine zwei Ruhetage hintereinander" cannot be chosen then. */
+export function WeekFields({ week, total, forced = [], onChange }) {
   const set = patch => onChange({ ...week, ...patch });
+  const avoid = week.noConsecutiveRestDays && !forced.length;
+  const pairs = forced.map(pair => pair.map(day => DAYS.find(([key]) => key === day)[1]).join(' und ')).join(', ');
   return <>
     <div className="coach-form-grid">
       <Field label="Maximal verfügbare Trainingszeit pro Woche (h)" hint={`Zeitliche Obergrenze: So viel Zeit kannst du höchstens aufbringen. Das ist keine Empfehlung, so viel zu trainieren. Leer = Summe der Zeitfenster (${hoursLabel(total)}).`}>
@@ -369,37 +372,77 @@ export function WeekFields({ week, total, onChange }) {
     </div>
     <DayPicker label="Bevorzugte Ruhetage" days={week.restDays} onChange={restDays => set({ restDays })}
       hint="Mehrere möglich. Der Coach legt Ruhetage bevorzugt auf diese Tage. Anders als „nicht verfügbar“ bleibt der Tag offen, wenn es passt." />
+    <div className="onboarding-day-picker"><span>Zwei Ruhetage hintereinander</span>
+      <div className="coach-toggles" role="group" aria-label="Zwei Ruhetage hintereinander">
+        <button type="button" className="coach-toggle" aria-pressed={!avoid} onClick={() => set({ noConsecutiveRestDays: false })}>Erlaubt</button>
+        <button type="button" className="coach-toggle" aria-pressed={avoid} disabled={forced.length > 0} onClick={() => set({ noConsecutiveRestDays: true })}>Vermeiden</button>
+      </div>
+      <small>{forced.length ? `Nicht möglich: An ${pairs} hast du keine Zeit. Deine Verfügbarkeit hat Vorrang.`
+        : 'Mit „Vermeiden“ folgen nie zwei Ruhetage aufeinander, auch nicht über den Wochenwechsel von Sonntag auf Montag. Liegen zwei bevorzugte Ruhetage nebeneinander, nimmt der Coach nur einen davon.'}</small>
+    </div>
     <DayPicker label="Tage für lange Einheiten" days={week.longDays} onChange={longDays => set({ longDays })}
       hint="Mehrere Tage möglich. Der Coach plant die lange Einheit an einem davon, nicht an jedem." />
   </>;
 }
 const dayList = (list, single) => list?.length ? list : single ? [single] : [];
 export const weekDraft = availability => ({ maxWeeklyHours: availability.maxWeeklyHours ?? '', restDays: dayList(availability.restDays, availability.restDay),
-  longDays: dayList(availability.longDays, availability.longDay) });
-export const weekValues = (week, maximum) => ({ maxWeeklyHours: maximum, restDays: week.restDays, longDays: week.longDays });
+  longDays: dayList(availability.longDays, availability.longDay), noConsecutiveRestDays: !!availability.noConsecutiveRestDays });
+export const weekValues = (week, maximum, windows = []) => ({ maxWeeklyHours: maximum, restDays: week.restDays, longDays: week.longDays,
+  noConsecutiveRestDays: !!week.noConsecutiveRestDays && !forcedRestPairs(windows).length });
+
+/** The coach's weekly hours for the A event: the AI's answer when there is one (asked once per event, goal and training
+ * base), else fixed rules; the static table when the server cannot be asked. */
+function useRecommendation(request, events, background) {
+  const [state, setState] = useState({ value: null, asking: false, failed: false });
+  const key = JSON.stringify([events.filter(e => e.priority === 'A').map(e => [e.id, e.subtype, e.startDate, e.distanceKm, e.elevationM, e.targetSeconds, e.description]),
+    background?.weeklyHours ?? null]);
+  useEffect(() => {
+    if (!request) return undefined;
+    let active = true;
+    request('/api/coach/volume/recommendation').then(value => {
+      if (!active) return;
+      setState({ value, asking: value.canAsk, failed: false });
+      if (value.canAsk) request('/api/coach/volume/recommendation', 'POST', {})
+        .then(answer => active && setState({ value: answer, asking: false, failed: false }))
+        .catch(() => active && setState(s => ({ ...s, asking: false, failed: true })));
+    }).catch(() => active && setState({ value: null, asking: false, failed: true }));
+    return () => { active = false; };
+  }, [request, key]);
+  return state;
+}
 
 /** "Für die ganze Woche": time budget and preferred days with the recommendation, the budget and the average so far kept
  * apart, and what can still change later in the week plan. */
-export function WeekPanel({ week, windows, events, background, onChange, children }) {
+export function WeekPanel({ week, windows, events, background, request, onChange, children }) {
   const [info, setInfo] = useState(false);
   const total = windowHours(windows);
   const maximum = number(week.maxWeeklyHours);
   const effective = maximum == null ? total : Math.min(total, maximum);
-  const recommended = recommendedHours(events);
-  const hint = windows.length ? hoursHint(events, effective) : null;
+  const { value, asking } = useRecommendation(request, events, background);
+  const fallback = recommendedHours(events);
+  const recommendation = value?.event ? value.recommendation : null;
+  const label = value?.event ? `„${value.event.title}“${value.event.goal === 'targetTime' ? ' mit Zielzeit' : ''}` : fallback?.label;
+  const minimum = recommendation?.minHours ?? fallback?.hours;
+  const available = windows.length ? effective : maximum;
+  const hint = windows.length && minimum && effective < minimum ? `Für ${label} empfehle ich mindestens ${hoursLabel(minimum)}/Woche, du hast ${hoursLabel(effective)} eingetragen.` : null;
   return <section className="onboarding-week-panel" aria-label="Für die ganze Woche">
     <h3>Für die ganze Woche</h3>
     <div className="onboarding-info">
       <button type="button" className="onboarding-info-button" aria-expanded={info} onClick={() => setInfo(i => !i)}><Icon name="info" size={15} />Kann ich das später anpassen?</button>
       {info && <p>Hier trägst du deine üblichen Zeiten ein, die Grundlage für jede Woche. Im Wochenplan kannst du später jederzeit einzelne Einheiten spontan verschieben, tauschen oder auslassen, etwa wenn ein Termin dazwischenkommt („Woche anpassen“ oder direkt an der Einheit). Einmalige Ausnahmen wie Urlaub trägst du in den Einstellungen ein. Deine Grundverfügbarkeit hier bleibt davon unberührt.</p>}
     </div>
-    <WeekFields week={week} total={total} onChange={onChange} />
+    <WeekFields week={week} total={total} forced={forcedRestPairs(windows)} onChange={onChange} />
     <div className="onboarding-hours" aria-label="Wochenstunden">
-      {recommended && <div className="recommended"><strong>mind. {hoursLabel(recommended.hours)}</strong>Empfehlung für {recommended.label}</div>}
-      <div className="budget"><strong>{windows.length ? hoursLabel(effective) : '–'}</strong>maximal verfügbare Zeit pro Woche</div>
+      {minimum != null && <div className="recommended"><strong>mind. {hoursLabel(minimum)}</strong>Minimum für {label}</div>}
+      {recommendation && <div className="recommended"><strong>Ø {hoursLabel(recommendation.averageHours)}</strong>empfohlen im Schnitt pro Woche</div>}
+      {recommendation && <div className="recommended"><strong>{hoursLabel(recommendation.peakHours)}</strong>stärkste Woche vor dem Taper</div>}
+      <div className="budget"><strong>{available != null ? hoursLabel(available) : '–'}</strong>maximal verfügbare Zeit pro Woche</div>
       {background?.weeklyHours != null && <div><strong>{hoursLabel(background.weeklyHours)}</strong>bisher im Durchschnitt pro Woche</div>}
     </div>
-    {recommended && <p className="coach-muted">Die Empfehlung ist eine Orientierung, kein Zeitbudget. Wie viel du davon trainierst, plant der Coach aus deinem bisherigen Training und der verfügbaren Zeit.</p>}
+    {asking && <p className="coach-muted" role="status">Der Coach rechnet deine Empfehlung …</p>}
+    {recommendation && !asking && <p className="coach-muted onboarding-recommendation"><span className={`coach-badge${recommendation.source === 'aiRecommendation' ? ' recommendation' : ''}`}>
+      {recommendation.source === 'aiRecommendation' ? 'AI · Empfehlung' : 'Richtwert'}</span> {recommendation.rationale}</p>}
+    {minimum != null && <p className="coach-muted">Die Empfehlung ist eine Orientierung, kein Zeitbudget. Der Plan steigt von deinem bisherigen Umfang gleichmäßig bis zur stärksten Woche kurz vor dem Event, höchstens bis zu deiner verfügbaren Zeit.</p>}
     {hint && <p className="onboarding-hint warning" role="note">{hint}</p>}
     {children}
   </section>;
@@ -415,7 +458,7 @@ export function AvailabilityStep({ ctx }) {
   const [form, setForm] = useState(null);  // { day, window }
   const [week, setWeek] = useState(() => weekDraft(availability));
   const maximum = number(week.maxWeeklyHours);
-  const weekPatch = list => ({ ...weekValues(week, maximum), ...fittedWish(availability, list, maximum) });
+  const weekPatch = list => ({ ...weekValues(week, maximum, list), ...fittedWish(availability, list, maximum) });
   const saveWindows = list => ctx.run('Verfügbarkeit wird gespeichert …', async () => {
     await ctx.saveProfile({ availability: { windows: list, ...fittedWish(availability, list, number(availability.maxWeeklyHours)) } });
     setForm(null);
@@ -424,7 +467,7 @@ export function AvailabilityStep({ ctx }) {
   return <>
     <h2>Verfügbarkeiten</h2>
     <p>Sag mir, wann du trainieren kannst. Einmalige Ausnahmen wie Urlaub trägst du später ein.</p>
-    {!form && <WeekPanel week={week} windows={windows} events={events} background={profile.background} onChange={setWeek} />}
+    {!form && <WeekPanel week={week} windows={windows} events={events} background={profile.background} request={ctx.request} onChange={setWeek} />}
     {!form && <h3>Deine Tage</h3>}
     <WindowEditor windows={windows} sports={sports} busy={!!ctx.busy} form={form} onForm={setForm} onSave={saveWindows} />
     {!form && problem && <p className="coach-muted" role="note">{problem}</p>}
@@ -445,7 +488,7 @@ export function ReadyStep({ ctx }) {
   const windows = profile.availability.windows || [];
   const minutes = windowMinutes(windows);
   const maximum = profile.availability.maxWeeklyHours;
-  const { restDays, longDays } = weekDraft(profile.availability);
+  const { restDays, longDays, noConsecutiveRestDays } = weekDraft(profile.availability);
   const inPlan = settings ? events.filter(e => (e.endDate || e.startDate) >= settings.startDate && e.startDate <= settings.endDate) : [];
   const intervals = Object.entries(background.intervals || {}).map(([sport, yes]) => `${SPORT_NAMES[sport]} ${yes ? 'ja' : 'nein'}`).join(', ');
   const start = () => ctx.run('Wird gespeichert …', async () => { await ctx.saveProfile({}, 'ready'); ctx.go('creating'); });
@@ -458,7 +501,8 @@ export function ReadyStep({ ctx }) {
     <Summary title="Verfügbarkeiten" step="availability" ctx={ctx}>
       <div className="onboarding-week">{DAYS.map(([day, short]) => <div key={day}><span>{short}</span><strong>{minutes[day] ? clockLabel(minutes[day]) : '–'}</strong></div>)}</div>
       <p>{hoursLabel(windowHours(windows))} in deinen Zeitfenstern{maximum != null ? ` · höchstens ${hoursLabel(maximum)} verfügbar` : ''}</p>
-      {(restDays.length > 0 || longDays.length > 0) && <p>{[restDays.length && `Ruhetage: ${dayNames(restDays).join(', ')}`, longDays.length && `Lange Einheiten: ${dayNames(longDays).join(', ')}`].filter(Boolean).join(' · ')}</p>}
+      {(restDays.length > 0 || longDays.length > 0 || noConsecutiveRestDays) && <p>{[restDays.length && `Ruhetage: ${dayNames(restDays).join(', ')}`,
+        noConsecutiveRestDays && 'keine zwei hintereinander', longDays.length && `Lange Einheiten: ${dayNames(longDays).join(', ')}`].filter(Boolean).join(' · ')}</p>}
     </Summary>
     <Summary title="Zeitplan" step="period" ctx={ctx}>
       {settings ? <><PlanTimeline start={settings.startDate} end={settings.endDate} events={events} />

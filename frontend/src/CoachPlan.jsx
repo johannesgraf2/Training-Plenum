@@ -295,14 +295,15 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
         onSaved={result => { setEditing(false); setReloads(n => n + 1); onChanged?.(result); }} />
         : <PhaseBar overview={overview} today={today} />}
       {!editing && overview.frame.rationale && overview.frame.source !== 'athlete' && <p className="coach-muted">{overview.frame.rationale}</p>}
-      <WeekHoursChart overview={overview} today={today} />
+      <WeekHoursChart key={`hours-${reloads}-${overview.volume?.scale ?? 1}`} overview={overview} today={today} apiBase={apiBase}
+        disabled={editing || advance?.status === 'running'} onSaved={result => { setReloads(n => n + 1); onChanged?.(result); }} />
     </section>
     <HorizonSetting key={`horizon-${overview.horizonWeeks}`} apiBase={apiBase} overview={overview} disabled={advance?.status === 'running'}
       onSaved={() => { setReloads(n => n + 1); onHorizon?.(); }} />
     {error && <div role="alert" className="coach-message error">{error}</div>}
     {advance?.status === 'running' && <JobProgress job={advance} stopping={stopping} onStop={onStop} />}
     {(overview.adapt || pendingChanges.length > 0) && advance?.status !== 'running' && <div className="coach-message plan-adapt"><span>{onlyPhases
-      ? <><strong>Deine Blöcke haben sich geändert.</strong> Die ausgearbeiteten Wochen passen nicht mehr dazu. Soll ich sie neu ausarbeiten?</>
+      ? <><strong>Deine Blöcke oder Wochenstunden haben sich geändert.</strong> Die ausgearbeiteten Wochen passen nicht mehr dazu. Soll ich sie neu ausarbeiten?</>
       : <><strong>Deine Einstellungen haben sich geändert.</strong> Soll ich deinen Plan daran anpassen?</>}</span>
       <button type="button" onClick={() => onAdapt?.(overview.adapt?.changes || [])}>Plan anpassen</button></div>}
     {proposal && <section className="coach-card" aria-label={settingsChange ? 'Anpassung an deine Einstellungen' : 'Anpassung nach deiner Woche'}>

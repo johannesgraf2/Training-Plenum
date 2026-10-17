@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { request } from './CoachChat';
 import { Icon } from './icons';
-import { add, body, editorState, grow, layout, move, remove, setTaper, shrink } from './phaseEditing';
+import { SCALE_STEPS, add, body, editorState, grow, layout, move, remove, setTaper, shrink, volumeBody, weekChoice } from './phaseEditing';
 
 const fmt = value => value == null ? '—' : Number(value).toLocaleString('de-DE', { maximumFractionDigits: 1 });
 const shortDate = date => new Date(`${date}T12:00:00`).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
@@ -96,27 +96,86 @@ function niceStep(maximum) {
 // The phase name, shortened with a dot when its span is too narrow.
 const phaseLabel = (name, span) => name.length * TEXT_WIDTH <= span ? name : `${name.slice(0, Math.max(2, Math.floor(span / TEXT_WIDTH) - 1))}.`;
 
-export function WeekHoursChart({ overview, today }) {
+const percent = scale => `${Math.round(scale * 100)} %`;
+const RHYTHM = ['load', 'deload'];
+
+/** One week of the chart by hand: load or recovery and its hours, the suggestion next to it. */
+function WeekVolumeEditor({ week, busy, error, onSave, onReset, onClose }) {
+  const [kind, setKind] = useState(week.kind);
+  const [hours, setHours] = useState(week.athleteHours ?? '');
+  const own = week.athleteKind != null || week.athleteHours != null;
+  const value = hours === '' ? null : Number(hours);
+  const invalid = value != null && !(value >= 0 && value <= week.maxHours);
+  const changed = kind !== week.kind || value !== (week.athleteHours ?? null);
+  return <section className="plan-week-editor" aria-label={`Woche ${week.number} anpassen`}>
+    <div className="plan-week-editor-head"><strong>Woche {week.number} · {shortDate(week.startDate)} · {week.phaseName || '—'}</strong>
+      <button type="button" onClick={onClose}>Schließen</button></div>
+    {week.state === 'past' ? <p className="coach-muted">Vergangene Wochen bleiben, wie sie waren.</p> : <>
+      {RHYTHM.includes(week.defaultKind) ? <div className="coach-toggles" role="group" aria-label="Art der Woche">
+        <button type="button" className="coach-toggle" aria-pressed={kind === 'load'} onClick={() => setKind('load')}>Belastung</button>
+        <button type="button" className="coach-toggle" aria-pressed={kind === 'deload'} onClick={() => setKind('deload')}>Erholung</button>
+      </div> : <p className="coach-muted">{week.defaultKind === 'taper' ? 'Taper-Woche' : 'Übergangswoche'}: Belastung oder Erholung wählst du in den übrigen Phasen.</p>}
+      <label className="plan-week-editor-hours">Stunden
+        <input type="number" min="0" max={week.maxHours} step="0.25" placeholder={fmt(week.suggestedHours)} value={hours} onChange={e => setHours(e.target.value)} /></label>
+      <small className="coach-muted">Vorschlag {fmt(week.suggestedHours)} h{kind !== week.kind ? ' (vor dem Wechsel)' : ''} · höchstens {fmt(week.maxHours)} h verfügbar. Leer lassen = Vorschlag.</small>
+      {invalid && <p className="coach-muted" role="note">Die Stunden liegen zwischen 0 und {fmt(week.maxHours)}.</p>}
+      {week.plan && <p className="coach-muted">Diese Woche ist schon ausgearbeitet. Nach dem Übernehmen arbeitet „Plan anpassen“ sie neu aus.</p>}
+      {error && <div role="alert" className="coach-message error">{error}</div>}
+      <div className="coach-actions"><button type="button" className="coach-primary" disabled={busy || invalid || !changed} onClick={() => onSave(weekChoice(week, kind, hours))}>Übernehmen</button>
+        {own && <button type="button" disabled={busy} onClick={onReset}>Auf Vorschlag zurücksetzen</button>}</div>
+    </>}
+  </section>;
+}
+
+export function WeekHoursChart({ overview, today, apiBase, disabled, onSaved }) {
   const [hover, setHover] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [scale, setScale] = useState(overview.volume?.scale ?? 1);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const [wrap, width] = useWidth();
-  const weeks = overview.weeks.map(w => ({ ...w, hours: w.plan?.targetHours ?? w.targetHours }));
+  const editable = !!overview.volume && !!onSaved;
+  const weeks = overview.weeks.map(w => ({ ...w, hours: w.plan?.targetHours ?? w.targetHours, own: w.athleteKind != null || w.athleteHours != null }));
   if (!weeks.length || !weeks.some(w => w.hours != null)) return null;
+  const save = async (nextScale, change) => {
+    setBusy(true); setError('');
+    try {
+      const result = await request(apiBase, `/api/coach/plan/volume?${tzQuery()}`, 'PUT', volumeBody(overview, nextScale, change));
+      setSelected(null);
+      onSaved(result);
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+  const stored = overview.volume?.scale ?? 1;
+  const step = direction => setScale(value => SCALE_STEPS[Math.min(SCALE_STEPS.length - 1, Math.max(0, SCALE_STEPS.indexOf(value) + direction))] ?? 1);
   const { height, left, right, top, bottom } = CHART;
   const plotW = width - left - right, plotH = height - top - bottom;
   const peak = Math.max(...weeks.map(w => w.hours || 0), 1);
-  const step = niceStep(peak);
-  const ceiling = Math.ceil(peak / step) * step;
+  const tick = niceStep(peak);
+  const ceiling = Math.ceil(peak / tick) * tick;
   const slot = plotW / weeks.length;
   const barW = Math.max(2, Math.min(28, slot - 2));
   const y = hours => top + plotH - (hours / ceiling) * plotH;
-  const ticks = Array.from({ length: Math.round(ceiling / step) + 1 }, (_, i) => i * step);
+  const ticks = Array.from({ length: Math.round(ceiling / tick) + 1 }, (_, i) => i * tick);
   const labelEvery = Math.ceil(weeks.length / Math.max(4, Math.floor(plotW / 28)));
   const phases = overview.phases.map(p => ({ ...p, from: weeks.findIndex(w => w.startDate === p.startDate) })).filter(p => p.from >= 0);
   const events = (overview.events || []).filter(e => e.planWeek >= 1 && e.planWeek <= weeks.length);
   const shown = hover != null ? weeks[hover] : null;
+  const open = i => { if (editable && !disabled) { setError(''); setSelected(i); } };
   return <figure className="plan-hours" aria-label="Wochenstunden bis zum Ziel">
     <figcaption><span className="coach-eyebrow">Wochenstunden bis zum Ziel</span>
-      <span className="plan-hours-legend"><span><i className="load" />Belastung</span><span><i className="deload" />Entlastung &amp; Taper</span></span></figcaption>
+      <span className="plan-hours-legend"><span><i className="load" />Belastung</span><span><i className="deload" />Erholung &amp; Taper</span>
+        {editable && <span><i className="own" />Eigene Woche</span>}</span></figcaption>
+    {editable && <div className="plan-hours-scale">
+      <span>Umfang aller Wochen</span>
+      <div className="plan-editor-weeks" role="group" aria-label="Umfang aller Wochen">
+        <button type="button" aria-label="Weniger Umfang" disabled={busy || scale <= SCALE_STEPS[0]} onClick={() => step(-1)}>−</button>
+        <span>{percent(scale)}</span>
+        <button type="button" aria-label="Mehr Umfang" disabled={busy || scale >= SCALE_STEPS.at(-1)} onClick={() => step(1)}>+</button>
+      </div>
+      {scale !== stored && <button type="button" className="coach-primary" disabled={busy || disabled} onClick={() => save(scale)}>Übernehmen</button>}
+      <small className="coach-muted">Tippe auf eine Woche, um Belastung oder Erholung und ihre Stunden selbst festzulegen.</small>
+    </div>}
     <div className="plan-hours-wrap" ref={wrap}>
       <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={`Geplante Stunden pro Woche, ${weeks.length} Wochen, höchstens ${fmt(peak)} h`}
         onMouseLeave={() => setHover(null)}>
@@ -129,12 +188,14 @@ export function WeekHoursChart({ overview, today }) {
           const r = Math.min(3, barW / 2, h);
           const kind = w.deload ? 'deload' : 'load';
           return <g key={w.week}>
-            {h > 0 && <path className={`plan-hours-bar ${kind}${w.state === 'past' ? ' past' : ''}${hover === i ? ' active' : ''}`}
+            {h > 0 && <path className={`plan-hours-bar ${kind}${w.state === 'past' ? ' past' : ''}${w.own ? ' own' : ''}${hover === i || selected === i ? ' active' : ''}`}
               d={`M${x},${y(0)} V${y(value) + r} Q${x},${y(value)} ${x + r},${y(value)} H${x + barW - r} Q${x + barW},${y(value)} ${x + barW},${y(value) + r} V${y(0)} Z`} />}
             {w.state === 'current' && <path className="plan-hours-today" d={`M${x + barW / 2 - 4},${top - 12} h8 l-4,6 z`}><title>Diese Woche</title></path>}
             {(i % labelEvery === 0) && <text className="plan-hours-x" x={x + barW / 2} y={y(0) + 12} textAnchor="middle">{w.number}</text>}
-            <rect className="plan-hours-hit" x={left + i * slot} y={top - 14} width={slot} height={plotH + 14} onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)}
-              tabIndex={0} aria-label={`Woche ${w.number}: ${fmt(w.hours)} h, ${w.phaseName || 'ohne Phase'}${w.deload ? ', Entlastung' : ''}`} />
+            <rect className={`plan-hours-hit${editable ? ' editable' : ''}`} x={left + i * slot} y={top - 14} width={slot} height={plotH + 14} onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)}
+              onClick={() => open(i)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(i); } }}
+              tabIndex={0} role={editable ? 'button' : undefined}
+              aria-label={`Woche ${w.number}: ${fmt(w.hours)} h, ${w.phaseName || 'ohne Phase'}${w.deload ? ', Erholung' : ''}${w.own ? ', eigene Woche' : ''}`} />
           </g>;
         })}
         {events.map(e => { const x = left + (e.planWeek - 1) * slot + slot / 2; return <g key={e.id} className={`plan-hours-event ${e.priority}`}>
@@ -144,14 +205,18 @@ export function WeekHoursChart({ overview, today }) {
           <line className={p.blockType} x1={x1} x2={x2} y1={y(0) + 20} y2={y(0) + 20} />
           {x2 - x1 > 3 * TEXT_WIDTH && <text x={(x1 + x2) / 2} y={y(0) + 34} textAnchor="middle">{phaseLabel(p.typeName, x2 - x1)}<title>{p.typeName}</title></text>}</g>; })}
       </svg>
-      {shown && <div className="plan-hours-tip" role="status" style={{ left: `${Math.min(80, Math.max(8, (left + (hover + 0.5) * slot) / width * 100))}%` }}>
+      {shown && selected == null && <div className="plan-hours-tip" role="status" style={{ left: `${Math.min(80, Math.max(8, (left + (hover + 0.5) * slot) / width * 100))}%` }}>
         <strong>Woche {shown.number} · {fmt(shown.hours)} h</strong>
-        <span>{shortDate(shown.startDate)} · {shown.phaseName || '—'}{shown.deload ? ' · Entlastung' : ''}</span>
-        <span>{shown.plan ? 'ausgearbeitet' : shown.state === 'past' ? 'vorbei' : 'vorgemerkt'}</span></div>}
+        <span>{shortDate(shown.startDate)} · {shown.phaseName || '—'}{shown.deload ? ' · Erholung' : ''}</span>
+        <span>{shown.plan ? 'ausgearbeitet' : shown.state === 'past' ? 'vorbei' : 'vorgemerkt'}{shown.own ? ' · eigene Woche' : ''}</span></div>}
     </div>
+    {selected != null && <WeekVolumeEditor key={weeks[selected].week} week={weeks[selected]} busy={busy || disabled} error={error}
+      onSave={change => save(stored, change)} onReset={() => save(stored, { week: weeks[selected].week, kind: null, hours: null })}
+      onClose={() => setSelected(null)} />}
+    {selected == null && error && <div role="alert" className="coach-message error">{error}</div>}
     <details className="plan-hours-table"><summary>Als Tabelle</summary>
       <table className="coach-table"><thead><tr><th>Woche</th><th>Beginn</th><th>Phase</th><th>Zielstunden</th></tr></thead>
-        <tbody>{weeks.map(w => <tr key={w.week}><td>{w.number}</td><td>{shortDate(w.startDate)}</td><td>{w.phaseName || '—'}{w.deload ? ' · Entlastung' : ''}</td><td>{fmt(w.hours)} h</td></tr>)}</tbody></table>
+        <tbody>{weeks.map(w => <tr key={w.week}><td>{w.number}</td><td>{shortDate(w.startDate)}</td><td>{w.phaseName || '—'}{w.deload ? ' · Erholung' : ''}</td><td>{fmt(w.hours)} h{w.own ? ' · eigene' : ''}</td></tr>)}</tbody></table>
     </details>
   </figure>;
 }

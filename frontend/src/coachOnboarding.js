@@ -182,6 +182,13 @@ export function recommendedHours(events) {
   const minimum = event && EVENT_HOURS[event.sport]?.[event.subtype];
   return minimum ? { hours: minimum, label: EVENT_NAMES[event.subtype], event: event.title } : null;
 }
+// Neighbouring days of the usual week without any time, Sunday and Monday included: two rest days in a row there,
+// so "keine zwei Ruhetage hintereinander" cannot apply (the backend refuses it too).
+export function forcedRestPairs(windows = []) {
+  if (!windows.length) return [];
+  const minutes = windowMinutes(windows);
+  return DAYS.map(([day], index) => [day, DAYS[(index + 1) % 7][0]]).filter(([day, next]) => !minutes[day] && !minutes[next]);
+}
 export function hoursHint(events, hours) {
   const recommended = recommendedHours(events);
   return recommended && hours < recommended.hours ? `Für ${recommended.label} empfehle ich mindestens ${recommended.hours} h/Woche, du hast ${hoursLabel(hours)} eingetragen.` : null;
