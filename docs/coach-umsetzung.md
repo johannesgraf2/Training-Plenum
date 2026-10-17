@@ -98,6 +98,8 @@ Jeder Meilenstein ist für sich lauffähig, hat Tests und wird einzeln gemerged.
 
 ### M2 Plan erstellen und Nachplanen (Backend)
 
+**Stand: umgesetzt.** Dazu aus M1: Test-Templates (`bike_ftp_test`, `run_test_30`) mit Pflicht in Woche 1 bei „Testen lassen“ und Gruppentraining als feste Kalendereinheit. Fortschritt per Polling. Der Vorschlag nach starker Abweichung ist ein Mehrwochen-Vorschlag (`kind: weeks`), den M4 für Chat-Änderungen über mehrere Wochen wiederverwenden kann. Noch offen: Phasen bei längerer Krankheit verschieben (Abschnitt 12 der UX).
+
 **`POST /api/coach/plan/create`**
 - Erwartet die Planeinstellungen. Profil, Events und Verfügbarkeiten sind vorher gespeichert.
 - **Schritt Rahmen:** ein KI-Aufruf mit Phasenfolge und Wochenzielen (Phase, Zielstunden, Fokus, Belastung/Entlastung) für alle Wochen bis zum Planende. Geprüft wird mit Saison- und Blockregeln. Gespeichert werden die Phasen als Blöcke mit Herkunft `plan`.

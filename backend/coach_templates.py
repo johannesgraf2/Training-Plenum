@@ -76,6 +76,20 @@ TEMPLATES = {
     'strength_general': {'name': 'Allgemeines Krafttraining', 'sport': 'strength', 'kind': 'strength', 'fuel': 'strength',
                          'defaults': {'durationMin': 45}, 'params': {'durationMin': [10, 120]}},
     'rest': {'name': 'Ruhetag', 'sport': 'rest', 'kind': 'rest', 'defaults': {}, 'params': {}},
+    # Tests for a threshold the athlete wants measured („Testen lassen“); fixed protocols in the first plan week.
+    'bike_ftp_test': {'name': 'FTP-Test Rad', 'sport': 'ride', 'kind': 'test', 'defaults': {}, 'params': {},
+                      'hint': '20-minute FTP test on a rested day; plan it when requiredTests lists it.',
+                      'protocol': [('Aufwärmen', 15, 'warmup', .50), ('Vorbelastung', 5, 'active', .85),
+                                   ('Locker', 5, 'recovery', .50), ('Test: 20 min gleichmäßig maximal', 20, 'interval', None),
+                                   ('Abwärmen', 10, 'cooldown', .50)],
+                      'note': 'FTP ≈ 95 % der Durchschnittsleistung der 20 Testminuten. Ergebnis danach in den Einstellungen '
+                              'eintragen. Vorher Kohlenhydrate essen.'},
+    'run_test_30': {'name': '30-min-Lauftest', 'sport': 'run', 'kind': 'test', 'defaults': {}, 'params': {},
+                    'hint': '30-minute run time trial on a rested day; plan it when requiredTests lists it.',
+                    'protocol': [('Aufwärmen', 15, 'warmup', .60), ('Test: 30 min gleichmäßig maximal', 30, 'interval', None),
+                                 ('Abwärmen', 10, 'cooldown', .60)],
+                    'note': 'Schwellenpace ≈ Durchschnittspace der letzten 20 Testminuten. Ergebnis danach in den '
+                            'Einstellungen eintragen.'},
 }
 
 PARAM_NAMES = ('durationMin', 'intervals', 'workMin', 'recoveryMin', 'intensity',
@@ -96,6 +110,8 @@ DURATION_RULES = {
     ('intervals', 'run'): '10 min warmup + work + recoveries between intervals + 5 min cooldown',
     ('micro', 'ride'): '10 min warmup + sets x reps x (workSec + restSec) + setRestMin between sets + 10 min cooldown',
     ('sprints', 'ride'): 'durationMin includes warmup and cooldown; reps sprints of workSec spread evenly through the easy part',
+    ('test', 'ride'): 'fixed 55 min protocol including warmup and cooldown; all params null',
+    ('test', 'run'): 'fixed 55 min protocol including warmup and cooldown; all params null',
 }
 # Fueling follows the aim of the session: carbohydrates for hard work, optionally only water for short easy
 # sessions, protein afterwards. General guidance, fixed per template type and duration.
@@ -228,7 +244,9 @@ def render_session(template, params, date, ftp=None, max_hr=None, threshold_pace
     def step(name, seconds, intensity, fraction, margin=None):
         reference = ftp if spec['sport'] == 'ride' else max_hr
         target = {'type': 'none'}
-        if spec['sport'] == 'run' and threshold_pace is not None:
+        if fraction is None:
+            pass  # A test effort is open: it measures the threshold.
+        elif spec['sport'] == 'run' and threshold_pace is not None:
             low, high = pace_range(threshold_pace, fraction, margin or .025)
             target = {'type': 'pace', 'low': low, 'high': high}
         elif reference is not None:
@@ -246,6 +264,15 @@ def render_session(template, params, date, ftp=None, max_hr=None, threshold_pace
     warmup = 10 if hard or spec['sport'] == 'ride' else 5
     cooldown = 10 if hard and spec['sport'] == 'ride' else 5
     cadence = f" · {effective['cadence']} U/min" if effective.get('cadence') else ''
+    if spec['kind'] == 'test':
+        steps = [step(label, minutes * 60, intensity, fraction) for label, minutes, intensity, fraction in spec['protocol']]
+        result['durationMin'] = _seconds(steps) / 60
+        result['notes'] = spec['note']
+        result['workout'] = validate_workout({'version': 1, 'name': name, 'sport': spec['sport'],
+                                               'date': date, 'steps': steps, 'notes': result['notes']})
+        if spec['sport'] == 'ride' and ftp is not None:
+            result['estimatedTss'] = planned_tss(steps, ftp)
+        return result
     steps = [step('Aufwärmen', warmup * 60, 'warmup', easy_fraction)]
     if spec['kind'] == 'steady':
         steps.append(step('Hauptteil', (effective['durationMin'] - warmup - cooldown) * 60,
@@ -288,17 +315,22 @@ def render_session(template, params, date, ftp=None, max_hr=None, threshold_pace
     result['workout'] = validate_workout({'version': 1, 'name': name, 'sport': spec['sport'],
                                            'date': date, 'steps': steps, 'notes': result['notes']})
     if spec['sport'] == 'ride' and ftp is not None:
-        # Synthetic planned points never enter observed activity data. Sampling
-        # boundaries at <=30 s lets the shared analytics integrate exact durations.
-        points, elapsed = [], 0
-        for item in flat_steps(steps):
-            target = item['target']
-            watts = (target['low'] + target['high']) / 2
-            stop = elapsed + item['duration']['value']
-            while elapsed < stop:
-                points.append({'time': elapsed, 'power': watts})
-                elapsed = min(elapsed + 30, stop)
-        points.append({'time': elapsed})
-        planned = sensor_summary(points, 'power', 0, elapsed)
-        result['estimatedTss'] = round(elapsed / 3600 * (planned['np'] / ftp) ** 2 * 100, 1)
+        result['estimatedTss'] = planned_tss(steps, ftp)
     return result
+
+
+def planned_tss(steps, ftp):
+    """Planned TSS at the target midpoints; an open test effort counts as FTP."""
+    # Synthetic planned points never enter observed activity data. Sampling
+    # boundaries at <=30 s lets the shared analytics integrate exact durations.
+    points, elapsed = [], 0
+    for item in flat_steps(steps):
+        target = item['target']
+        watts = (target['low'] + target['high']) / 2 if target['type'] != 'none' else ftp
+        stop = elapsed + item['duration']['value']
+        while elapsed < stop:
+            points.append({'time': elapsed, 'power': watts})
+            elapsed = min(elapsed + 30, stop)
+    points.append({'time': elapsed})
+    planned = sensor_summary(points, 'power', 0, elapsed)
+    return round(elapsed / 3600 * (planned['np'] / ftp) ** 2 * 100, 1)
