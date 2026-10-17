@@ -135,6 +135,8 @@ export default function GarminConnect({ apiBase = '', status, setStatus, loadErr
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
+  // What the running request does, shown next to its button: login and code can take a while at Garmin.
+  const [working, setWorking] = useState('');
   const [error, setError] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [deleteWorkouts, setDeleteWorkouts] = useState(false);
@@ -142,19 +144,22 @@ export default function GarminConnect({ apiBase = '', status, setStatus, loadErr
   useEffect(() => { if (status?.email) setEmail(current => current || status.email); }, [status?.email]);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
-  async function run(action) {
-    setBusy(true); setError('');
-    try { await action(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  async function run(action, label = '') {
+    setBusy(true); setWorking(label); setError('');
+    try { await action(); } catch (e) { setError(e.message); } finally { setBusy(false); setWorking(''); }
   }
+  const workingNote = working && <p role="status" className="garmin-working"><span className="garmin-spinner" aria-hidden="true" />{working}</p>;
   const login = event => {
     event.preventDefault();
     const secret = password;
     setPassword('');
-    run(async () => setStatus(await garminRequest(apiBase, '/login', { method: 'POST', body: { email: email.trim(), password: secret } })));
+    run(async () => setStatus(await garminRequest(apiBase, '/login', { method: 'POST', body: { email: email.trim(), password: secret } })),
+      'Anmeldung bei Garmin läuft … Das kann einen Moment dauern.');
   };
   const confirmCode = event => {
     event.preventDefault();
-    run(async () => { setStatus(await garminRequest(apiBase, '/mfa', { method: 'POST', body: { code: code.trim() } })); setCode(''); });
+    run(async () => { setStatus(await garminRequest(apiBase, '/mfa', { method: 'POST', body: { code: code.trim() } })); setCode(''); },
+      'Code wird bei Garmin geprüft …');
   };
   const sync = () => run(async () => setStatus(await syncGarmin(apiBase)));
   const togglePush = (pushWorkouts, removeWorkouts) => run(async () => setStatus(await garminRequest(apiBase, '/settings', { method: 'PUT', body: { pushWorkouts, removeWorkouts } })));
@@ -163,7 +168,7 @@ export default function GarminConnect({ apiBase = '', status, setStatus, loadErr
   const disconnect = () => run(async () => {
     setStatus(await garminRequest(apiBase, deleteWorkouts ? '?deleteWorkouts=1' : '', { method: 'DELETE' }));
     setConfirming(false); setDeleteWorkouts(false);
-  });
+  }, 'Wird getrennt …');
 
   const shownError = error || (status ? '' : loadError);
   const showLogin = status?.available && (!status.connected || status.needsLogin) && !status.mfaPending;
@@ -180,13 +185,15 @@ export default function GarminConnect({ apiBase = '', status, setStatus, loadErr
           <input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></label>
         <label className="garmin-field">Passwort
           <input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></label>
-        <button type="submit" className="batch-primary" disabled={busy}>{status.needsLogin ? 'Neu anmelden' : 'Verbinden'}</button>
+        <div className="garmin-submit"><button type="submit" className="batch-primary" disabled={busy}>{busy ? 'Wird verbunden …' : status.needsLogin ? 'Neu anmelden' : 'Verbinden'}</button>
+          {workingNote}</div>
         <p className="batch-help">Das Passwort geht nur zur Anmeldung an Garmin und wird nicht gespeichert. Training Plēnum behält nur den Anmelde-Token, verschlüsselt auf diesem Rechner. Der erste Abgleich holt die letzten 90 Tage, ältere lassen sich danach nachladen. Schon vorhandene Aktivitäten werden übersprungen.</p>
       </form>}
       {status?.mfaPending && <form className="garmin-form" onSubmit={confirmCode}>
         <label className="garmin-field">Bestätigungscode von Garmin
           <input inputMode="numeric" autoComplete="one-time-code" required pattern="[0-9]{4,10}" value={code} onChange={e => setCode(e.target.value)} /></label>
-        <button type="submit" className="batch-primary" disabled={busy}>Bestätigen</button>
+        <div className="garmin-submit"><button type="submit" className="batch-primary" disabled={busy}>{busy ? 'Wird geprüft …' : 'Bestätigen'}</button>
+          {workingNote}</div>
         <p className="batch-help">Garmin hat dir einen Code per E-Mail oder App geschickt. Er gilt etwa 10 Minuten.</p>
       </form>}
       {confirming && <div className="whoop-confirm" role="group" aria-label="Garmin trennen">
@@ -194,6 +201,7 @@ export default function GarminConnect({ apiBase = '', status, setStatus, loadErr
         {status.workouts?.sent > 0 && <label><input type="checkbox" checked={deleteWorkouts} onChange={event => setDeleteWorkouts(event.target.checked)} /> Auch die von Training Plēnum gesendeten Einheiten aus Garmin löschen</label>}
         <div><button type="button" className="batch-primary" disabled={busy} onClick={disconnect}>Trennen</button>
           <button type="button" disabled={busy} onClick={() => { setConfirming(false); setDeleteWorkouts(false); }}>Abbrechen</button></div>
+        {workingNote}
       </div>}
       {status?.connected && status.lastError && !status.syncing && <p className="batch-error">{status.lastError}</p>}
       {shownError && <p role="alert" className="batch-error">{shownError}</p>}

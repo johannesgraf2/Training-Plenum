@@ -57,7 +57,15 @@ test('logs in with the MFA code and clears the password field', async () => {
   expect(host.querySelector('input[type="password"]').value).toBe('');
 
   await type('input[type="password"]', 'right');
+  // While Garmin answers, the form says that the login runs.
+  let answer;
+  const fetched = global.fetch.getMockImplementation();
+  global.fetch.mockImplementationOnce((...args) => new Promise(resolve => { answer = () => resolve(fetched(...args)); }));
   await submit();
+  expect(host.querySelector('.garmin-working').textContent).toContain('Anmeldung bei Garmin läuft');
+  expect(button('Wird verbunden …').disabled).toBe(true);
+  await act(async () => answer());
+  expect(host.querySelector('.garmin-working')).toBeNull();
   const [, options] = calls('/login')[1];
   expect(options).toEqual(expect.objectContaining({ method: 'POST', headers: { 'Content-Type': 'application/json' } }));
   expect(JSON.parse(options.body)).toEqual({ email: 'me@example.com', password: 'right' });

@@ -2,6 +2,11 @@
 .garmin-form { display: flex; flex-direction: column; gap: 12px; }
 .garmin-form .batch-help { margin-top: 0; }
 .garmin-form > button { align-self: flex-start; }
+.garmin-submit { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.garmin-working { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--fg-243248); }
+.garmin-spinner { flex: none; width: 14px; height: 14px; border: 2px solid var(--bd-d4dce7); border-top-color: var(--accent); border-radius: 50%; animation: garmin-spin 1s linear infinite; }
+@keyframes garmin-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .garmin-spinner { animation: none; } }
 .garmin-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--fg-243248); }
 .garmin-field input { font: inherit; font-size: 14px; font-weight: 400; width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--bd-d4dce7); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-1e293b); }
 .garmin-workouts { display: flex; flex-direction: column; gap: 12px; padding-top: 14px; border-top: 1px solid var(--bd-e2e8f0); }
