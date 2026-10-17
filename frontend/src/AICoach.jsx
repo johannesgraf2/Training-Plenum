@@ -3,8 +3,11 @@ import { Icon } from './icons';
 import { localDate, mainPace, summary as workoutSummary } from './workoutModel';
 import { workoutLibrary } from './workoutLibraryData';
 import CoachOnboarding from './CoachOnboarding';
+import CoachChat from './CoachChat';
+import CoachPlan from './CoachPlan';
 import { KeyNotice, ProviderForm } from './CoachProvider';
-import { CheckInDialog, CheckInHistory, InjuryList, PeriodHeader, ReadinessCard, TodaySessions, healInjury, loadToday } from './CoachToday';
+import { CheckInDialog, CheckInHistory, HintCards, InjuryList, Outlook, PeriodHeader, QuickActions, ReadinessCard, TodaySessions, healInjury, loadToday } from './CoachToday';
+import { jobState } from './coachOnboarding';
 import './AICoach.css';
 
 const DAYS = [['mon', 'Mo'], ['tue', 'Di'], ['wed', 'Mi'], ['thu', 'Do'], ['fri', 'Fr'], ['sat', 'Sa'], ['sun', 'So']];
@@ -28,9 +31,9 @@ const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 
 // Time a normal day can hold: quarter hours up to 3 h, then half hours.
 const DAY_MINUTES = [...Array.from({ length: 11 }, (_, i) => 30 + i * 15), ...Array.from({ length: 10 }, (_, i) => 210 + i * 30)];
 const PROPOSAL_TITLES = { block: 'Trainingsblock wählen', week: 'Wochenplan prüfen', patch: 'Wochenänderungen prüfen' };
-const TABS = [['today', 'Heute'], ['week', 'Woche'], ['season', 'Saison'], ['review', 'Rückblick'], ['profile', 'Athletenprofil'], ['provider', 'AI Provider']];
-// Earlier the plan was one tab; its season part now has its own.
-const tabOf = key => key === 'plan' ? 'season' : key;
+// Plan is the new area with phases (M4); Woche and Saison stay for blocks without a plan until M5 replaces them.
+const TABS = [['today', 'Heute'], ['plan', 'Plan'], ['week', 'Woche'], ['season', 'Saison'], ['review', 'Rückblick'], ['profile', 'Athletenprofil'], ['provider', 'AI Provider']];
+const POLL_MS = 1500;
 const SITUATIONS = { nach_pause: 'Nach einer Pause', mitten_im_training: 'Mitten im Training', saison_vorbei: 'Saison vorbei' };
 const SITUATION_HINTS = { nach_pause: 'Du steigst nach Krankheit, Urlaub oder Pause wieder ein.', mitten_im_training: 'Du trainierst regelmäßig und willst gezielt weiter.', saison_vorbei: 'Der Höhepunkt liegt hinter dir, Erholung steht an.' };
 const WIZARD_STEPS = ['Ausgangslage', 'Weg', 'Auswahl', 'Vorschau'];
@@ -755,12 +758,12 @@ function Proposal({ value, busy, onConfirm, onDiscard }) {
 
 export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVersion = 0, todayVersion = 0, apiBase = '', workouts = EMPTY_WORKOUTS,
   onWorkoutsChanged, onOpenWorkout, onBusyChange, onTodayChanged }) {
-  const [tab, setTab] = useState(tabOf(initialTab));
+  const [tab, setTab] = useState(initialTab);
   // The app keeps the coach mounted between pages; a new tabVersion asks it to show initialTab again.
   const shownTabVersion = useRef(tabVersion);
   useEffect(() => {
     if (shownTabVersion.current === tabVersion) return;
-    shownTabVersion.current = tabVersion; setTab(tabOf(initialTab));
+    shownTabVersion.current = tabVersion; setTab(initialTab);
   }, [tabVersion, initialTab]);
   const [snapshot, setSnapshot] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -798,6 +801,12 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
   const [notice, setNotice] = useState('');
   const [onboarding, setOnboarding] = useState(false);
   const [reloads, setReloads] = useState(0);  // A finished or closed onboarding loads the coach again.
+  const [chat, setChat] = useState(null);  // The open coach chat: {ref, message, key}.
+  const [advance, setAdvance] = useState(null);  // The rolling replanning job, read with jobState.
+  const [planProposal, setPlanProposal] = useState(null);  // An adjustment of the next weeks after replanning.
+  const [reviewWeek, setReviewWeek] = useState(null);
+  const [planVersion, setPlanVersion] = useState(0);
+  const advanceTimer = useRef(null);
   const contextVersion = useRef(0);
   const pending = useRef(false);
   const stopPlanning = useRef(false);
@@ -810,7 +819,7 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
   async function request(path, method = 'GET', body) {
     const response = await fetch(`${apiBase}${path}`, { method, headers: { 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw Object.assign(new Error(data.error || data.message || `Anfrage fehlgeschlagen (${response.status}).`), { status: response.status });
+    if (!response.ok) throw Object.assign(new Error(data.error || data.message || `Anfrage fehlgeschlagen (${response.status}).`), { status: response.status, data });
     return data;
   }
   function invalidate(area) {
@@ -825,6 +834,31 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
     finally { pending.current = false; setBusy(''); }
   }
   useEffect(() => { onBusyChange?.(busy || planning); }, [busy, planning]);
+  useEffect(() => () => clearTimeout(advanceTimer.current), []);
+  // Rolling replanning runs on the server; the coach follows its job and shows the new week when it is done.
+  async function afterPlanChange() {
+    keepNewer(await request('/api/coach/plan')); setPlanVersion(v => v + 1);
+    await Promise.resolve(onWorkoutsChanged?.()).catch(() => {});
+  }
+  function followAdvance(job) {
+    const state = jobState({ job });
+    setAdvance(state);
+    clearTimeout(advanceTimer.current);
+    if (state.status === 'running' && state.id) {
+      advanceTimer.current = setTimeout(() => request(`/api/coach/plan/advance/${encodeURIComponent(state.id)}`)
+        .then(data => followAdvance(data.job), e => setAdvance({ ...state, status: 'failed', error: e.message })), POLL_MS);
+    } else if (state.status === 'done') {
+      const result = job.result || {};
+      setNotice(`Woche ${result.weekNumber} geplant – ${fmt(result.calculatedHours)} h${result.focus ? `, Fokus ${result.focus}` : ''}.`);
+      if (result.proposalId) setPlanProposal(result.proposalId);
+      afterPlanChange().catch(() => {});
+    } else if (state.status === 'failed') setError(`Die nächste Woche konnte nicht geplant werden: ${state.error || 'unbekannter Fehler'}`);
+  }
+  function startAdvance(trigger) {
+    request(`/api/coach/plan/advance?${tzQuery()}`, 'POST', { trigger })
+      .then(data => { if (data.job) followAdvance(data.job); }, e => { if (e.status === 409 && e.data?.job) followAdvance(e.data.job); else if (trigger === 'manual') setError(e.message); });
+  }
+  function openChat(ref = null, message = null) { setChat({ ref, message, key: Date.now() }); }
   async function refreshSnapshot() { setSnapshot(await request(`/api/athlete-snapshot?${tzQuery()}`)); }
 
   useEffect(() => {
@@ -836,6 +870,8 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
         setSnapshot(s); setProfile(blankProfile(p)); setProvider(ai); setPlan(saved); setCatalog(types);
         const range = blockRange(currentBlock(saved.blocks));
         if (range && localDate() < range.start) setWeek(isoWeek(range.start)); // An upcoming block starts with its first week.
+        // There is no server scheduler: opening the coach works out a week that is due by the replan mode.
+        if (saved.frame?.status === 'active' && ai.configured) startAdvance('auto');
       })
       .catch(e => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; contextVersion.current += 1; };
@@ -1055,6 +1091,12 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
     if (proposal && !['block', 'season'].includes(proposal.kind)) document.querySelector('.coach-proposal')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }, [proposal]);
   const workoutsById = useMemo(() => Object.fromEntries(workouts.map(workout => [workout.id, workout])), [workouts]);
+  // With a plan with phases, Heute shows quick buttons, outlook and hints, and changes go through the chat.
+  const planActive = plan?.frame?.status === 'active';
+  const planToday = planActive && !!dayView?.period?.planWeek;
+  const todaySession = (dayView?.sessions || []).find(session => session.source === 'coach');
+  const todayRef = todaySession ? { kind: 'session', week: isoWeek(dayView.date), sessionId: todaySession.id, label: `Heute · ${todaySession.name}` }
+    : dayView ? { kind: 'week', week: isoWeek(dayView.date), sessionId: null, label: 'Diese Woche' } : null;
   const ownWorkouts = weekWorkouts.filter(workout => !(currentWeek?.sessions || []).some(session => session.id === workout.id));
   const thisWeek = isoWeek(today);
   const inBlock = key => !!currentRange && weekStart(key) >= currentRange.start && weekStart(key) <= currentRange.end;
@@ -1096,6 +1138,8 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
     invalidate(); setDayView(view); onTodayChanged?.(view); refreshSnapshot().catch(() => {});
   }
   function adjustToToday() {
+    // With a plan with phases the coach chat adapts the day.
+    if (planActive) { setTab('today'); openChat(todayRef, null); return; }
     const key = isoWeek(localDate());
     if (!provider?.configured) { setTab('provider'); setError('Verbinde zuerst deinen AI-Provider, dann passt der Coach deine Woche an.'); return; }
     if (!plan?.weeks?.[key]) { setError('Für diese Woche hat der Coach noch keinen Plan, den er anpassen könnte.'); return; }
@@ -1262,15 +1306,22 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
         <section className="coach-card coach-today-period"><PeriodHeader today={dayView} /></section>
         {dayView.checkIn ? <ReadinessCard readiness={dayView.readiness} time="heute">
           <div className="coach-actions"><button type="button" disabled={occupied} onClick={() => setCheckInOpen(true)}>Check-in ändern</button>
-            {dayView.readiness.level !== 'green' && dayView.weekPlanned && <button type="button" className="coach-primary" disabled={!canPlan} onClick={adjustToToday}>Woche an heute anpassen</button>}</div>
+            {!planToday && dayView.readiness.level !== 'green' && dayView.weekPlanned && <button type="button" className="coach-primary" disabled={!canPlan} onClick={adjustToToday}>Woche an heute anpassen</button>}</div>
+          {planToday && <QuickActions level={dayView.readiness.level} disabled={occupied} onAsk={message => openChat(todayRef, message)} />}
         </ReadinessCard> : <div className="coach-message coach-checkin-open"><span><strong>Dein Morgen-Check-in fehlt noch.</strong> Mit ihm weiß der Coach, wie es dir heute geht.</span><button type="button" disabled={occupied} onClick={() => setCheckInOpen(true)}>Check-in ausfüllen</button></div>}
+        {planToday && <HintCards hints={dayView.hints} onReview={key => { setReviewWeek({ week: key, key: Date.now() }); setTab('plan'); }} onPlan={() => setTab('plan')} />}
         {proposing === 'patch' && proposalOrigin === 'today' && <Generating text="Der Coach passt deine Woche an den Check-in an … Das kann bis zu einer Minute dauern." />}
         {proposal && proposalOrigin === 'today' && !['block', 'season'].includes(proposal.kind) && <Proposal key={proposal.id} value={proposal} busy={occupied} onConfirm={confirmProposal} onDiscard={discardProposal} />}
         <section className="coach-card"><span className="coach-eyebrow">Heute</span><TodaySessions sessions={dayView.sessions} />
-          <div className="coach-actions"><button type="button" onClick={() => setTab('week')}>Zur Woche</button></div></section>
+          <div className="coach-actions"><button type="button" onClick={() => setTab(planToday ? 'plan' : 'week')}>{planToday ? 'Zum Plan' : 'Zur Woche'}</button></div></section>
+        {planToday && <Outlook days={dayView.outlook} />}
         <InjuryList injuries={dayView.injuries} busy={occupied} onHeal={heal} />
       </> : <p role="status" className="coach-muted">Dein Tag wird geladen …</p>}
     </>}
+
+    {!loading && profile && tab === 'plan' && <CoachPlan apiBase={apiBase} version={`${plan?.revision ?? ''}-${planVersion}`} workoutsById={workoutsById} advance={advance}
+      proposalId={planProposal} reviewWeek={reviewWeek} onAsk={openChat} onStart={() => setOnboarding(true)} onAdvance={() => startAdvance('manual')}
+      onJob={followAdvance} onChanged={() => afterPlanChange().catch(e => setError(e.message))} onOpenWorkout={onOpenWorkout} />}
 
     {!loading && profile && tab === 'week' && <>
       {stage !== 'setup' && !provider?.configured && <div className="coach-message">Verbinde deinen eigenen API-Zugang, um Vorschläge zu erstellen. <button onClick={() => setTab('provider')}>Provider einrichten</button></div>}
@@ -1350,6 +1401,10 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
     {checkInOpen && dayView && <CheckInDialog apiBase={apiBase} today={dayView} onClose={() => setCheckInOpen(false)} onSaved={savedCheckIn}
       onAdjust={() => { setCheckInOpen(false); adjustToToday(); }} />}
     {onboarding && <CoachOnboarding apiBase={apiBase} onClose={() => { setOnboarding(false); setReloads(n => n + 1); }}
-      onCreated={() => { setOnboarding(false); setTab('week'); setReloads(n => n + 1); onWorkoutsChanged?.(); }} />}
+      onCreated={() => { setOnboarding(false); setTab('plan'); setReloads(n => n + 1); onWorkoutsChanged?.(); }} />}
+    {!loading && planActive && ['today', 'plan'].includes(tab) && !chat && <button type="button" className="coach-ask" onClick={() => openChat()}>Coach fragen</button>}
+    {chat && <CoachChat apiBase={apiBase} providerReady={!!provider?.configured} start={chat} onClose={() => setChat(null)}
+      onProviderSettings={() => { setChat(null); setTab('provider'); }}
+      onChanged={async () => { await afterPlanChange(); refreshToday(); }} />}
   </div>;
 }

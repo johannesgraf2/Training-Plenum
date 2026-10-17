@@ -141,6 +141,8 @@ Jeder Meilenstein ist für sich lauffähig, hat Tests und wird einzeln gemerged.
 
 ### M4 Plan, Heute und Coach-Chat (Frontend und Backend)
 
+**Stand: umgesetzt.** Bis M5 steht „Plan“ als eigener Bereich neben den alten Tabs; Woche und Saison bleiben für Blöcke ohne Plan. Dazu `GET /api/coach/plan/weeks` (alle Planwochen mit Phase, Zielstunden, ausgearbeiteter Woche, absolvierten Stunden und Termin des Nachplanens) und `GET /api/coach/proposals/<id>` für den Mehrwochen-Vorschlag nach dem Nachplanen. Der Wochenrückblick mit Anstrengung und Gründen sitzt im Plan, die Hinweiskarte in Heute öffnet ihn. Beim Öffnen des Coachs ruft das Frontend `POST /api/coach/plan/advance` mit `auto` auf. Verschieben, Tauschen und Auslassen einer Einheit schicken eine vorbereitete Nachricht mit Bezug in den Chat, „Behalten“ fixiert direkt. „Plan beenden“ blendet auch den Chat aus. Einstellungsvorschläge im Chat: Ausnahme, neues Zeitfenster, Wochenmaximum, Event und FTP bzw. Schwellenpace. Noch offen: der Live-Durchlauf mit eigenem Provider-Key.
+
 **Plan:** `CoachPlan.jsx`
 - Phasenleiste mit Events und Heute
 - 3 Wochenkarten, vorgemerkte Wochen, Verlauf
