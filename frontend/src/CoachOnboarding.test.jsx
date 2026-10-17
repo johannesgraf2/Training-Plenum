@@ -33,7 +33,7 @@ beforeEach(() => {
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
   created = jest.fn(); closed = jest.fn();
   requests = []; responses = {};
-  server = { profile: blankProfile(), user: { ftp: null, maxHr: null, age: null, weight: null }, background: withData, settings: null, events: [],
+  server = { profile: blankProfile(), user: { name: 'Alex', ftp: null, maxHr: null, age: null, weight: null }, background: withData, settings: null, events: [],
     provider: { provider: 'openai', model: 'gpt-6.1-sol', configured: false, keyLast4: null, encryptionConfigured: true, encryptionKeySource: 'environment' },
     snapshot: { observed: { performanceHistory: { bestEfforts: { last90Days: { cycling: { '20min': { watts: 300, date: '2026-09-12' } } }, last365Days: { cycling: {} } } } } },
     run: { paceSecPerKm: null, source: null, basis: null, calculated: null }, polls: 0 };
@@ -94,11 +94,17 @@ async function addWindow(day, { from, to, allDay, unavailable, group, copyTo = [
 test('a new athlete with data goes from A1 to the created plan', async () => {
   await render();
   // A1: ride and strength are preselected from the data.
-  expect(heading()).toBe('Deine Sportarten');
+  expect(heading()).toBe('Du und deine Sportarten');
   expect(container.textContent).toContain('Teil A · Athletenprofil · Schritt 1 von 4');
   expect(buttonIn('Sportarten', 'Radfahren').getAttribute('aria-pressed')).toBe('true');
   expect(buttonIn('Sportarten', 'Kraft').textContent).toContain('aus deinen Daten');
+  // The name is the athlete's own: without one the step does not go on.
+  expect(inputFor('Dein Name').value).toBe('Alex');
+  await change(inputFor('Dein Name'), '  ');
+  expect(button('Weiter').disabled).toBe(true);
+  await change(inputFor('Dein Name'), ' Mara Berg ');
   await click(button('Weiter'));
+  expect(writes('/api/user')[0].body).toEqual({ name: 'Mara Berg' });
   expect(server.profile.sports).toEqual(['ride', 'strength']);
   expect(server.profile.onboarding.completed).toEqual(['sports']);
 
@@ -113,7 +119,7 @@ test('a new athlete with data goes from A1 to the created plan', async () => {
   await change(inputFor('Gewicht (kg)'), '72');
   await change(inputFor('Max. Herzfrequenz'), '188');
   await click(button('Weiter'));
-  expect(writes('/api/user')[0].body).toEqual({ weight: 72, age: null, maxHr: 188, ftp: 285 });
+  expect(writes('/api/user')[1].body).toEqual({ weight: 72, age: null, maxHr: 188, ftp: 285 });
   expect(server.profile.thresholds.ride).toEqual({ source: 'calculated' });
 
   // A4: provider with key and cost estimate, then the connection test.

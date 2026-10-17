@@ -2,7 +2,7 @@ import { localDate } from './workoutModel';
 
 // Onboarding steps in order; part A is the athlete profile, part B creates the plan.
 export const STEPS = [
-  { id: 'sports', part: 'A', title: 'Deine Sportarten' },
+  { id: 'sports', part: 'A', title: 'Du und deine Sportarten' },
   { id: 'sources', part: 'A', title: 'Verbinde deine Daten' },
   { id: 'thresholds', part: 'A', title: 'Deine Leistungsdaten' },
   { id: 'provider', part: 'A', title: 'Dein AI-Provider' },

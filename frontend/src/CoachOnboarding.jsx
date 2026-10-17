@@ -18,22 +18,27 @@ const writeEventForm = value => { try { if (value) window.sessionStorage.setItem
 // --- Part A -------------------------------------------------------------------------------------
 
 function SportsStep({ ctx }) {
-  const { profile, background } = ctx.data;
+  const { profile, background, user } = ctx.data;
   const offered = STAGE_SPORTS.map(([key]) => key);
   const fromData = new Set(background.recentSports);
+  const [name, setName] = useState(user.name || '');
   const [chosen, setChosen] = useState(() => {
     const data = offered.filter(sport => fromData.has(sport));
     return ctx.done('sports') || !data.length ? profile.sports.filter(sport => offered.includes(sport)) : data;
   });
   const toggle = sport => setChosen(list => list.includes(sport) ? list.filter(s => s !== sport) : offered.filter(s => s === sport || list.includes(s)));
   // Sports the onboarding does not offer yet stay in the profile.
-  const save = () => ctx.complete('sports', { sports: [...chosen, ...profile.sports.filter(sport => !offered.includes(sport))] });
+  const save = () => ctx.complete('sports', { sports: [...chosen, ...profile.sports.filter(sport => !offered.includes(sport))] },
+    name.trim() === user.name ? null : { name: name.trim() });
   return <>
-    <h2>Deine Sportarten</h2>
+    <h2>Du und deine Sportarten</h2>
+    <div className="coach-form-grid onboarding-person">
+      <Field label="Dein Name" hint="So spricht dich die App an. Ändern kannst du ihn später im Profil."><input required maxLength={100} autoComplete="name" value={name} onChange={e => setName(e.target.value)} /></Field>
+    </div>
     <p>Wähle die Sportarten aus, die du regelmäßig machst.</p>
     <Tiles label="Sportarten" items={STAGE_SPORTS} isOn={key => chosen.includes(key)} onToggle={toggle} note={key => fromData.has(key) ? 'aus deinen Daten' : null} />
     <p className="coach-muted">Schwimmen, XC Ski, Hyrox und Triathlon kommen dazu, sobald ihre Trainingsvorlagen fertig sind.</p>
-    <StepFooter onNext={save} disabled={!chosen.length} busy={ctx.busy} />
+    <StepFooter onNext={save} disabled={!chosen.length || !name.trim()} busy={ctx.busy} />
   </>;
 }
 

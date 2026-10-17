@@ -456,7 +456,7 @@ def ensure_demo_user():
             u = User.query.get(DEMO_USER_ID)
             if not u:
                 u = User(id=DEMO_USER_ID, email='athlete@trainhub.de',
-                         name='Johannes Graf', password_hash='demo', age=30, weight=75, sport='cycling')
+                         name='', password_hash='demo', age=30, weight=75, sport='cycling')
                 db.session.add(u)
                 db.session.commit()
         app._demo_created = True
