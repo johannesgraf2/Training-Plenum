@@ -151,6 +151,30 @@ class ProviderTests(unittest.TestCase):
                     self.provider.generate('secret-api-key', DEFAULT_MODEL, 'instructions', {}, SCHEMA)
                 self.assertNotIn('secret-provider-text', str(error.exception))
 
+    def test_an_answer_cut_off_at_the_output_limit_gets_one_more_try_with_twice_the_budget(self):
+        cut = {'status': 'incomplete', 'incomplete_details': {'reason': 'max_output_tokens'}, 'output': [],
+               'usage': {'input_tokens': 10, 'output_tokens': 10000}}
+        usage, budgets, answers = [], [], [cut, envelope()]
+
+        def answer(api_key, path, payload, timeout):
+            budgets.append(payload['max_output_tokens'])
+            return answers[len(budgets) - 1]
+        with patch.object(self.provider, '_request', side_effect=answer):
+            result = self.provider.generate('secret-api-key', DEFAULT_MODEL, 'instructions', {}, SCHEMA, on_usage=usage.append)
+        self.assertEqual(result, {'hours': 8})
+        self.assertEqual(budgets, [10000, 20000])
+        self.assertEqual(len(usage), 1)  # The second envelope reports no usage.
+        with patch.object(self.provider, '_request', side_effect=[cut, cut]):
+            with self.assertRaises(ProviderError) as error:
+                self.provider.generate('secret-api-key', DEFAULT_MODEL, 'instructions', {}, SCHEMA)
+        self.assertIn('Ausgabelimit', str(error.exception))
+        filtered = {**cut, 'incomplete_details': {'reason': 'content_filter'}}
+        with patch.object(self.provider, '_request', return_value=filtered) as request:
+            with self.assertRaises(ProviderError) as error:
+                self.provider.generate('secret-api-key', DEFAULT_MODEL, 'instructions', {}, SCHEMA)
+        self.assertIn('gefiltert', str(error.exception))
+        self.assertEqual(request.call_count, 1)
+
     def test_http_errors_and_timeouts_never_expose_provider_bodies_or_keys_and_do_not_retry(self):
         for error in (HTTPError('https://api.openai.com/v1/responses', 401, 'secret-api-key', {},
                                 io.BytesIO(b'{"error":"secret-api-key"}')),
