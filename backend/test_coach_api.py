@@ -494,7 +494,7 @@ class CoachAPITests(unittest.TestCase):
         decision = {'week': self.week, 'targetHours': 4, 'focus': 'Basis', 'hinweise': [],
                     'sessions': [self.session(day, day, 60) for day in days]}
         response, _ = self.propose({'kind': 'week', 'week': self.week}, decision, expected=400)
-        self.assertIn('zwei Ruhetage', response['error'])
+        self.assertIn('zwei Ruhetage hintereinander (Mi und Do)', response['error'])
         days = ['mon', 'wed', 'fri', 'sat']  # Sunday stays free
         proposal, provider = self.propose({'kind': 'week', 'week': self.week},
                                           {**decision, 'sessions': [self.session(day, day, 60) for day in days]})
@@ -505,11 +505,32 @@ class CoachAPITests(unittest.TestCase):
         decision = {**decision, 'week': second}
         response, provider = self.propose({'kind': 'week', 'week': second}, {**decision, 'sessions': [
             self.session(day, day, 60) for day in ('tue', 'thu', 'sat', 'sun')]}, expected=400)
+        self.assertIn('(So der Vorwoche und Mo)', response['error'])
         self.assertIn('Sonntag auf Montag', response['error'])
         self.assertEqual(provider.generate.call_args.args[3]['trainingRules']['neighbourDays'],
                          {'previousSunday': 'rest', 'nextMonday': None})
         self.propose({'kind': 'week', 'week': second}, {**decision, 'sessions': [
             self.session(day, day, 60) for day in ('mon', 'wed', 'fri', 'sun')]})
+
+    def test_no_two_rest_days_in_a_row_over_the_week_boundary_with_a_monday_without_time(self):
+        self.block()
+        self.client.put('/api/athlete-profile', json={'availability': {'noConsecutiveRestDays': True}})
+        second = iso_week(self.start + timedelta(weeks=1))
+        monday = (self.start + timedelta(weeks=1)).isoformat()
+        self.client.put('/api/coach/daily-overrides/' + monday, json={'available': False})
+        decision = {'week': self.week, 'targetHours': 4, 'focus': 'Basis', 'hinweise': [],
+                    'sessions': [self.session(day, day, 60) for day in ('mon', 'wed', 'fri', 'sat')]}
+        # The Monday after has no time, so this week's Sunday trains although the next week is not planned yet.
+        response, provider = self.propose({'kind': 'week', 'week': self.week}, decision, expected=400)
+        self.assertIn('(So und Mo der Folgewoche)', response['error'])
+        self.assertEqual(provider.generate.call_args.args[3]['trainingRules']['neighbourDays'],
+                         {'previousSunday': None, 'nextMonday': 'rest'})
+        # A gap the week cannot close itself: the Sunday before is free and the Monday has no time (set after planning).
+        self.client.put('/api/coach/daily-overrides/' + monday, json={})
+        self.confirm(self.propose({'kind': 'week', 'week': self.week}, decision)[0])
+        self.client.put('/api/coach/daily-overrides/' + monday, json={'available': False})
+        self.propose({'kind': 'week', 'week': second}, {**decision, 'week': second, 'sessions': [
+            self.session(day, day, 60) for day in ('tue', 'thu', 'sat', 'sun')]})
 
     def test_no_two_rest_days_in_a_row_gives_way_to_days_without_time(self):
         windows = [{'id': f'w-{day}', 'day': day, 'kind': 'available', 'allDay': False, 'from': '18:00', 'to': '20:00',
