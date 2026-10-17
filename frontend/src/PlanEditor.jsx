@@ -108,7 +108,8 @@ function WeekVolumeEditor({ week, busy, error, onSave, onReset, onClose }) {
   const invalid = value != null && !(value >= 0 && value <= week.maxHours);
   const changed = kind !== week.kind || value !== (week.athleteHours ?? null);
   return <section className="plan-week-editor" aria-label={`Woche ${week.number} anpassen`}>
-    <div className="plan-week-editor-head"><strong>Woche {week.number} · {shortDate(week.startDate)} · {week.phaseName || '—'}</strong>
+    <div className="plan-week-editor-head"><div><strong>Woche {week.number} · {shortDate(week.startDate)}</strong>
+      <small className="coach-muted">Phase {week.phaseName || '—'} (ändern über „Phasen ändern“)</small></div>
       <button type="button" onClick={onClose}>Schließen</button></div>
     {week.state === 'past' ? <p className="coach-muted">Vergangene Wochen bleiben, wie sie waren.</p> : <>
       {RHYTHM.includes(week.defaultKind) ? <div className="coach-toggles" role="group" aria-label="Art der Woche">
@@ -163,7 +164,7 @@ export function WeekHoursChart({ overview, today, apiBase, disabled, onSaved }) 
   const shown = hover != null ? weeks[hover] : null;
   const open = i => { if (editable && !disabled) { setError(''); setSelected(i); } };
   return <figure className="plan-hours" aria-label="Wochenstunden bis zum Ziel">
-    <figcaption><span className="coach-eyebrow">Wochenstunden bis zum Ziel</span>
+    <figcaption><span className="coach-eyebrow">Wochen · Stunden und Belastung</span>
       <span className="plan-hours-legend"><span><i className="load" />Belastung</span><span><i className="deload" />Erholung &amp; Taper</span>
         {editable && <span><i className="own" />Eigene Woche</span>}</span></figcaption>
     {editable && <div className="plan-hours-scale">
@@ -174,7 +175,7 @@ export function WeekHoursChart({ overview, today, apiBase, disabled, onSaved }) 
         <button type="button" aria-label="Mehr Umfang" disabled={busy || scale >= SCALE_STEPS.at(-1)} onClick={() => step(1)}>+</button>
       </div>
       {scale !== stored && <button type="button" className="coach-primary" disabled={busy || disabled} onClick={() => save(scale)}>Übernehmen</button>}
-      <small className="coach-muted">Tippe auf eine Woche, um Belastung oder Erholung und ihre Stunden selbst festzulegen.</small>
+      <small className="coach-muted">Tippe auf eine Woche, um nur diese Woche zu ändern: Belastung oder Erholung und ihre Stunden. Den Schwerpunkt (z. B. VO2max) änderst du oben mit „Phasen ändern“.</small>
     </div>}
     <div className="plan-hours-wrap" ref={wrap}>
       <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={`Geplante Stunden pro Woche, ${weeks.length} Wochen, höchstens ${fmt(peak)} h`}

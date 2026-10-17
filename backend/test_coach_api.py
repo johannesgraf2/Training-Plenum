@@ -1383,7 +1383,20 @@ class CoachAPITests(unittest.TestCase):
         self.assertTrue(calls[0]['blockWeek']['athleteHours'])
         self.assertEqual(calls[-1]['systemNote']['rejectedChange'], 'Die Woche hat 1 h, du hast 7 h für sie festgelegt.')
         self.assertEqual(job['status'], 'failed')
-        self.assertIn('festgelegten 7 h', job['error'])
+        self.assertIn('Woche 4: Der Coach hat zweimal eine Regel verfehlt (Die Woche hat 1 h, du hast 7 h für sie festgelegt)', job['error'])
+
+    def test_a_week_that_breaks_a_rule_goes_back_to_the_coach_once(self):
+        self.plan_settings()
+        # The first answer of each week plans strength without a gym; the second one, with the reason, fixes it.
+        def sessions(context):
+            if context.get('systemNote'):
+                return [self.session(day=self.free_day(context))]
+            return [self.session(day=self.free_day(context), template='strength_general')]
+        provider, calls = self.planner(sessions=sessions)
+        job = self.create(provider)
+        self.assertEqual(job['status'], 'done', job)
+        self.assertEqual([c['task'] for c in calls], ['frame'] + ['week'] * 6)
+        self.assertIn('Krafttraining', calls[2]['systemNote']['rejectedChange'])
 
     def test_recommended_hours_from_rules_and_from_the_ai(self):
         response = self.client.get('/api/coach/volume/recommendation').get_json()
