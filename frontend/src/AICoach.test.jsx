@@ -335,3 +335,12 @@ test('a failed replanning says what broke and still loads the weeks planned befo
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain('Woche 10 geplant – 9 h, Fokus VO2max.');
 });
+
+test('a workout changed in the editor or calendar shows up in the plan', async () => {
+  const before = [{ id: 'w1', name: 'VO2-Intervalle Rad 5×4 min', date: '2026-09-22', sport: 'ride', steps: [] }];
+  await render({ initialTab: 'plan', workouts: before });
+  const loads = () => requests.filter(r => r.path === '/api/coach/plan/weeks').length;
+  const first = loads();
+  await render({ initialTab: 'plan', workouts: [{ ...before[0], name: 'VO2-Mikrointervalle Rad 2×10×30/15' }] });
+  expect(loads()).toBe(first + 1);
+});

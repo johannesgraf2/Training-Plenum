@@ -90,6 +90,9 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
   const [planProposal, setPlanProposal] = useState(null);  // An adjustment of the worked-out weeks after a job.
   const [reviewWeek, setReviewWeek] = useState(null);
   const [planVersion, setPlanVersion] = useState(0);
+  // A workout changed in the calendar or editor (e.g. swapped for another one) changes its plan week too.
+  const [workoutsVersion, setWorkoutsVersion] = useState(0);
+  useEffect(() => { setWorkoutsVersion(v => v + 1); }, [workouts]);
   const [adaptPending, setAdaptPending] = useState([]);  // Changed settings the athlete has not answered "Plan anpassen?" for.
   const jobTimer = useRef(null);
   const pending = useRef(false);
@@ -273,7 +276,7 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
       </> : <p role="status" className="coach-muted">Dein Tag wird geladen …</p>}
     </>}
 
-    {!loading && profile && tab === 'plan' && <CoachPlan apiBase={apiBase} version={`${plan?.revision ?? ''}-${planVersion}`} workoutsById={workoutsById} advance={job} stopping={stopping}
+    {!loading && profile && tab === 'plan' && <CoachPlan apiBase={apiBase} version={`${plan?.revision ?? ''}-${planVersion}-${workoutsVersion}`} workoutsById={workoutsById} advance={job} stopping={stopping}
       proposalId={planProposal} reviewWeek={reviewWeek} pendingChanges={adaptPending} onAsk={openChat} onStart={() => setOnboarding(true)} onAdvance={() => startAdvance('manual')}
       onAdapt={startAdapt} onJob={followJob} onStop={stopJob} onChanged={() => afterPlanChange().catch(e => setError(e.message))} onOpenWorkout={onOpenWorkout}
       onHorizon={() => { afterPlanChange().catch(() => {}); if (plan?.settings?.replanMode !== 'manual') startAdvance('auto'); }} />}
