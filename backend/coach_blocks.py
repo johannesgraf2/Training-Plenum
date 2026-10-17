@@ -15,6 +15,11 @@ from coach_templates import TEMPLATES, flat_steps
 
 DELOAD_PHASES = {'recovery', 'taper'}
 MAX_LOAD_STREAK = 3
+# Quality sessions of a load week when the block type sets no maximum; a C race replaces one of them.
+USUAL_QUALITY = 2
+# Days after an event with only easy training, per handling.
+EASY_DAYS_AFTER = {'miniTaper': 2, 'trainThrough': 2, 'replaceHard': 1, 'easy': 0}
+SHORT_QUALITY_MINUTES = 75
 
 _SPORT = {sport: {key for key, spec in TEMPLATES.items() if spec['sport'] == sport} for sport in ('ride', 'run')}
 _TEMPO = {'bike_tempo', 'bike_sweetspot'}
@@ -84,7 +89,11 @@ BLOCK_TYPES = {
                                   taper_drop=.3, ends_by_goal=True,
                                   guidance='Rehearse race demands with long rides at race intensity and race-like efforts '
                                            '(for example 4x16 min at tempo or threshold inside a long ride), then taper; keep short '
-                                           'intense touches during the taper. The last week must end in the goal week.'),
+                                           'intense touches during the taper. The last week must end in the goal week. For ultra '
+                                           'or multi-day goals (for example NorthCape 4000) progress back-to-back weekends instead of '
+                                           'one ever longer ride: long easy rides on Saturday and Sunday (for example 5+4 h -> '
+                                           '6+5 h -> 8+6 h, single rides up to 15 h), steady pacing and fueling as on race day, '
+                                           'an easy or rest day after each pair.'),
     # Taper right before the goal: a short block after Wettkampfspezifisch, only lighter weeks.
     'taper': _block('Taper', 'Vor dem Wettkampf Umfang senken und frisch werden, kurze intensive Reize bleiben.', 1, 1, 3,
                     max_per_week={'quality': 2}, rhythm=False, max_preferred_share=.7, ends_by_goal=True, deload_only=True,
@@ -277,13 +286,17 @@ def check_block(identity, secondary, weeks, *, start, profile):
             raise CoachError(f"Ein Block „{name}“ bleibt unter {round(spec['maxPreferredShare'] * 100)} % des Wunschumfangs.")
 
 
-def check_week_rules(block, block_week, sessions):
-    """Template rules for one planned week of a block. Raises CoachError."""
+def check_week_rules(block, block_week, sessions, replaced=0):
+    """Template rules for one planned week of a block; replaced counts C races that replace a hard session. Raises CoachError."""
     spec = block_type(block['blockType'])
     name = spec['name']
     templates = [s['template'] for s in sessions]
     count = lambda group: sum(t in GROUPS[group] for t in templates)
     deload = block_week['phase'] in DELOAD_PHASES
+    if replaced:
+        allowed = max(0, spec['maxPerWeek'].get('quality', USUAL_QUALITY) - replaced)
+        if count('quality') > allowed:
+            raise CoachError(f'Das C-Rennen ersetzt eine harte Einheit: höchstens {allowed}× {GROUP_NAMES["quality"]} in dieser Woche.')
     for group in spec['forbidden']:
         if count(group):
             raise CoachError(f'Im Block „{name}“ ist keine {GROUP_NAMES[group]} vorgesehen.')
@@ -292,7 +305,7 @@ def check_week_rules(block, block_week, sessions):
             raise CoachError(f'Im Block „{name}“ höchstens {maximum}× {GROUP_NAMES[group]} pro Woche.')
     if not deload:
         for group, minimum in spec['minPerLoadWeek'].items():
-            if count(group) < minimum:
+            if count(group) < minimum - replaced:
                 raise CoachError(f'Im Block „{name}“ mindestens {minimum}× {GROUP_NAMES[group]} pro Belastungswoche.')
         focus = SECONDARY_FOCUS.get(block.get('secondaryFocus'))
         if focus and not count(focus['group']):
@@ -313,6 +326,29 @@ def check_week_rules(block, block_week, sessions):
                    for s in endurance if s['template'] not in GROUPS['easy'])
         if total and total - hard < total * spec['easyShare'] - 1e-9:
             raise CoachError(f"Im Block „{name}“ sind mindestens {round(spec['easyShare'] * 100)} % der Rad-/Laufzeit locker.")
+
+
+def check_event_rules(events, sessions, changed):
+    """Rules around events for the sessions of one week; only new or changed sessions (ids in changed) can fail."""
+    def day(session):
+        return day_date(session['rendered']['date'])
+    for event in events:
+        start, end, name = day_date(event['startDate']), day_date(event['endDate']), event['title']
+        after = EASY_DAYS_AFTER.get(event['handling'], 0)
+        for session in (s for s in sessions if s['id'] in changed and s['template'] != 'rest'):
+            if start <= day(session) <= end:
+                raise CoachError(f'Am Tag von „{name}“ plant der Coach keine weitere Einheit.')
+            if event['handling'] == 'miniTaper' and day(session) == start - timedelta(days=1) \
+                    and session['template'] in GROUPS['quality']:
+                raise CoachError(f'Mini-Taper: am Tag vor „{name}“ keine harte Einheit.')
+            if end < day(session) <= end + timedelta(days=after) and session['template'] not in GROUPS['easy']:
+                raise CoachError(f'Nach „{name}“ {"einen Tag" if after == 1 else f"{after} Tage"} nur locker.')
+        if event['handling'] == 'miniTaper':
+            taper = [s for s in sessions if s['template'] in GROUPS['quality'] and start - timedelta(days=3) <= day(s) < start]
+            if any(s['id'] in changed for s in taper) and \
+                    (len(taper) > 1 or any((s['rendered']['durationMin'] or 0) > SHORT_QUALITY_MINUTES for s in taper)):
+                raise CoachError(f'Mini-Taper: in den 3 Tagen vor „{name}“ höchstens eine kurze Qualitätseinheit '
+                                 f'(bis {SHORT_QUALITY_MINUTES} min).')
 
 
 # --- Stored blocks -------------------------------------------------------------------------

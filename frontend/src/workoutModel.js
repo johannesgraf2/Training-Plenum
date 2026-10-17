@@ -160,6 +160,15 @@ export function stepDescription(step) {
   return `${duration} · ${range} ${unit}`;
 }
 
+// Pace of the main part of a run, e.g. „4:35–4:50 /km“; null without a pace target.
+export function mainPace(workout) {
+  const steps = (workout?.steps || []).flatMap(step => step.kind === 'repeat' ? step.steps : [step]);
+  const main = steps.find(step => step.intensity === 'interval') || steps.find(step => step.intensity === 'active');
+  if (main?.target?.type !== 'pace') return null;
+  const { low, high } = main.target;
+  return `${clock(low)}${high !== low ? `–${clock(high)}` : ''} /km`;
+}
+
 // Expand repeats for the overview only. The saved/exported model keeps repeat blocks.
 export function workoutOverview(workout) {
   const segments = [];

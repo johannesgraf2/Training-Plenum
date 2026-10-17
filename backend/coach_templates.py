@@ -1,7 +1,7 @@
 """Deterministic sessions: AI chooses a template; TrainHub owns all arithmetic.
 
-Cycling targets use FTP, running targets use maximum heart rate. Missing athlete
-settings produce open targets. TSS is only a planned cycling estimate, calculated
+Cycling targets use FTP. Running targets use the threshold pace when it is known,
+otherwise maximum heart rate. Missing athlete settings produce open targets. TSS is only a planned cycling estimate, calculated
 with the existing 30-second normalized-power algorithm at target midpoints.
 """
 import copy
@@ -16,6 +16,14 @@ class TemplateError(ValueError):
     pass
 
 
+# Ultra rides such as NorthCape 4000 need training rides of up to 15 h.
+MAX_RIDE_MINUTES = 900
+# Running intensity stays a fraction of maximum heart rate; with a threshold pace it is converted linearly to a
+# fraction of threshold speed, where 89 % of maximum heart rate is threshold pace.
+THRESHOLD_HR_FRACTION = .89
+PACE_SLOPE = 1.2
+
+
 def _steady(name, sport, duration, bounds, intensity, intensity_range, fuel='easy'):
     return {'name': name, 'sport': sport, 'kind': 'steady', 'fuel': fuel,
             'defaults': {'durationMin': duration, 'intensity': intensity},
@@ -26,7 +34,7 @@ def _intervals(name, sport, intervals, work, recovery, intensity, intensity_rang
     params = {'intervals': [2, 12], 'workMin': [1, 30], 'recoveryMin': [1, 15], 'intensity': intensity_range}
     if sport == 'ride':
         # Optional total duration: the intervals sit inside a longer easy ride.
-        params.update(durationMin=[30, 360], cadence=[60, 120])
+        params.update(durationMin=[30, MAX_RIDE_MINUTES], cadence=[60, 120])
     return {'name': name, 'sport': sport, 'kind': 'intervals', 'fuel': fuel,
             'defaults': {'intervals': intervals, 'workMin': work, 'recoveryMin': recovery, 'intensity': intensity},
             'params': params}
@@ -38,14 +46,14 @@ def _micro(name, sets, reps, work, rest, intensity, intensity_range, *, sets_ran
     return {'name': name, 'sport': 'ride', 'kind': 'micro', 'fuel': 'hit', 'margin': margin, 'hint': hint,
             'defaults': {'sets': sets, 'reps': reps, 'workSec': work, 'restSec': rest, 'setRestMin': 5, 'intensity': intensity},
             'params': {'sets': sets_range, 'reps': reps_range, 'workSec': work_range, 'restSec': rest_range, 'setRestMin': [2, 10],
-                       'intensity': intensity_range, 'cadence': [60, 120], 'durationMin': [30, 360]}}
+                       'intensity': intensity_range, 'cadence': [60, 120], 'durationMin': [30, MAX_RIDE_MINUTES]}}
 
 
 TEMPLATES = {
     'bike_recovery': _steady('Regeneration Rad', 'ride', 45, [20, 90], .50, [.40, .55], fuel='recovery'),
     'bike_z2': _steady('Grundlagenausdauer Rad', 'ride', 90, [20, 240], .65, [.56, .75]),
     'bike_z2_short': _steady('Kurze Grundlage Rad', 'ride', 60, [20, 90], .65, [.56, .75]),
-    'bike_z2_long': _steady('Lange Grundlage Rad', 'ride', 180, [90, 360], .65, [.56, .75]),
+    'bike_z2_long': _steady('Lange Grundlage Rad', 'ride', 180, [90, MAX_RIDE_MINUTES], .65, [.56, .75]),
     'bike_z2_sprints': {'name': 'Grundlage mit Sprints', 'sport': 'ride', 'kind': 'sprints', 'fuel': 'easy',
                         'hint': 'Easy endurance ride with short maximal sprints spread evenly; keeps neuromuscular power in base phases.',
                         'defaults': {'durationMin': 120, 'intensity': .65, 'reps': 6, 'workSec': 10},
@@ -61,7 +69,7 @@ TEMPLATES = {
     'bike_sit': _micro('Sprintintervalle (SIT) Rad', 1, 6, 30, 240, 1.70, [1.30, 2.50],
                        sets_range=[1, 3], reps_range=[2, 12], work_range=[10, 60], rest_range=[120, 480], margin=.15,
                        hint='Sprint interval training: near-maximal efforts with long easy recovery (e.g. 4x30 s -> 6x30 s -> 8x30 s).'),
-    'bike_long': _steady('Lange Ausfahrt', 'ride', 240, [90, 600], .65, [.56, .75]),
+    'bike_long': _steady('Lange Ausfahrt', 'ride', 240, [90, MAX_RIDE_MINUTES], .65, [.56, .75]),
     'run_easy': _steady('Lockerer Lauf', 'run', 45, [15, 120], .70, [.60, .78]),
     'run_threshold': _intervals('Schwellenlauf', 'run', 3, 8, 3, .88, [.83, .92]),
     'run_long': _steady('Langer Lauf', 'run', 90, [45, 240], .72, [.60, .80]),
@@ -99,6 +107,8 @@ FUELING = {
     'easy_long': 'Verpflegung (LIT): Wasser und etwas Kohlenhydrate (ca. 30 g/h). Danach Protein.',
     'long': 'Verpflegung (lange Einheit): Früh und regelmäßig essen und trinken (ca. 60–90 g Kohlenhydrate/h). '
             'Danach Kohlenhydrate und Protein.',
+    'ultra': 'Verpflegung (ab 6 h): Von Beginn an stündlich 60–90 g Kohlenhydrate, auch feste Nahrung, dazu Salz und '
+             'Flüssigkeit. Nachfüllstopps vorher planen. Danach Kohlenhydrate und Protein.',
     'recovery': 'Verpflegung: Wasser reicht. Danach eine normale Mahlzeit mit Protein.',
     'strength': 'Verpflegung: Danach Protein (ca. 20–30 g).',
 }
@@ -106,7 +116,9 @@ FUELING = {
 
 def fueling(spec, minutes):
     kind = spec.get('fuel')
-    if kind in ('easy', 'intense', 'hit') and minutes > 150:
+    if kind in ('easy', 'intense', 'hit') and minutes >= 360:
+        kind = 'ultra'
+    elif kind in ('easy', 'intense', 'hit') and minutes > 150:
         kind = 'long'
     elif kind == 'easy' and minutes > 90:
         kind = 'easy_long'
@@ -127,6 +139,9 @@ def template_catalog():
                     defaults=copy.deepcopy(value['defaults']), params=copy.deepcopy(value['params']),
                     intensityReference='ftp' if value['sport'] == 'ride' else 'maxHr' if value['sport'] == 'run' else None,
                     durationRule=rule)
+        if value['sport'] == 'run':
+            item['targets'] = (f'with a threshold pace the server shows pace ranges; intensity {THRESHOLD_HR_FRACTION} '
+                               'of max HR is threshold pace')
         if value.get('hint'):
             item['use'] = value['hint']
         result.append(item)
@@ -167,7 +182,14 @@ def _number(value, key, low, high, integer=False):
     return int(value) if integer else value
 
 
-def render_session(template, params, date, ftp=None, max_hr=None):
+def pace_range(threshold_pace, fraction, margin):
+    """Pace range in s/km (faster first) for a fraction of maximum heart rate."""
+    speed = max(.5, 1 + (fraction - THRESHOLD_HR_FRACTION) * PACE_SLOPE)
+    return (min(3600, max(60, round(threshold_pace / (speed + margin)))),
+            min(3600, max(60, round(threshold_pace / (speed - margin)))))
+
+
+def render_session(template, params, date, ftp=None, max_hr=None, threshold_pace=None):
     if not isinstance(template, str) or template not in TEMPLATES:
         raise TemplateError('Unbekanntes Workout-Template.')
     spec = TEMPLATES[template]
@@ -193,6 +215,8 @@ def render_session(template, params, date, ftp=None, max_hr=None):
         ftp = _number(ftp, 'FTP', 1, 1000)
     if max_hr is not None:
         max_hr = _number(max_hr, 'Maximale Herzfrequenz', 30, 250)
+    if threshold_pace is not None:
+        threshold_pace = _number(threshold_pace, 'Schwellenpace', 120, 900)
     name = _label(template, spec, effective)
     result = {'template': template, 'params': effective, 'date': date, 'sport': spec['sport'],
               'name': name, 'durationMin': effective.get('durationMin', 0),
@@ -204,7 +228,10 @@ def render_session(template, params, date, ftp=None, max_hr=None):
     def step(name, seconds, intensity, fraction, margin=None):
         reference = ftp if spec['sport'] == 'ride' else max_hr
         target = {'type': 'none'}
-        if reference is not None:
+        if spec['sport'] == 'run' and threshold_pace is not None:
+            low, high = pace_range(threshold_pace, fraction, margin or .025)
+            target = {'type': 'pace', 'low': low, 'high': high}
+        elif reference is not None:
             margin = margin or (.02 if spec['sport'] == 'ride' else .025)
             minimum = 1 if spec['sport'] == 'ride' else 30
             target = {'type': 'power' if spec['sport'] == 'ride' else 'heart_rate',
@@ -255,8 +282,8 @@ def render_session(template, params, date, ftp=None, max_hr=None):
         if before:
             steps.insert(1, step('Grundlage', before, 'active', .65))
     result['durationMin'] = _seconds(steps) / 60
-    if result['durationMin'] > 600:
-        raise TemplateError('Die Einheit darf einschließlich Pausen maximal 600 Minuten dauern.')
+    if result['durationMin'] > MAX_RIDE_MINUTES:
+        raise TemplateError(f'Die Einheit darf einschließlich Pausen maximal {MAX_RIDE_MINUTES} Minuten dauern.')
     result['notes'] = fueling(spec, result['durationMin'])
     result['workout'] = validate_workout({'version': 1, 'name': name, 'sport': spec['sport'],
                                            'date': date, 'steps': steps, 'notes': result['notes']})

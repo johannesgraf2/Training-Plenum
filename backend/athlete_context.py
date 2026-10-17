@@ -328,6 +328,26 @@ def _performance(efforts, zone, today):
     return {'bestEfforts': result}
 
 
+RIEGEL_EXPONENT = 1.06
+
+
+def run_threshold_pace(efforts, zone, today):
+    """Threshold pace (s/km) as the predicted one-hour race pace from the best 5 km, 10 km or half-marathon
+    efforts of the last 365 days (Riegel). The fastest prediction wins; None without such efforts."""
+    best = _performance(efforts, _zone(zone), today)['bestEfforts']['last365Days']['running']
+    result = None
+    for label, distance in (('5km', 5), ('10km', 10), ('21km', 21)):
+        effort = best.get(label)
+        if not effort or not effort['durationSeconds']:
+            continue
+        hour_distance = distance * (3600 / effort['durationSeconds']) ** (1 / RIEGEL_EXPONENT)
+        pace = round(3600 / hour_distance)
+        if result is None or pace < result['paceSecPerKm']:
+            result = {'source': 'calculated', 'paceSecPerKm': pace, 'basis': label, 'durationSeconds': effort['durationSeconds'],
+                      'date': effort['date']}
+    return result
+
+
 def build_snapshot(rows, efforts, athlete, self_reported, zone, today=None):
     """Build the context from cached summary/effort dictionaries, without I/O.
 

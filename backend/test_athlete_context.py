@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from dateutil.tz import gettz
 
-from athlete_context import build_snapshot, session_pattern, summarize_period
+from athlete_context import build_snapshot, run_threshold_pace, session_pattern, summarize_period
 
 
 TODAY = date(2026, 9, 23)
@@ -249,3 +249,14 @@ class AthleteContextTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ThresholdPaceTests(unittest.TestCase):
+    def test_threshold_pace_is_the_fastest_one_hour_prediction_of_the_last_year(self):
+        effort = lambda target, seconds, day: {'sport': 'run', 'target': target, 'value': seconds, 'date': day + 'T08:00:00',
+                                              'utc': True, 'activityId': 1}
+        efforts = [effort(10000, 2700, '2026-09-01'), effort(5000, 1300, '2026-08-01'), effort(21000, 5400, '2025-06-01'),
+                   effort(1000, 200, '2026-09-10')]
+        self.assertEqual(run_threshold_pace(efforts, 'Europe/Berlin', TODAY),
+                         {'source': 'calculated', 'paceSecPerKm': 274, 'basis': '10km', 'durationSeconds': 2700, 'date': '2026-09-01'})
+        self.assertEqual(run_threshold_pace(efforts[2:], 'Europe/Berlin', TODAY), None)  # too old or too short

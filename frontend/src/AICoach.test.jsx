@@ -251,6 +251,7 @@ test('the connection badge shows the active model and opens the provider setting
   await render();
   await click(button('Provider verbunden · gpt-4.1-mini'));
   expect(container.textContent).toContain('Dein AI Provider');
+  expect([...inputFor('Modell').options].map(o => o.value).slice(0, 3)).toEqual(['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol']);
   await change(inputFor('Modell'), 'gpt-6.1-sol');
   await submit(button('Provider speichern').closest('form'));
   expect(button('Provider verbunden · gpt-6.1-sol')).toBeDefined();
