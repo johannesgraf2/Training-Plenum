@@ -76,7 +76,7 @@ class ProviderTests(unittest.TestCase):
         self.assertTrue(payload['text']['format']['strict'])
         self.assertNotIn('secret-api-key', request.data.decode())
         self.assertEqual(opener.open.call_count, 1)
-        self.assertLessEqual(opener.open.call_args.kwargs['timeout'], 60)
+        self.assertEqual(opener.open.call_args.kwargs['timeout'], 180)
         self.assertNotIn('reasoning', payload)
 
     def test_reasoning_effort_is_sent_with_more_output_budget_and_time(self):
@@ -86,7 +86,7 @@ class ProviderTests(unittest.TestCase):
         payload = json.loads(opener.open.call_args.args[0].data)
         self.assertEqual(payload['reasoning'], {'effort': 'medium'})
         self.assertGreater(payload['max_output_tokens'], 10000)
-        self.assertGreater(opener.open.call_args.kwargs['timeout'], 60)
+        self.assertGreater(opener.open.call_args.kwargs['timeout'], 180)
         with patch.object(self.provider, '_request') as request:
             with self.assertRaises(ProviderError):
                 self.provider.generate('secret-api-key', 'gpt-6-sol', 'x', {}, SCHEMA, reasoning_effort='extreme')
@@ -162,6 +162,8 @@ class ProviderTests(unittest.TestCase):
                     self.provider.generate('secret-api-key', DEFAULT_MODEL, 'instructions', {}, SCHEMA)
             self.assertNotIn('secret-api-key', str(caught.exception))
             self.assertEqual(opener.open.call_count, 1)
+            # A timeout says so, so the athlete knows a retry may work.
+            self.assertEqual('nicht rechtzeitig' in str(caught.exception), isinstance(error, TimeoutError))
 
     def test_redirects_disabled_and_response_size_bounded(self):
         self.assertIsNone(_NoRedirect().redirect_request(None, None, 302, '', {}, 'https://attacker.test'))
