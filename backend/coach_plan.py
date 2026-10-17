@@ -260,12 +260,16 @@ def frame_cycles(settings, profile):
 
 
 def align_frame(phases, settings, profile, caps):
-    """The phases of an AI frame on the cycles of cycle_lengths, so the 3:1 rhythm runs on over block boundaries.
+    """The phases of an AI frame on the cycles of cycle_lengths, with target hours from fixed rules.
 
-    Before each A event the phases with a rhythm cover whole cycles counted backwards from the taper; phases without one
-    (taper, transition) keep their place and length. Deload weeks fall on the cycle ends at 65 % of the cycle's highest
-    load week; a load week where the AI had a deload takes the volume of the load week before it. A stretch with more
-    phases than cycles stays as it is. caps holds the available hours per plan week."""
+    Before each A event the phases with a rhythm cover whole cycles counted backwards from the taper, so the 3:1 rhythm
+    runs on over block boundaries; phases without one (taper, transition) keep their place and length. The hours follow
+    the athlete's load, not their time: the first load week starts at the training base and each cycle rises at most
+    10 % up to the peak, the last load week before the final deload, which the available time caps. Load weeks rise
+    inside a cycle (LOAD_STEPS), deloads take 65 % of the cycle's highest week and each taper week 80 % of the week
+    before. A stretch with more phases than cycles stays as the AI laid it out. caps holds the available hours per plan
+    week."""
+    first, _ = plan_span(settings)
     spans, start = [], 0
     for phase in phases:
         spans.append((start, start + len(phase['weeks'])))
@@ -283,17 +287,37 @@ def align_frame(phases, settings, profile, caps):
             indices.pop(0)
         while indices and not rhythmic(indices[-1]):
             indices.pop()
-        if indices and all(rhythmic(i) for i in indices):
-            _align_stretch(result, [phases[i] for i in indices], indices, spans, entries, caps)
+        hours = _align_stretch(result, [phases[i] for i in indices], indices, spans, entries, caps,
+                               profile['background'].get('weeklyHours')) \
+            if indices and all(rhythmic(i) for i in indices) else None
+        for index in range(indices[-1] + 1 if indices else last + 1, last + 1):
+            if hours is None or phases[index]['blockType'] != 'taper':
+                continue
+            for number, week in enumerate(result[index]['weeks']):
+                monday = first + timedelta(weeks=spans[index][0] + number)
+                preferred = preferred_hours(profile, monday)
+                hours = min(_rounded(hours * TAPER_STEP), caps[spans[index][0] + number],
+                            *([preferred * BLOCK_TYPES['taper']['maxPreferredShare']] if preferred else []))
+                week['targetHours'] = hours
         begin = spans[last][1]
     return result
 
 
-def _align_stretch(result, stretch, indices, spans, entries, caps):
+# Most a cycle's volume rises over the one before, and each taper week relative to the week before it.
+MAX_RISE = 1.1
+TAPER_STEP = .8
+
+
+def _rounded(hours):
+    return int(hours * 2 + .5) / 2
+
+
+def _align_stretch(result, stretch, indices, spans, entries, caps, base):
+    """Puts the phases of one stretch on whole cycles with the hours of the cycle curve; returns the last week's hours."""
     low, high = spans[indices[0]][0], spans[indices[-1]][1]
     sizes = cycle_lengths(high - low)
     if len(stretch) > len(sizes):
-        return
+        return None
     ends = [low + sum(sizes[:n + 1]) for n in range(len(sizes))]
     # Each boundary moves to the nearest cycle end that keeps the block length allowed, with a cycle left per later phase.
     chosen = []
@@ -303,31 +327,36 @@ def _align_stretch(result, stretch, indices, spans, entries, caps):
         chosen.append(min(options, key=lambda c: (not spec['minWeeks'] <= ends[c] - first <= spec['maxWeeks'],
                                                   abs(ends[c] - spans[indices[n]][1]))))
     chosen.append(len(ends) - 1)
+    # Cycle levels: from the training base (without one, the AI's first load week) up to the peak, at most 10 % a cycle.
+    base = base or next((e['targetHours'] for _, e in entries[low:high] if e['phase'] not in DELOAD_PHASES),
+                        entries[low][1]['targetHours'])
+    peak = ends[-1] - (2 if sizes[-1] > 1 else 1)
+    top = min(caps[peak] / LOAD_STEPS[-1], base * MAX_RISE ** (len(sizes) - 1))
+    rise = (top / base) ** (1 / (len(sizes) - 1)) if len(sizes) > 1 and top > base else 1
+    levels = [min(base * rise ** n, top) for n in range(len(sizes))]
     deloads = [position == size - 1 for size in sizes for position in range(size)]
-    level, cycle_load, start = None, 0, low
+    cycles = [n for n, size in enumerate(sizes) for _ in range(size)]
+    position, cycle_load, start, hours = 0, 0, low, None
     for n, phase in enumerate(stretch):
         identity, weeks = phase['blockType'], []
         for week in range(start, ends[chosen[n]]):
             source, entry = entries[week]
             was_deload = entry['phase'] in DELOAD_PHASES
             if deloads[week - low]:
-                hours = cycle_load * DELOAD_SHARE if cycle_load else entry['targetHours'] * (1 if was_deload else DELOAD_SHARE)
-                item = {'phase': 'recovery', 'targetHours': _half_hours(hours), 'focus': entry['focus'] if was_deload else ''}
-                cycle_load = 0
+                hours = min(_half_hours(cycle_load * DELOAD_SHARE), caps[week])
+                item = {'phase': 'recovery', 'focus': entry['focus'] if was_deload else ''}
+                position, cycle_load = 0, 0
             else:
-                if was_deload:
-                    following = [e['targetHours'] for _, e in entries[week:] if e['phase'] not in DELOAD_PHASES]
-                    hours = level if level is not None else following[0] if following else entry['targetHours']
-                else:
-                    hours = entry['targetHours']
+                step = LOAD_STEPS[min(position, len(LOAD_STEPS) - 1)]
+                hours = min(_rounded(levels[cycles[week - low]] * step), caps[week])
                 same = source == identity and not was_deload
-                item = {'phase': entry['phase'] if same else LOAD_PHASES.get(identity, 'build'), 'targetHours': hours,
+                item = {'phase': entry['phase'] if same else LOAD_PHASES.get(identity, 'build'),
                         'focus': entry['focus'] if same else ''}
-                level, cycle_load = hours, max(cycle_load, hours)
-            item['targetHours'] = min(item['targetHours'], caps[week])
-            weeks.append({'week': len(weeks) + 1, **item})
+                position, cycle_load = position + 1, max(cycle_load, hours)
+            weeks.append({'week': len(weeks) + 1, 'phase': item['phase'], 'targetHours': hours, 'focus': item['focus']})
         result[indices[n]]['weeks'] = weeks
         start = ends[chosen[n]]
+    return hours
 
 
 def horizon_weeks(settings):
