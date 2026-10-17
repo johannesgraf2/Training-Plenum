@@ -13,7 +13,8 @@ Stand: 17.10.2026 · Grundlage: [`coach-ux.md`](coach-ux.md)
 - Coach-Chat
 - neue Bereiche Heute, Plan und Einstellungen
 
-Sportart im Fokus ist **Rad**. Lauf und Kraft laufen mit den vorhandenen Vorlagen mit.
+Sportart im Fokus ist **Rad**. Lauf und Kraft laufen mit den vorhandenen Vorlagen mit. Laufen bekommt dabei schon in Stufe 1 **Pace-Ziele** (siehe M1).
+
 
 **Nicht in Stufe 1:**
 - Swim, XC Ski, Hyrox, Triathlon und Duathlon
@@ -76,12 +77,22 @@ Jeder Meilenstein ist für sich lauffähig, hat Tests und wird einzeln gemerged.
 - Rendering-Grenze von 600 min auf 900 min anheben, Verpflegungshinweis für sehr lange Einheiten (ab 6 h) ergänzen
 - Fürs NorthCape: Steigerungskette „Back-to-back-Wochenenden“ als Hinweis im wettkampfspezifischen Blocktyp
 
-**6. B- und C-Events in der Wochenprüfung**
+**6. Pace fürs Laufen**
+- Neuer Schwellenwert Schwellenpace (min/km) mit Herkunft: aus Bestzeiten abgeleitet (z. B. 10 km oder Halbmarathon), selbst eingetragen oder Test (30-min-Lauftest in Woche 1)
+- Lauf-Templates rechnen ihre Ziele aus der Schwellenpace. Die HF bleibt als Ausweichziel, wenn der Nutzer HF als Primärmetrik wählt oder keine Pace vorliegt.
+- Garmin-Export (`workout_export.py`, `garmin_workouts.py`): Pace-Ziele als Geschwindigkeitsbereich ausgeben
+- Wochenansicht und Einheitendetail zeigen Pace als „4:35–4:50 /km“
+
+**7. B- und C-Events in der Wochenprüfung**
 - Das Event steht als Eintrag `kind: event` in der Woche, nicht als Workout.
 - **B mit Mini-Taper:** am Vortag keine harte Einheit, in den 3 Tagen davor höchstens eine kurze Qualitätseinheit, 2 Tage danach nur locker.
 - **C mit `replaceHard`:** In dieser Woche gibt es eine Qualitätseinheit weniger.
 
-**Tests:** Schema, Migration, Ableitung der Minuten aus den Fenstern, Event-Regeln, Ultra-Grenzen.
+**8. Modellauswahl:** `gpt-6-astra` zu den Modellvorgaben ergänzen (heute: `gpt-6.1-sol`, `gpt-6-luna` …).
+
+**9. Verbrauch mitschreiben:** Die Token-Angaben (`usage`) jeder Provider-Antwort werden pro Aufruf gespeichert (Art, Modell, Eingabe-, Ausgabe- und Cache-Tokens). Die Einstellungen zeigen damit „Verbrauch diesen Monat“ als echte Zahl statt Schätzung.
+
+**Tests:** Schema, Migration, Ableitung der Minuten aus den Fenstern, Event-Regeln, Ultra-Grenzen, Pace-Ziele und Export.
 
 ### M2 Plan erstellen und Nachplanen (Backend)
 
@@ -171,8 +182,26 @@ M2 und M3 können parallel laufen, sobald M1 steht.
 - Frontend: `npm test -- --watchAll=false --runInBand` und `npm run build` in `frontend`
 - Ab M2 einmal live mit eigenem Provider-Key: NorthCape-Beispiel aus `coach-ux.md` von A1 bis zum ersten Chat durchspielen. Tests mit Test-Double ersetzen das nicht.
 
+## Kosten (grobe Schätzung)
+
+Preise pro 1 Mio. Tokens (OpenAI, Standard, Stand Oktober 2026): **gpt-6-astra** 10 $ Eingabe / 50 $ Ausgabe, **gpt-6.1-sol** 2 $ / 10 $, **gpt-6-luna** 0,10 $ / 0,50 $.
+
+Die Token-Mengen sind geschätzt und noch nicht gemessen. Gerechnet ist mit dem verdichteten Kontext (Snapshot, Phasen, Wochen, Vorlagen); die Ausgabe enthält Reasoning-Tokens.
+
+| Aktion | Tokens (Ein / Aus) | Astra | Sol | Luna |
+| --- | --- | --- | --- | --- |
+| Plan erstellen (Rahmen + 3 Wochen) | ca. 50 k / 30 k | ca. 2 $ | ca. 0,40 $ | ca. 0,02 $ |
+| Eine Woche nachplanen | ca. 12 k / 3–6 k | 0,25–0,45 $ | 0,05–0,08 $ | < 0,01 $ |
+| Eine Chat-Nachricht | ca. 10 k / 1–2 k | 0,15–0,20 $ | 0,03–0,04 $ | < 0,01 $ |
+| Typischer Monat (4 Wochen, 30 Chat-Nachrichten) | | ca. 6–8 $ | ca. 1–1,50 $ | ca. 0,10 $ |
+
+Gecachte Eingabe-Tokens (gleichbleibender Kontext im Chat) senken die Eingabekosten deutlich. Die Tabelle rechnet ohne Cache und ist damit eher zu hoch.
+
+**Anzeige im Onboarding (A4)**, unter der Modellauswahl:
+> Grobe Kosten über deinen Zugang: Plan erstellen ca. 0,40 $, danach ca. 1–1,50 $ im Monat (gpt-6.1-sol). Mit gpt-6-astra etwa fünfmal so viel, mit gpt-6-luna fast nichts.
+
+Die Zahlen wechseln mit dem gewählten Modell. Nach M1 ersetzen gemessene Werte (Verbrauch mitschreiben) die Schätzung.
+
 ## Offene technische Punkte
 
-1. **Pace fürs Laufen in Stufe 1?** Die Lauf-Templates nutzen heute max. HF. Pace-Ziele brauchen Schwellenpace und eine angepasste Garmin-Zielausgabe. Vorschlag: In Stufe 1 bleibt Lauf bei HF, Pace kommt mit Stufe 2.
-2. **Kosten pro Planerstellung:** 1 Rahmen-Aufruf und 3 Wochen-Aufrufe, danach 1 Aufruf pro Woche und je Chat-Nachricht. Das sollte im Onboarding (A4) kurz erwähnt werden.
-3. **Zeitfenster und Uhrzeit:** Stufe 1 prüft nur die Minuten pro Tag. Dass eine Einheit genau ins Zeitfenster passt (Uhrzeit), wird nicht erzwungen, außer beim Gruppentraining.
+1. **Zeitfenster und Uhrzeit:** Stufe 1 prüft nur die Minuten pro Tag. Dass eine Einheit genau ins Zeitfenster passt (Uhrzeit), wird nicht erzwungen, außer beim Gruppentraining.

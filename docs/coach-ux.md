@@ -83,7 +83,7 @@ Gewicht, Alter, max. HF und je gewählter Sportart der Schwellenwert: FTP (Bike)
 Dieselbe Abfrage erscheint in B3, falls beim Plan erstellen für eine gewählte Sportart der Schwellenwert noch fehlt.
 
 ### A4 Dein AI-Provider
-Provider, Modell, API-Key und Verbindungstest (wie heute, nur als Schritt). Ein Satz zu BYOK: „Deine Anfragen laufen über deinen eigenen Zugang und werden dort abgerechnet.“ Ohne verbundenen Provider kann Teil B nicht abgeschlossen werden. Der Schritt erscheint deshalb spätestens vor „Plan erstellen“.
+Provider, Modell, API-Key und Verbindungstest (wie heute, nur als Schritt). Ein Satz zu BYOK: „Deine Anfragen laufen über deinen eigenen Zugang und werden dort abgerechnet.“ Unter der Modellauswahl steht eine grobe Kostenschätzung für das gewählte Modell (Plan erstellen und typischer Monat, siehe `coach-umsetzung.md`). In den Einstellungen zeigt „Verbrauch diesen Monat“ die gemessenen Werte. Ohne verbundenen Provider kann Teil B nicht abgeschlossen werden. Der Schritt erscheint deshalb spätestens vor „Plan erstellen“.
 
 ## 6. Onboarding Teil B: Plan erstellen (6 Schritte)
 
@@ -316,7 +316,7 @@ Gleiche Editoren wie im Onboarding, einzeln erreichbar:
 ## 15. Entscheidungen (abgestimmt am 16.10.2026)
 
 1. **Planlänge:** keine feste Obergrenze, so lang wie der Nutzer will.
-2. **Primärmetrik Laufen:** Pace als Vorgabe, HF und Leistung wählbar.
+2. **Primärmetrik Laufen:** Pace als Vorgabe, HF und Leistung wählbar. Pace gilt schon ab Stufe 1.
 3. **Fehlende Leistungsdaten:** Der Nutzer trägt sie zu Beginn selbst ein oder lässt einen Test in Woche 1 einplanen.
 4. **Ohne Event:** Standardlänge 12 Wochen, änderbar.
 5. **Umsetzung:** zuerst der neue Ablauf mit Fokus Rad. Lauf und Kraft laufen mit den bestehenden Vorlagen mit. Swim, XC Ski, Hyrox sowie Tri und Duathlon folgen in einer zweiten Stufe. Die Sportarten erscheinen im Onboarding erst, wenn ihre Vorlagen fertig sind.
