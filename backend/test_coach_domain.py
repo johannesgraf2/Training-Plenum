@@ -3,7 +3,8 @@ import unittest
 from datetime import date
 
 from coach_domain import (CHECK_IN_SCHEMA, DAILY_SCHEMA, DEFAULT_PROFILE, DAYS, BLOCK_WEEKS_SCHEMA, EVENT_DEFAULTS,
-                          WEEK_OVERRIDE_SCHEMA, CoachError, apply_patch, complete_event, day_date, plan_settings, threshold_pace,
+                          WEEK_OVERRIDE_SCHEMA, CoachError, apply_patch, complete_event, day_date, onboarded, plan_settings,
+                          ten_k_pace, threshold_pace,
                           week_events,
                           complete_profile, effective_availability, iso_week, min_ride_minutes, preferred_hours,
                           response_schemas, rest_day_pairs, update_profile, week_season,
@@ -344,10 +345,50 @@ class PlanInputTests(unittest.TestCase):
         first = plan_settings({'startDate': '2026-10-19', 'endDate': '2027-08-12', 'replanMode': 'afterReview'}, None, 'now')
         self.assertEqual(first['createdAt'], 'now')
         self.assertEqual(plan_settings({'startDate': '2026-10-19', 'endDate': '2030-01-01', 'replanMode': 'manual'}, first, 'later'),
-                         {'startDate': '2026-10-19', 'endDate': '2030-01-01', 'replanMode': 'manual', 'createdAt': 'now'})
-        for bad in ({'endDate': '2026-10-19'}, {'replanMode': 'daily'}, {'startDate': 'soon'}):
+                         {'startDate': '2026-10-19', 'endDate': '2030-01-01', 'replanMode': 'manual', 'createdAt': 'now',
+                          'horizonWeeks': 3, 'taperWeeks': None})
+        # Horizon and taper stay unless a save gives them.
+        chosen = plan_settings({'startDate': '2026-10-19', 'endDate': '2027-08-12', 'replanMode': 'manual', 'horizonWeeks': 6}, first, 'x')
+        self.assertEqual(chosen['horizonWeeks'], 6)
+        self.assertEqual(plan_settings({'startDate': '2026-10-19', 'endDate': '2027-08-12', 'replanMode': 'manual'},
+                                       {**chosen, 'taperWeeks': 2}, 'y')[('horizonWeeks')], 6)
+        for bad in ({'endDate': '2026-10-19'}, {'replanMode': 'daily'}, {'startDate': 'soon'}, {'horizonWeeks': 0}, {'taperWeeks': 4}):
             with self.subTest(value=bad), self.assertRaises(CoachError):
                 plan_settings({'startDate': '2026-10-19', 'endDate': '2027-01-01', 'replanMode': 'sunday', **bad}, None, 'now')
+
+    def test_several_rest_and_long_days_with_the_single_day_of_older_clients(self):
+        value = update_profile(profile(), {'availability': {'restDays': ['fri', 'mon'], 'longDays': ['sun', 'sat']}})
+        self.assertEqual((value['availability']['restDays'], value['availability']['restDay']), (['mon', 'fri'], 'mon'))
+        self.assertEqual((value['availability']['longDays'], value['availability']['longDay']), (['sat', 'sun'], 'sat'))
+        older = update_profile(profile(), {'availability': {'restDay': 'wed'}})
+        self.assertEqual(older['availability']['restDays'], ['wed'])
+        self.assertEqual(update_profile(value, {'availability': {'longDays': []}})['availability']['longDay'], None)
+        stored = profile()
+        stored['availability'] = {k: v for k, v in stored['availability'].items() if k not in ('restDays', 'longDays')}
+        stored['availability']['longDay'] = 'sun'
+        self.assertEqual(complete_profile(stored)['availability']['longDays'], ['sun'])
+        value['availability']['defaultAvailability'] = dict.fromkeys(DAYS, 60)
+        flags = effective_availability(value, '2026-W43')
+        self.assertEqual([day for day in DAYS if flags[day]['preferLong']], ['sat', 'sun'])
+        with self.assertRaises(CoachError):
+            update_profile(profile(), {'availability': {'restDays': ['someday']}})
+
+    def test_a_ten_k_pace_is_stored_as_such(self):
+        value = update_profile(profile(), {'thresholds': {'run': {'source': 'athlete', 'paceSecPerKm': None, 'basis': None,
+                                                                  'tenKPaceSecPerKm': 290}}})
+        self.assertEqual((ten_k_pace(value), threshold_pace(value)), (290, None))
+        with self.assertRaisesRegex(CoachError, '10-km-Pace'):
+            update_profile(profile(), {'thresholds': {'run': {'source': 'athlete', 'paceSecPerKm': None, 'basis': None}}})
+        with self.assertRaises(CoachError):  # A calculated pace is always a threshold pace.
+            update_profile(profile(), {'thresholds': {'run': {'source': 'calculated', 'paceSecPerKm': None, 'basis': None,
+                                                              'tenKPaceSecPerKm': 290}}})
+
+    def test_the_check_in_waits_for_the_onboarding(self):
+        value = profile()
+        self.assertFalse(onboarded(value))
+        self.assertTrue(onboarded(value, plan_active=True))
+        value['onboarding']['completed'] = ['sports', 'sources', 'thresholds', 'provider', 'background', 'goal']
+        self.assertTrue(onboarded(value))
 
     def test_background_and_onboarding_progress(self):
         stored = profile()

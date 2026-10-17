@@ -4,8 +4,9 @@ from datetime import date, datetime, timedelta
 
 from coach_blocks import new_block, suggested_rhythm
 from coach_domain import DAYS, CoachError, complete_profile, DEFAULT_PROFILE, complete_event, iso_week
-from coach_plan import (adopt_blocks, check_frame, check_tests, cut_frame, deviation, due_week, frame_blocks, frame_hint,
-                        group_sessions, horizon, plan_span, plan_weeks, reference_monday, required_tests)
+from coach_plan import (adopt_blocks, check_frame, check_tests, cut_frame, deviation, due_week, due_weeks, edit_phases, frame_blocks,
+                        frame_hint, group_sessions, horizon, outline_weeks, plan_span, plan_weeks, reference_monday, replan_date,
+                        required_tests)
 
 
 def phase(block_type, weeks, hours=6.0, secondary=None):
@@ -67,6 +68,14 @@ class PlanFrameTests(unittest.TestCase):
         with self.assertRaisesRegex(CoachError, 'nur vor einem A-Event'):
             check_frame([phase('grundlage', 8), phase('wettkampfspezifisch', 4)], settings, self.profile)
 
+    def test_a_chosen_taper_length_is_enforced(self):
+        phases = [phase('grundlage', 6), phase('vo2max', 3), phase('wettkampfspezifisch', 3), phase('taper', 1, 4), phase('uebergang', 2, 3)]
+        check_frame(phases, {**self.settings, 'taperWeeks': 1}, self.profile)
+        with self.assertRaisesRegex(CoachError, 'Taper von 2 Wochen'):
+            check_frame(phases, {**self.settings, 'taperWeeks': 2}, self.profile)
+        with self.assertRaisesRegex(CoachError, 'Taper von 1 Woche'):
+            check_frame(self.phases, {**self.settings, 'taperWeeks': 1}, self.profile)
+
     def test_hint_shows_the_usual_build_up_to_the_first_a_event(self):
         hint = frame_hint(self.settings, self.profile)
         self.assertEqual((hint['event'], hint['weeks'], sum(s['weeks'] for s in hint['segments'])), ('Rennen', 13, 13))
@@ -103,6 +112,14 @@ class RollingTests(unittest.TestCase):
         # Right after the plan start there is no earlier week whose review could be missing.
         self.assertEqual(reference_monday('afterReview', datetime(2026, 10, 19, 3, 0), planned, set()), date(2026, 10, 19))
         self.assertIsNone(reference_monday('manual', late, planned, set()))
+
+    def test_a_longer_horizon_works_out_more_weeks_and_replans_earlier(self):
+        self.assertEqual(horizon(self.weeks, date(2026, 10, 16), 5), self.weeks[:5])
+        monday = date(2026, 10, 19)
+        self.assertEqual(due_weeks(self.weeks, set(self.weeks[:3]), monday + timedelta(weeks=1), monday, 6), self.weeks[3:7])
+        self.assertEqual(due_week(self.weeks, set(self.weeks[:3]), monday + timedelta(weeks=1), monday, 6), self.weeks[3])
+        self.assertEqual(replan_date(date(2026, 11, 9)), date(2026, 10, 25))
+        self.assertEqual(replan_date(date(2026, 11, 9), 5), date(2026, 10, 11))
 
     def test_a_missing_running_week_comes_first_and_the_plan_end_limits(self):
         monday = date(2026, 11, 2)
@@ -204,3 +221,90 @@ class AdoptionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PhaseEditTests(unittest.TestCase):
+    """Moving, lengthening, adding blocks and the taper by hand: fixed rules, same input gives the same plan."""
+
+    def setUp(self):
+        self.profile = complete_profile(copy.deepcopy(DEFAULT_PROFILE))
+        self.profile['availability'].update(defaultAvailability=dict.fromkeys(DAYS, 120), absoluteMaxWeeklyHours=10)
+        self.profile['events'] = [complete_event({'title': 'Rennen', 'sport': 'ride', 'startDate': '2027-01-16', 'priority': 'A'}, 'a')]
+        settings = {'startDate': '2026-10-19', 'endDate': '2027-01-31', 'replanMode': 'afterReview'}
+        phases = [phase('grundlage', 6), phase('vo2max', 3), phase('wettkampfspezifisch', 3), phase('taper', 1, 3),
+                  phase('uebergang', 2, 3)]
+        check_frame(phases, settings, self.profile)
+        blocks = frame_blocks(phases, date(2026, 10, 19))
+        self.plan = {'settings': settings, 'blocks': blocks, 'weeks': {},
+                     'frame': {'id': 'frame', 'status': 'active', 'blockIds': [b['id'] for b in blocks]}}
+        self.ids = [b['id'] for b in blocks]
+
+    def edit(self, items, taper=None, today=date(2026, 10, 16)):
+        data = {'phases': [{'id': i, 'blockType': t, 'weeks': w} for i, t, w in items], 'taperWeeks': taper}
+        return edit_phases(self.plan, self.profile, data, today, lambda monday: 10, 5.0)
+
+    def items(self, **lengths):
+        types = ['grundlage', 'vo2max', 'wettkampfspezifisch', 'taper', 'uebergang']
+        default = [6, 3, 3, 1, 2]
+        return [(i, t, lengths.get(t, w)) for i, t, w in zip(self.ids, types, default)]
+
+    def test_an_unchanged_list_keeps_every_block(self):
+        blocks, identities, changed = self.edit(self.items())
+        self.assertEqual(identities, self.ids)
+        self.assertEqual([b['weeks'] for b in blocks], [b['weeks'] for b in self.plan['blocks']])
+        self.assertEqual(changed, [])
+
+    def test_lengthening_needs_room_and_moves_the_following_blocks(self):
+        with self.assertRaisesRegex(CoachError, '1 Woche länger als der Plan'):
+            self.edit(self.items(grundlage=7))
+        with self.assertRaisesRegex(CoachError, '1 Woche bleibt ohne Block'):
+            self.edit(self.items(vo2max=2))
+        blocks, _, changed = self.edit(self.items(grundlage=7, vo2max=2))
+        self.assertEqual([(b['blockType'], b['startDate'], len(b['weeks'])) for b in blocks][:3],
+                         [('grundlage', '2026-10-19', 7), ('vo2max', '2026-12-07', 2), ('wettkampfspezifisch', '2026-12-21', 3)])
+        # Resized blocks follow the 3:1 rhythm; the race block in front of the taper keeps its weeks.
+        self.assertEqual([w['phase'] for w in blocks[0]['weeks']], ['base', 'base', 'base', 'recovery', 'base', 'base', 'recovery'])
+        self.assertEqual(blocks[2]['weeks'], self.plan['blocks'][2]['weeks'])
+        self.assertEqual(blocks[0]['source'], 'athlete')
+        self.assertEqual(changed[0], '2026-W43')
+
+    def test_own_blocks_get_a_rule_outline_and_a_stable_id(self):
+        items = self.items(grundlage=4)
+        items.insert(1, (None, 'vo2max', 2))
+        first, _, _ = self.edit(items)
+        again, _, _ = self.edit(items)
+        self.assertEqual(first, again)
+        added = first[1]
+        self.assertEqual((added['blockType'], added['startDate'], [w['phase'] for w in added['weeks']]),
+                         ('vo2max', '2026-11-16', ['build', 'recovery']))
+        # A new block takes the volume of its neighbour: 6 h, the deload at 65 %.
+        self.assertEqual([w['targetHours'] for w in added['weeks']], [6.0, 3.5])
+
+    def test_the_block_before_the_event_stays_at_the_event(self):
+        with self.assertRaisesRegex(CoachError, 'Datum'):
+            self.edit([(self.ids[0], 'grundlage', 6), (self.ids[1], 'vo2max', 3), (self.ids[2], 'wettkampfspezifisch', 3),
+                       (self.ids[4], 'uebergang', 2), (self.ids[3], 'taper', 1)])
+        with self.assertRaisesRegex(CoachError, 'nur vor einem A-Event'):
+            self.edit(self.items()[:4] + [(self.ids[4], 'wettkampfspezifisch', 2)])
+
+    def test_the_taper_length_builds_the_plan_backwards_from_the_event(self):
+        with self.assertRaisesRegex(CoachError, 'Taper von 2 Wochen'):
+            self.edit(self.items(), taper=2)
+        blocks, _, _ = self.edit(self.items(wettkampfspezifisch=2, taper=2), taper=2)
+        taper = blocks[3]
+        self.assertEqual((taper['startDate'], taper['endDate']), ('2027-01-04', '2027-01-17'))
+        self.assertEqual([(w['phase'], w['targetHours']) for w in taper['weeks']], [('taper', 4.0), ('taper', 3.0)])
+
+    def test_weeks_that_are_over_stay(self):
+        today = date(2026, 11, 11)  # Week 4 of the plan runs.
+        with self.assertRaisesRegex(CoachError, 'Vergangene Wochen'):
+            self.edit(self.items(grundlage=2, vo2max=7), today=today)
+        blocks, _, _ = self.edit(self.items(grundlage=4, vo2max=5), today=today)
+        self.assertEqual(blocks[0]['weeks'][:3], self.plan['blocks'][0]['weeks'][:3])
+
+    def test_outline_follows_fixed_rules_within_the_time(self):
+        weeks = outline_weeks('grundlage', 4, 8, [10, 10, 8.2, 10])
+        self.assertEqual([(w['week'], w['phase'], w['targetHours']) for w in weeks],
+                         [(1, 'base', 8.0), (2, 'base', 8.0), (3, 'base', 8.0), (4, 'recovery', 5.0)])
+        self.assertEqual([w['targetHours'] for w in outline_weeks('taper', 3, 10, [10] * 3)], [7.5, 6.0, 4.5])
+        self.assertEqual([w['targetHours'] for w in outline_weeks('taper', 1, 10, [10], preferred=8)], [5.5])

@@ -24,12 +24,13 @@ from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, DELOAD_PHASES, GRO
 from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
                           CHECK_IN_SCHEMA, apply_patch, complete_event, complete_profile, day_date, effective_availability, iso_week,
                           min_ride_minutes, num, obj, plan_settings, preferred_hours, response_schemas, rest_day_pairs, text,
-                          threshold_pace, update_profile, validate, week_events, week_season, week_start)
+                          onboarded, ten_k_pace, threshold_pace, update_profile, validate, week_events, week_season, week_start)
 from coach_chat import (MAX_HISTORY, MESSAGE_SCHEMA, apply_settings, check_ref, compact_session,
                         response_schema as chat_response_schema, week_lines)
-from coach_plan import (ADAPT_SCHEMA, FRAME_RESPONSE_SCHEMA, REFRAME_AREAS, REVIEW_SCHEMA, adapt_response_schema, adopt_blocks,
-                        check_frame, check_tests, cut_frame, deviation, due_week, frame_blocks, frame_hint, group_sessions, horizon,
-                        plan_span, plan_weeks, reference_monday, required_tests)
+from coach_plan import (ADAPT_AREAS, ADAPT_SCHEMA, FRAME_RESPONSE_SCHEMA, PHASE_EDIT_SCHEMA, REFRAME_AREAS, REVIEW_SCHEMA,
+                        adapt_response_schema, adopt_blocks, check_frame, check_tests, cut_frame, deviation, due_weeks, edit_phases,
+                        frame_blocks, frame_hint, group_sessions, horizon, horizon_weeks, plan_span, plan_weeks, reference_monday,
+                        replan_date, required_tests)
 from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_order,
                           check_season, first_monday, new_season, public_season, season_frame, typical_season, with_fixed)
 from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, flat_steps, render_session, template_catalog
@@ -413,6 +414,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                   'sessions': sessions, 'whoop': whoop, 'period': period_view(plan, day, current_profile),
                   'weekPlanned': iso_week(day) in plan['weeks'],
                   'dailyCheckIn': current_profile['preferences']['dailyCheckIn'],
+                  # The daily check-in waits until the onboarding has set up sports, background and goal.
+                  'onboarded': onboarded(current_profile, bool((plan.get('frame') or {}).get('status') == 'active')),
                   'outlook': [{'date': (day + timedelta(days=n)).isoformat(),
                                'sessions': training_sessions(day + timedelta(days=n), plan, saved)[0]} for n in (1, 2, 3)],
                   'hints': today_hints(plan, current_profile, day)}
@@ -577,7 +580,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         value = profile()
         today = datetime.now(zone()).date()
         result = {'ride': {'ftp': user().ftp, 'source': (value['thresholds'].get('ride') or {}).get('source')},
-                  'run': {'paceSecPerKm': None, 'source': None, 'basis': None, **(value['thresholds'].get('run') or {}),
+                  'run': {'paceSecPerKm': None, 'source': None, 'basis': None, 'tenKPaceSecPerKm': None,
+                          **(value['thresholds'].get('run') or {}),
                           'calculated': run_threshold_pace(load_efforts(), zone(), today)},
                   'maxHr': user().max_hr, 'metrics': value['metrics']}
         db.session.commit()  # Best efforts may have been cached.
@@ -1054,7 +1058,20 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'replan in a frame task means the plan already runs and the athlete changed its events or end (replan.changes): lay '
         'out only the rest from plan.firstMonday; replan.phasesSoFar are the phases up to there and the next phase may '
         'continue their build-up. '
-        'Adapt task: the athlete changed settings (changes.areas: availability, events, thresholds, sports, period). Check '
+        'thresholds.tenKPaceSecPerKm is a 10 km pace the athlete entered instead of a threshold pace: use it only as a hint '
+        'for run intensities, it is no threshold pace and the server never turns it into pace targets. '
+        'trainingRules.preferredRestDays are alternative days the athlete likes to rest on: prefer rest days among them, not '
+        'every one of them has to stay free. trainingRules.longSessionDays are days a long session may go on: put the long '
+        'session on one of them when it fits, not on each. '
+        'Frame task: weeklyLimits[].maxHours is only the time the athlete can spend at most, never a target or the volume '
+        'they can handle. trainingBase is the training so far (weeklyHours is the average of a typical week): start near it '
+        'and build up gradually; the load the athlete can handle comes from trainingBase and recent training, the time '
+        'budget only caps it. periodization: build the plan backwards from each A event: the taper (periodization.taperWeeks '
+        'weeks when set, the server enforces it) ends in the event week, before it cycles of three load weeks and one deload '
+        'week. '
+        'Adapt task with changes.areas phases: the athlete changed the phases by hand; adapt each worked-out week to the '
+        'phase, target hours and rules of its week now. '
+        'Adapt task: the athlete changed settings (changes.areas: availability, events, thresholds, sports, period, phases). Check '
         'each week in workedOutWeeks against its current rules (availability, events, fixedSessions, elapsedDays, '
         'blockRules, thresholds, training rules) and put one patch into adjustments for each week that should change; '
         'weeks that still fit stay out. targetHours is the new total of that week; never make up missed volume.'
@@ -1100,6 +1117,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                                   if t['sport'] in (*current_profile['goal']['sports'], 'strength', 'rest')],
                        thresholds={'source': 'athlete', 'ftp': user().ftp, 'maxHr': user().max_hr,
                                    'thresholdPaceSecPerKm': threshold_pace(current_profile),
+                                   'tenKPaceSecPerKm': ten_k_pace(current_profile),
                                    'metrics': current_profile['metrics']},
                        events=[{**{k: e[k] for k in ('title', 'sport', 'subtype', 'priority', 'handling', 'startDate', 'endDate',
                                                       'distanceKm', 'targetSeconds', 'elevationM')},
@@ -1112,6 +1130,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                        trainingRules={'source': 'athlete',
                                       'trainingDaysPerWeek': current_profile['availability']['trainingDaysPerWeek'],
                                       'noConsecutiveRestDays': current_profile['availability']['noConsecutiveRestDays'],
+                                      'preferredRestDays': current_profile['availability']['restDays'],
+                                      'longSessionDays': current_profile['availability']['longDays'],
                                       'sports': current_profile['goal']['sports'],
                                       'environment': week_season(current_profile, monday) or 'mixed',
                                       'minRideMinutes': min_ride_minutes(current_profile, monday)},
@@ -1556,7 +1576,12 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                               for e in current_profile['events'] if first.isoformat() <= e['startDate'] <= last.isoformat()],
                    'weeklyLimits': weekly, 'typicalBuildUp': frame_hint(settings, current_profile),
                    'blockCatalog': season_catalog(), 'requiredTests': required_tests(current_profile),
-                   'thresholds': {'source': 'athlete', 'ftp': user().ftp, 'thresholdPaceSecPerKm': threshold_pace(current_profile)},
+                   'thresholds': {'source': 'athlete', 'ftp': user().ftp, 'thresholdPaceSecPerKm': threshold_pace(current_profile),
+                                  'tenKPaceSecPerKm': ten_k_pace(current_profile)},
+                   'trainingBase': {'source': current_profile['background']['source'] or 'athlete',
+                                    **{key: current_profile['background'][key] for key in ('type', 'weeklyHours', 'intervals')}},
+                   'periodization': {'source': 'athlete', 'backwardsFromEvent': True, 'loadWeeks': 3, 'deloadWeeks': 1,
+                                     'taperWeeks': settings.get('taperWeeks')},
                    'previousBlocks': [previous_block(b, plan, rows, today) for b in plan['blocks']
                                       if day_date(b['startDate']) < first][-3:],
                    'snapshot': snapshot()}
@@ -1641,7 +1666,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         frame = active_frame(plan)
         if frame and (frame['startDate'], frame['endDate']) != (settings['startDate'], settings['endDate']):
             return jsonify(error='Es gibt bereits einen Plan. Bitte ihn zuerst beenden, um einen neuen zu erstellen.'), 409
-        weeks = horizon(plan_weeks(settings), today)
+        weeks = horizon(plan_weeks(settings), today, horizon_weeks(settings))
         if not weeks:
             raise CoachError('Das Planende liegt in der Vergangenheit.')
         if not frame:
@@ -1689,9 +1714,13 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
     def advance_state(plan, trigger):
         """The week rolling replanning would work out now, or None."""
+        return next(iter(advance_weeks(plan, trigger)), None)
+
+    def advance_weeks(plan, trigger):
+        """The weeks rolling replanning would work out now so the horizon is ready, in order."""
         frame = active_frame(plan)
         if not frame:
-            return None
+            return []
         now = datetime.now(zone())
         today = now.date()
         if trigger == 'manual':
@@ -1699,8 +1728,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         else:
             reference = reference_monday(plan['settings']['replanMode'], now, plan['weeks'], reviewed_weeks(plan))
             if reference is None:
-                return None
-        return due_week(plan_weeks(plan['settings']), plan['weeks'], reference, today)
+                return []
+        return due_weeks(plan_weeks(plan['settings']), plan['weeks'], reference, today, horizon_weeks(plan['settings']))
 
     @app.route('/api/coach/plan/advance', methods=['GET', 'POST'])
     def advance_plan():
@@ -1713,25 +1742,32 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         data = validate(request.get_json(silent=True), obj({'trigger': {'enum': ['auto', 'manual']}}))
         if not active_frame(plan):
             raise CoachError('Es gibt noch keinen Plan. Bitte zuerst einen Plan erstellen.')
-        week = advance_state(plan, data['trigger'])
-        if week is None:
+        weeks = advance_weeks(plan, data['trigger'])
+        if not weeks:
             if data['trigger'] == 'manual':
-                raise CoachError('Die nächsten drei Wochen sind bereits ausgearbeitet.')
+                count = horizon_weeks(plan['settings'])
+                raise CoachError(f'Die nächsten {count} {"Woche ist" if count == 1 else "Wochen sind"} bereits ausgearbeitet.')
             return jsonify(job=None, week=None)
-        return start_advance(plan, week)
+        return start_advance(plan, weeks)
 
-    def start_advance(plan, week):
+    def start_advance(plan, weeks):
+        """Works out the due weeks one after the other; only the first one reacts to the weekly review."""
+        weeks = [weeks] if isinstance(weeks, str) else weeks
         configured_provider()
 
         def work(identity):
-            update_job(identity, week, 'running')
-            result = advance_week(week)
-            update_job(identity, week, 'done')
-            return result
+            results = []
+            for index, week in enumerate(weeks):
+                if week in current_plan()['weeks']:
+                    continue
+                update_job(identity, week, 'running')
+                results.append(advance_week(week, with_review=index == 0))
+                update_job(identity, week, 'done')
+            return {**(results[-1] if results else {}), 'weeks': [r['week'] for r in results]}
 
-        return start_job('advance', [{'id': week, 'label': week_label(plan, week), 'status': 'pending'}], work)
+        return start_job('advance', [{'id': week, 'label': week_label(plan, week), 'status': 'pending'} for week in weeks], work)
 
-    def advance_week(week):
+    def advance_week(week, with_review=True):
         """Works out the next outlined week with the weekly review as context; strong deviations add a proposal."""
         plan = current_plan()
         today = datetime.now(zone()).date()
@@ -1739,7 +1775,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         # The review of the running week if it is already in, otherwise the one of the past week.
         review_week = iso_week(monday) if plan['weeks'].get(iso_week(monday), {}).get('review') else iso_week(monday - timedelta(weeks=1))
         extra, reason, review = {}, None, None
-        if review_week in plan['weeks'] and week_start(review_week) <= today:
+        if with_review and review_week in plan['weeks'] and week_start(review_week) <= today:
             result = feedback(review_week)
             review = plan['weeks'][review_week].get('review')
             result['review'] = review
@@ -1847,7 +1883,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                        **plan_context(plan, current_profile, today), 'wellness': wellness_context(current_profile, today),
                        'workedOutWeeks': [
                            worked_week(plan, current_profile, key, first_day) for key in keys]}
-            schema = adapt_response_schema(response_schemas(SESSION_SCHEMA)['patch'])
+            schema = adapt_response_schema(response_schemas(SESSION_SCHEMA)['patch'], len(keys))
             decision = generate('adapt', context, schema)
             current_profile, plan = profile(), current_plan()  # Re-read after the provider call.
             hinweise = [h.strip() for h in decision['hinweise'] if h.strip()]
@@ -1906,6 +1942,38 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             return {'changes': changes, 'frameChanged': reframe, **result}
 
         return start_job('adapt', steps, work)
+
+    @app.route('/api/coach/plan/phases', methods=['PUT'])
+    def edit_plan_phases():
+        """The athlete's own phases (move, lengthen, shorten, add or remove blocks, the taper before an A event), applied
+        with fixed rules and without AI. Worked-out weeks whose phase changed are noted for "Plan anpassen"."""
+        data = validate(request.get_json(silent=True), PHASE_EDIT_SCHEMA)
+        if running_job():
+            return jsonify(error='Der Coach plant gerade. Bitte warten, bis er fertig ist.'), 409
+        plan, current_profile = current_plan(), profile()
+        if not active_frame(plan):
+            raise CoachError('Es gibt noch keinen Plan, dessen Blöcke du ändern könntest.')
+        today = datetime.now(zone()).date()
+        maximum = current_profile['availability']['absoluteMaxWeeklyHours']
+
+        def caps(monday):
+            hours = sum(d['maxMinutes'] or 0 for d in effective_availability(current_profile, iso_week(monday)).values()) / 60
+            return hours if maximum is None else min(maximum, hours)
+
+        base = preferred_hours(current_profile, today) or current_profile['background']['weeklyHours'] or 5.0
+        blocks, identities, changed = edit_phases(plan, current_profile, data, today, caps, base)
+        plan['blocks'] = blocks
+        plan['frame'] = {**plan['frame'], 'blockIds': identities, 'source': 'athlete',
+                         'updatedAt': datetime.now(timezone.utc).isoformat(timespec='seconds')}
+        plan['settings'] = {**plan['settings'], 'taperWeeks': data['taperWeeks']}
+        stale = [week for week in worked_out_weeks(plan, today) if week in changed]
+        if stale:
+            noted = plan.get('adapt') or {}
+            plan['adapt'] = {'changes': [area for area in ADAPT_AREAS if area in {*noted.get('changes', []), 'phases'}],
+                             'since': noted.get('since') or today.isoformat()}
+        save_plan(plan)
+        db.session.commit()
+        return jsonify({**public_plan(), 'changedWeeks': changed, 'staleWeeks': stale})
 
     @app.route('/api/coach/plan/reset', methods=['POST'])
     def reset_plan():
@@ -1983,8 +2051,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                 'plan': worked, 'events': week_events(current_profile, key),
                 'completedHours': None if state == 'future' else
                 summarize_period(rows, zone(), monday, min(monday + timedelta(days=6), today), ftp, max_hr)['trainingHours'],
-                # Rolling replanning reaches a week on the Sunday evening two weeks and a day before it.
-                'replanDate': None if worked or settings['replanMode'] == 'manual' else (monday - timedelta(days=15)).isoformat()})
+                'replanDate': None if worked or settings['replanMode'] == 'manual' else
+                replan_date(monday, horizon_weeks(settings)).isoformat()})
         db.session.commit()  # Activity summaries may have been cached.
         first, total = plan_span(settings)
         busy = running_job()
@@ -1995,6 +2063,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             'events': [{**e, 'planWeek': (day_date(e['startDate']) - first).days // 7 + 1} for e in current_profile['events']
                        if first.isoformat() <= e['startDate'] <= (first + timedelta(weeks=total, days=-1)).isoformat()],
             'weeks': weeks, 'nextManualWeek': advance_state(plan, 'manual'), 'job': job_view(busy) if busy else None,
+            'horizonWeeks': horizon_weeks(settings), 'taperWeeks': settings.get('taperWeeks'),
+            'blockTypes': [{key: t[key] for key in ('id', 'name', 'defaultWeeks', 'endsByGoal')} for t in block_catalog()['blockTypes']],
             # Settings changed and the athlete chose "Später": the plan offers to adapt.
             'adapt': plan.get('adapt'),
             'sources': {'targetHours': 'aiRecommendation', 'plan': 'aiRecommendation', 'completedHours': 'calculated'}})
@@ -2069,10 +2139,12 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                         'athleteWish': {'source': 'athlete', 'text': e['description']}}
                        for e in current_profile['events'] if e['endDate'] >= today.isoformat()],
             'availability': {**{key: availability[key] for key in ('windows', 'maxWeeklyHours', 'absoluteMaxWeeklyHours', 'restDay',
-                                                                   'longDay', 'trainingDaysPerWeek', 'noConsecutiveRestDays')},
+                                                                   'longDay', 'restDays', 'longDays', 'trainingDaysPerWeek',
+                                                                   'noConsecutiveRestDays')},
                              'exceptions': [e for e in availability['exceptions'] if e['to'] >= today.isoformat()]},
             'thresholds': {'source': 'athlete', 'ftp': user().ftp, 'maxHr': user().max_hr,
-                           'thresholdPaceSecPerKm': threshold_pace(current_profile), 'metrics': current_profile['metrics']},
+                           'thresholdPaceSecPerKm': threshold_pace(current_profile), 'tenKPaceSecPerKm': ten_k_pace(current_profile),
+                           'metrics': current_profile['metrics']},
             'templates': [t for t in template_catalog() if t['sport'] in (*current_profile['goal']['sports'], 'strength', 'rest')],
             'trainingRules': {'source': 'athlete', 'sports': current_profile['goal']['sports'],
                               'gymAvailability': current_profile['preferences']['gymAvailability']}}
