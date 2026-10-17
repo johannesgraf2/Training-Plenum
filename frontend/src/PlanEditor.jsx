@@ -71,7 +71,7 @@ export function PhaseEditor({ apiBase, overview, onSaved, onCancel }) {
 
 // Weekly hours of the plan up to its end: bars per week (worked-out target or outlined target), lighter for deload and
 // taper weeks. Phase names sit below the axis, so the phases never depend on color alone.
-const CHART = { height: 210, left: 34, right: 8, top: 18, bottom: 46 };
+const CHART = { height: 210, left: 40, right: 8, top: 18, bottom: 46 };
 const TEXT_WIDTH = 6.2;  // Rough width of a 10 px label character, to decide whether a phase name fits.
 // The width the chart really has, so its text keeps its size on phones and wide screens.
 function useWidth(fallback = 640) {
@@ -136,7 +136,9 @@ export function WeekHoursChart({ overview, today, apiBase, disabled, onSaved }) 
   const [error, setError] = useState('');
   const [wrap, width] = useWidth();
   const editable = !!overview.volume && !!onSaved;
-  const weeks = overview.weeks.map(w => ({ ...w, hours: w.plan?.targetHours ?? w.targetHours, own: w.athleteKind != null || w.athleteHours != null }));
+  // A worked-out week shows the hours of its sessions, so a skipped or shortened session lowers its bar.
+  const weeks = overview.weeks.map(w => ({ ...w, hours: w.plan?.calculatedHours ?? w.plan?.targetHours ?? w.targetHours, target: w.plan?.targetHours ?? w.targetHours,
+    own: w.athleteKind != null || w.athleteHours != null }));
   if (!weeks.length || !weeks.some(w => w.hours != null)) return null;
   const save = async (nextScale, change) => {
     setBusy(true); setError('');
@@ -180,8 +182,8 @@ export function WeekHoursChart({ overview, today, apiBase, disabled, onSaved }) 
     <div className="plan-hours-wrap" ref={wrap}>
       <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={`Geplante Stunden pro Woche, ${weeks.length} Wochen, höchstens ${fmt(peak)} h`}
         onMouseLeave={() => setHover(null)}>
-        {ticks.map(t => <g key={t} className="plan-hours-grid"><line x1={left} x2={width - right} y1={y(t)} y2={y(t)} /><text x={left - 6} y={y(t) + 3} textAnchor="end">{fmt(t)}</text></g>)}
-        <text className="plan-hours-unit" x={left - 6} y={top - 6} textAnchor="end">h</text>
+        {ticks.map(t => <g key={t} className="plan-hours-grid"><line x1={left} x2={width - right} y1={y(t)} y2={y(t)} />
+          <text x={left - 6} y={y(t) + 3} textAnchor="end">{fmt(t)}{t === ceiling ? ' h' : ''}</text></g>)}
         {weeks.map((w, i) => {
           const x = left + i * slot + (slot - barW) / 2;
           const value = w.hours || 0;
@@ -208,6 +210,7 @@ export function WeekHoursChart({ overview, today, apiBase, disabled, onSaved }) 
       </svg>
       {shown && selected == null && <div className="plan-hours-tip" role="status" style={{ left: `${Math.min(80, Math.max(8, (left + (hover + 0.5) * slot) / width * 100))}%` }}>
         <strong>Woche {shown.number} · {fmt(shown.hours)} h</strong>
+        {shown.plan && Math.abs(shown.hours - shown.target) >= 0.05 && <span>Ziel {fmt(shown.target)} h</span>}
         <span>{shortDate(shown.startDate)} · {shown.phaseName || '—'}{shown.deload ? ' · Erholung' : ''}</span>
         <span>{shown.plan ? 'ausgearbeitet' : shown.state === 'past' ? 'vorbei' : 'vorgemerkt'}{shown.own ? ' · eigene Woche' : ''}</span></div>}
     </div>
@@ -216,7 +219,7 @@ export function WeekHoursChart({ overview, today, apiBase, disabled, onSaved }) 
       onClose={() => setSelected(null)} />}
     {selected == null && error && <div role="alert" className="coach-message error">{error}</div>}
     <details className="plan-hours-table"><summary>Als Tabelle</summary>
-      <table className="coach-table"><thead><tr><th>Woche</th><th>Beginn</th><th>Phase</th><th>Zielstunden</th></tr></thead>
+      <table className="coach-table"><thead><tr><th>Woche</th><th>Beginn</th><th>Phase</th><th>Stunden</th></tr></thead>
         <tbody>{weeks.map(w => <tr key={w.week}><td>{w.number}</td><td>{shortDate(w.startDate)}</td><td>{w.phaseName || '—'}{w.deload ? ' · Erholung' : ''}</td><td>{fmt(w.hours)} h{w.own ? ' · eigene' : ''}</td></tr>)}</tbody></table>
     </details>
   </figure>;

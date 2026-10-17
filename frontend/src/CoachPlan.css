@@ -63,6 +63,7 @@
 .plan-change-head { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; }
 .plan-detail-body .plan-change-head h3 { margin: 0; }
 .plan-edited { margin: 12px 0 0; }
+.plan-skip { flex-wrap: wrap; }
 .plan-move select { font: inherit; font-size: 12px; padding: 8px; border: 1px solid var(--bd-d4dce7); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-1e293b); }
 
 .today-quick { margin-top: 12px; }
@@ -157,7 +158,7 @@
 .plan-hours-bar.past { opacity: .5; }
 .plan-hours-bar.active { opacity: 1; filter: brightness(1.25); }
 .plan-hours-grid line { stroke: var(--line-soft); stroke-width: 1; }
-.plan-hours-grid text, .plan-hours-x, .plan-hours-unit { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.plan-hours-grid text, .plan-hours-x { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
 .plan-hours-axis { stroke: var(--line-strong); stroke-width: 1; }
 .plan-hours-hit { fill: transparent; outline: none; }
 .plan-hours-hit:focus-visible { stroke: var(--focus); stroke-width: 2; }

@@ -101,7 +101,7 @@ function WeekCard({ week, today, workoutsById, onOpen, onAsk, onReview }) {
   return <article className={`coach-card plan-week ${week.state}`} aria-label={`Woche ${week.number}`}>
     <div className="plan-week-head"><div>
       <span className="coach-eyebrow">Woche {week.number}{week.phaseName ? ` · ${week.phaseName}` : ''} · {shortDay(week.startDate)}{week.state === 'current' ? ' · diese Woche' : ''}</span>
-      <h3>{fmt(value.targetHours)} h · {value.focus || 'Trainingswoche'}</h3></div><Badge week={week} /></div>
+      <h3>{fmt(value.calculatedHours ?? value.targetHours)} h · {value.focus || 'Trainingswoche'}</h3></div><Badge week={week} /></div>
     <ol className="plan-days">{DAYS.map(([day, short], index) => {
       const date = new Date(Date.parse(`${week.startDate}T12:00:00Z`) + index * 86400000).toISOString().slice(0, 10);
       const sessions = value.sessions.filter(s => s.rendered?.date === date).sort((a, b) => a.id.localeCompare(b.id));
@@ -135,8 +135,9 @@ function Structure({ workout }) {
   </>;
 }
 
-function SessionDetail({ session, week, workout, today, busy, onClose, onAsk, onLock, onOpenWorkout }) {
+function SessionDetail({ session, week, workout, today, busy, onClose, onAsk, onLock, onSkip, onOpenWorkout }) {
   const [moveTo, setMoveTo] = useState('');
+  const [skipping, setSkipping] = useState(false);
   useEffect(() => {
     const onKey = event => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -166,18 +167,22 @@ function SessionDetail({ session, week, workout, today, busy, onClose, onAsk, on
               <div className="plan-move"><select aria-label="Neuer Tag" value={moveTo} onChange={e => setMoveTo(e.target.value)}><option value="">Tag wählen …</option>
                 {days.map(([day, long, value]) => <option key={day} value={day}>{long}, {shortDay(value).split(', ')[1]}</option>)}</select>
                 <button type="button" disabled={!moveTo || busy} onClick={() => ask(`Bitte verschiebe diese Einheit auf ${DAYS.find(([d]) => d === moveTo)[2]}.`)}>Verschieben</button></div>
-              <button type="button" disabled={busy} onClick={() => ask('Ich lasse diese Einheit aus.')}>Auslassen</button>
             </div>
             <p className="coach-muted">Öffnet den Coach-Chat. Er prüft Verfügbarkeiten und Wochenbelastung und zeigt dir die Änderung, bevor sie gilt.</p></>}
         </div>
-        {workout && onOpenWorkout && <div className="plan-change" aria-label="Selbst ändern" role="group">
+        {workout && <div className="plan-change" aria-label="Selbst ändern" role="group">
           <div className="plan-change-head"><h3>Selbst ändern</h3><span className="coach-badge athlete">ohne KI</span></div>
-          <div className="plan-detail-actions">
-            <button type="button" disabled={session.locked} onClick={() => { onClose(); onOpenWorkout(workout, { library: true }); }}>Einheit aus Vorlagen tauschen</button>
-            <button type="button" onClick={() => { onClose(); onOpenWorkout(workout); }}>Im Editor bearbeiten · Garmin-Export</button>
-          </div>
-          <p className="coach-muted">{session.locked ? 'Zum Bearbeiten zuerst „Behalten“ lösen. Exportieren geht auch so.'
-            : 'Ablauf, Werte und Datum änderst du direkt; gespeichert wird sofort, ohne Prüfung durch den Coach.'}</p>
+          {skipping ? <div className="coach-message plan-skip" role="group" aria-label="Auslassen bestätigen"><span>Einheit auslassen? Sie verschwindet aus Plan und Kalender{week.plan.calculatedHours != null
+            ? `, die Woche hat dann ${hm(week.plan.calculatedHours * 60 - session.rendered.durationMin)}` : ''}. Nachgeholt wird nichts.</span>
+            <button type="button" className="coach-primary" disabled={busy} onClick={() => onSkip(session.id)}>Auslassen</button>
+            <button type="button" disabled={busy} onClick={() => setSkipping(false)}>Abbrechen</button></div>
+            : <div className="plan-detail-actions">
+              {onOpenWorkout && <button type="button" disabled={session.locked} onClick={() => { onClose(); onOpenWorkout(workout, { library: true }); }}>Einheit aus Vorlagen tauschen</button>}
+              {onOpenWorkout && <button type="button" onClick={() => { onClose(); onOpenWorkout(workout); }}>Im Editor bearbeiten · Garmin-Export</button>}
+              {!past && <button type="button" disabled={busy || session.locked} onClick={() => setSkipping(true)}>Auslassen</button>}
+            </div>}
+          <p className="coach-muted">{session.locked ? 'Zum Tauschen oder Auslassen zuerst „Behalten“ lösen. Exportieren geht auch so.'
+            : 'Ablauf, Werte und Datum änderst du direkt, oder du lässt die Einheit aus; das gilt sofort, ohne Prüfung durch den Coach.'}</p>
         </div>}
         {workout && <div className="plan-change" aria-label="Behalten" role="group">
           <div className="plan-detail-actions"><button type="button" disabled={busy} aria-pressed={!!session.locked} onClick={() => onLock(session.id, !session.locked)}>
@@ -272,6 +277,16 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
     } catch (e) { setError(e.message); }
     setBusy(false);
   }
+  // Skipping is the athlete's call: the calendar workout goes, and with it the session and its hours in the plan.
+  async function skip(identity) {
+    setBusy(true); setError('');
+    try {
+      await request(apiBase, `/api/workouts/${encodeURIComponent(identity)}`, 'DELETE');
+      setDetail(null);
+      await onChanged?.(); setReloads(n => n + 1);
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
   async function lock(identity, locked) {
     setBusy(true); setError('');
     try {
@@ -342,6 +357,6 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
     </section>}
     <History weeks={past} apiBase={apiBase} version={version} />
     {detail && <SessionDetail session={detail.session} week={detail.week} workout={workoutsById[detail.session.id]} today={today} busy={busy}
-      onClose={() => setDetail(null)} onAsk={onAsk} onLock={lock} onOpenWorkout={onOpenWorkout} />}
+      onClose={() => setDetail(null)} onAsk={onAsk} onLock={lock} onSkip={skip} onOpenWorkout={onOpenWorkout} />}
   </div>;
 }

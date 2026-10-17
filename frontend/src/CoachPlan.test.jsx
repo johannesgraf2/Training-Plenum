@@ -41,6 +41,7 @@ beforeEach(() => {
     if (path === '/api/coach/plan/settings') return { ok: true, json: async () => ({ settings: {} }) };
     if (path.endsWith('/review')) return { ok: true, json: async () => ({ revision: 3, job: { id: 'j1', status: 'running', steps: [] } }) };
     if (path.endsWith('/lock')) return { ok: true, json: async () => ({}) };
+    if (path === '/api/workouts/w1' && method === 'DELETE') return { ok: true, status: 204, json: async () => { throw new Error('empty'); } };
     if (path === '/api/coach/check-ins') return { ok: true, json: async () => ({ checkIns: [], injuries: [] }) };
     throw new Error(`Unexpected ${method} ${path}`);
   });
@@ -109,6 +110,30 @@ test('the detail separates changes through the coach from changes by hand', asyn
   await click(container.querySelector('.plan-session'));
   await click(button('Im Editor bearbeiten · Garmin-Export'));
   expect(open).toHaveBeenLastCalledWith(workout);
+});
+
+test('skipping a session takes it out without the coach, after a confirmation', async () => {
+  const changed = jest.fn();
+  data = { ...overview, weeks: overview.weeks.map((w, i) => i ? w : { ...w, plan: { ...w.plan, calculatedHours: 2.5 } }) };
+  await render({ onChanged: changed });
+  expect(container.querySelector('.plan-week h3').textContent).toBe('2,5 h · Grundlage festigen');
+  // The chart shows the hours of the sessions, the target next to it; the unit sits on the top tick.
+  const chart = container.querySelector('.plan-hours');
+  await act(async () => Simulate.mouseEnter(chart.querySelectorAll('.plan-hours-hit')[0]));
+  expect(chart.querySelector('.plan-hours-tip').textContent).toContain('Woche 1 · 2,5 hZiel 6 h');
+  const ticks = [...chart.querySelectorAll('.plan-hours-grid text')].map(t => t.textContent);
+  expect(ticks.at(-1)).toMatch(/ h$/);
+  expect(ticks.slice(0, -1).every(t => !t.endsWith(' h'))).toBe(true);
+  await click(container.querySelector('.plan-session'));
+  expect(container.querySelector('[aria-label="Mit dem Coach ändern"]').textContent).not.toContain('Auslassen');
+  await click(button('Auslassen'));
+  expect(container.querySelector('.plan-skip').textContent).toContain('die Woche hat dann 1:58 h');
+  expect(requests.some(r => r.method === 'DELETE')).toBe(false);
+  await click(container.querySelector('.plan-skip .coach-primary'));
+  expect(requests.find(r => r.method === 'DELETE').path).toBe('/api/workouts/w1');
+  expect(asked).not.toHaveBeenCalled();
+  expect(changed).toHaveBeenCalled();
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
 });
 
 test('the weekly review is sent and hands its replanning job on', async () => {

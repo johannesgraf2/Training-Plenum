@@ -1291,6 +1291,37 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual([m['change']['status'] for m in self.client.get('/api/coach/chat').get_json()['messages'] if m['change']],
                          ['discarded', 'confirmed'])
 
+    def test_a_skipped_session_goes_although_the_week_rules_would_want_it(self):
+        days = ('mon', 'wed', 'fri', 'sun')
+        plan = self.planned_with(lambda context: [self.session(day, day, 60) for day in days])
+        first = plan['weeks'][self.week]
+        self.client.put('/api/athlete-profile', json={'availability': {'noConsecutiveRestDays': True}})
+        wednesday = next(s for s in first['sessions'] if s['day'] == 'wed')
+        skip = {'week': self.week, 'targetHours': 3, 'focus': first['focus'], 'hinweise': [],
+                'operations': [{'op': 'remove', 'sessionId': wednesday['id'], 'session': None}]}
+        provider, calls = self.coach(self.reply('Mittwoch entfällt.', [skip], summary='Mittwoch auslassen'))
+        ref = {'kind': 'session', 'week': self.week, 'sessionId': wednesday['id'], 'label': 'Mi · Grundlage'}
+        change = self.chat(provider, {'message': 'Ich lasse diese Einheit aus.', 'ref': ref})['messages'][-1]['change']
+        self.assertEqual(len(calls), 1)  # Tue to Thu without training is no reason to keep the session.
+        self.assertIn('Mi Grundlagenausdauer Rad entfällt', change['weeks'][0]['lines'])
+        confirmed = self.client.post(f"/api/coach/proposals/{change['proposalId']}/confirm", json={'confirm': True})
+        self.assertEqual(confirmed.status_code, 200, confirmed.get_json())
+        self.assertEqual(confirmed.get_json()['weeks'][self.week]['calculatedHours'], 3)
+        self.assertNotIn(wednesday['id'], {w['id'] for w in self.client.get('/api/workouts').get_json()})
+        # Moving it instead is a change like any other and keeps the rule.
+        friday = next(s for s in confirmed.get_json()['weeks'][self.week]['sessions'] if s['day'] == 'fri')
+        moved = {'week': self.week, 'targetHours': 3, 'focus': first['focus'], 'hinweise': [], 'operations': [
+            {'op': 'replace', 'sessionId': friday['id'], 'session': {key: friday[key] for key in ('id', 'template', 'params')} | {'day': 'sat'}}]}
+        provider, calls = self.coach(self.reply('Auf Samstag.', [moved]))
+        self.chat(provider, {'message': 'Freitag lieber Samstag.'})
+        self.assertIn('Ruhetage hintereinander', calls[1]['systemNote']['rejectedChange'])
+
+    def planned_with(self, sessions):
+        self.plan_settings()
+        provider, _ = self.planner(sessions)
+        self.assertEqual(self.create(provider)['status'], 'done')
+        return self.client.get('/api/coach/plan').get_json()
+
     def test_a_rule_breaking_change_goes_back_once_for_an_alternative(self):
         plan = self.planned()
         first = plan['weeks'][self.week]

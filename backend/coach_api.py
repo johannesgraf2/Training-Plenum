@@ -778,6 +778,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             if previous_session.get('locked') and next((s for s in value['sessions'] if s['id'] == identity), None) != previous_session:
                 raise CoachError('Eine gesperrte Einheit wurde verändert.')
         changed = [s for s in value['sessions'] if s != previous.get(s['id'])]
+        # Sessions only taken out (the athlete skips them) are the athlete's call: the week's shape rules (rest days,
+        # minimum sessions of the block, easy share) never force them back in.
+        removal = bool(previous) and not changed and len(value['sessions']) < len(previous)
         sports = {*current_profile['goal']['sports'], 'strength', 'rest'}
         if any(TEMPLATES[s['template']]['sport'] not in sports for s in changed):
             raise CoachError('Der Vorschlag enthält eine Sportart, die nicht in deinem Profil steht.')
@@ -801,7 +804,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             earlier = {s['day'] for s in previous.values() if s['template'] != 'rest'} | fixed_days
             if len(days) > days_limit and days - earlier:
                 raise CoachError(f'Höchstens {days_limit} Trainingstage pro Woche.')
-        if current_profile['availability']['noConsecutiveRestDays']:
+        if current_profile['availability']['noConsecutiveRestDays'] and not removal:
             fixed_days = {f['day'] for f in fixed}
             today = datetime.now(zone()).date()
             elapsed = [day for index, day in enumerate(DAYS) if monday + timedelta(days=index) < today]
@@ -838,7 +841,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         # A C race on the side replaces one hard session of its week.
         replaced = sum(e['handling'] == 'replaceHard' and monday <= day_date(e['startDate']) for e in events)
         block, number = block_for_week(blocks, week_start(value['week']))
-        if block:
+        if block and not removal:
             check_week_rules(block, block['weeks'][number - 1], value['sessions'], replaced)
         value.update(source='aiRecommendation', calculatedHours=round(total, 2), fixedSessions=fixed, events=events)
         return value
@@ -1110,7 +1113,10 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'talks about. history holds the earlier messages, oldest first. change is null when nothing should change. To '
         'change sessions put one patch per affected week into change.weeks, only for weeks in workedOutWeeks, with the '
         'week rules (its availability, fixedSessions, elapsedDays, blockRules, events, complaints); targetHours is the new '
-        'total of that week; never make up missed volume; shorter or easier keeps the template when it fits. Lasting '
+        'total of that week; never make up missed volume; shorter or easier keeps the template when it fits. When the '
+        'athlete skips or drops a session, remove it (op remove) and lower targetHours by its duration; do not replace, '
+        'shorten or move it instead unless they ask: a change that only removes sessions is always allowed, rest-day '
+        'rules and block minimums do not stop it. Lasting '
         'changes go into change.settings: a period with less or no time (exception), a new recurring availability window, '
         'maxWeeklyHours, a new event or a new FTP or threshold pace; unused fields are null. An exception that reaches '
         'weeks not yet worked out goes into settings and acts when they are worked out; patch the worked-out weeks inside '
