@@ -112,8 +112,11 @@ EXCEPTION_SCHEMA = obj({'id': text(80), 'from': text(10), 'to': text(10), 'kind'
 THRESHOLD_SCHEMA = {**obj({sport: obj({'source': {'enum': [None, *THRESHOLD_SOURCES]}}) for sport in PROFILE_SPORTS}),
                     'required': []}
 # Threshold pace in seconds per km; FTP and maximum heart rate stay in the athlete settings.
-THRESHOLD_SCHEMA['properties']['run'] = obj({'source': {'enum': [None, *THRESHOLD_SOURCES]},
-                                             'paceSecPerKm': num(120, 900, True), 'basis': text(120, True)})
+# A 10 km pace the athlete knows is stored as such, never as a measured threshold pace; how it maps to zones is open.
+THRESHOLD_SCHEMA['properties']['run'] = {**obj({'source': {'enum': [None, *THRESHOLD_SOURCES]},
+                                                'paceSecPerKm': num(120, 900, True), 'basis': text(120, True),
+                                                'tenKPaceSecPerKm': num(120, 900, True)}),
+                                         'required': ['source', 'paceSecPerKm', 'basis']}
 # What the athlete did recently (onboarding B1), confirmed from the data or answered without data.
 BACKGROUND_TYPES = ['ride', 'run', 'swim', 'triShort', 'triLong', 'duathlon', 'hyrox', 'xcski', 'other']
 BACKGROUND_SCHEMA = obj({'type': {'enum': [None, *BACKGROUND_TYPES]}, 'weeklyHours': num(0, 80, True),
@@ -128,7 +131,8 @@ DEFAULT_PROFILE = {
     'availability': {'preferredWeeklyHours': None, 'indoorWeeklyHours': None, 'absoluteMaxWeeklyHours': None,
                      'outdoorMonths': [], 'defaultAvailability': dict.fromkeys(DAYS), 'trainingDaysPerWeek': None,
                      'noConsecutiveRestDays': False, 'minRideMinutes': {'indoor': None, 'outdoor': None},
-                     'windows': [], 'exceptions': [], 'maxWeeklyHours': None, 'restDay': None, 'longDay': None},
+                     'windows': [], 'exceptions': [], 'maxWeeklyHours': None, 'restDay': None, 'longDay': None,
+                     'restDays': [], 'longDays': []},
     'preferences': {'preferredRestDay': None, 'preferredLongSessionDay': None, 'gymAvailability': False, 'dailyCheckIn': True},
     'limitations': {'notes': ''}, 'currentState': {'notes': ''},
     'background': {'type': None, 'weeklyHours': None, 'intervals': {}, 'source': None}, 'onboarding': {'completed': []},
@@ -149,7 +153,10 @@ PROFILE_SCHEMA = obj({
                          'minRideMinutes': obj({place: num(0, 600, True, True) for place in ('indoor', 'outdoor')}),
                          'windows': {'type': 'array', 'maxItems': 70, 'items': WINDOW_SCHEMA},
                          'exceptions': {'type': 'array', 'maxItems': 100, 'items': EXCEPTION_SCHEMA},
-                         'maxWeeklyHours': num(0, 80, True), 'restDay': {'enum': [None, *DAYS]}, 'longDay': {'enum': [None, *DAYS]}}),
+                         'maxWeeklyHours': num(0, 80, True), 'restDay': {'enum': [None, *DAYS]}, 'longDay': {'enum': [None, *DAYS]},
+                         # Preferred rest days are alternatives, long days are days a long session may go on; both are wishes.
+                         'restDays': {'type': 'array', 'uniqueItems': True, 'items': {'enum': DAYS}},
+                         'longDays': {'type': 'array', 'uniqueItems': True, 'items': {'enum': DAYS}}}),
     'preferences': obj({'preferredRestDay': {'enum': [None, *DAYS]}, 'preferredLongSessionDay': {'enum': [None, *DAYS]},
                         'gymAvailability': {'type': 'boolean'}, 'dailyCheckIn': {'type': 'boolean'}}),
     'limitations': obj({'notes': text(1500)}), 'currentState': obj({'notes': text(1500)}),
@@ -171,6 +178,10 @@ def complete_profile(value):
     if 'outdoorMonths' not in result.get('availability', {}) and preferences.get('trainingEnvironment') == 'outdoor':
         result.setdefault('availability', {})['outdoorMonths'] = list(range(1, 13))
     result['preferences'] = {key: value for key, value in preferences.items() if key not in LEGACY_PREFERENCES}
+    stored_availability = result.get('availability', {})
+    for many, one in (('restDays', 'restDay'), ('longDays', 'longDay')):
+        if many not in stored_availability and stored_availability.get(one):
+            stored_availability[many] = [stored_availability[one]]
     for section in ('availability', 'preferences', 'background', 'onboarding'):
         result[section] = {**copy.deepcopy(DEFAULT_PROFILE[section]), **result.get(section, {})}
     for key in ('weeklyOverrides', 'dailyOverrides', 'checkIns', 'injuries'):
@@ -221,6 +232,16 @@ def threshold_pace(profile):
     return (profile['thresholds'].get('run') or {}).get('paceSecPerKm')
 
 
+def ten_k_pace(profile):
+    """The 10 km pace the athlete entered instead of a threshold pace, or None; it is no threshold pace."""
+    return (profile['thresholds'].get('run') or {}).get('tenKPaceSecPerKm')
+
+
+def onboarded(profile, plan_active=False):
+    """Sports, background and goal are set up (or a plan runs from before the onboarding); only then the daily check-in asks."""
+    return plan_active or {'sports', 'background', 'goal'} <= set(profile['onboarding']['completed'])
+
+
 def rest_day_pairs(training_days, limits, elapsed=()):
     """Neighbouring days of one week that both stay without training although one of them could still get it."""
     rest = [day not in training_days for day in DAYS]
@@ -232,6 +253,16 @@ def update_profile(current, changes):
     if not isinstance(changes, dict) or set(changes) - set(PROFILE_SCHEMA['properties']):
         raise CoachError('Unbekannte Profilfelder. Overrides und Check-ins separat speichern.')
     result = complete_profile(current)
+    availability_changes = changes.get('availability') if isinstance(changes.get('availability'), dict) else {}
+    for many, one in (('restDays', 'restDay'), ('longDays', 'longDay')):
+        # Clients with a single day still work: it becomes the list, the list keeps its first day as the single one.
+        if one in availability_changes and many not in availability_changes:
+            availability_changes = {**availability_changes, many: [availability_changes[one]] if availability_changes[one] else []}
+        elif many in availability_changes and isinstance(availability_changes[many], list):
+            ordered = sorted(availability_changes[many], key=lambda d: DAYS.index(d) if d in DAYS else len(DAYS))
+            availability_changes = {**availability_changes, many: ordered, one: ordered[0] if ordered else None}
+    if availability_changes:
+        changes = {**changes, 'availability': availability_changes}
     for key, value in changes.items():
         # Clients that predate a field keep its stored value.
         result[key] = {**result[key], **value} if key in ('goal', 'availability', 'preferences', 'metrics', 'thresholds',
@@ -243,8 +274,9 @@ def update_profile(current, changes):
     if result['goal']['date']:
         day_date(result['goal']['date'])
     run = result['thresholds'].get('run')
-    if run and run['source'] in ('athlete', 'calculated') and run['paceSecPerKm'] is None:
-        raise CoachError('Bitte eine Schwellenpace eintragen oder „Testen lassen“ wählen.')
+    if run and run['source'] in ('athlete', 'calculated') and run['paceSecPerKm'] is None \
+            and (run['source'] == 'calculated' or run.get('tenKPaceSecPerKm') is None):
+        raise CoachError('Bitte eine Schwellenpace oder 10-km-Pace eintragen oder „Testen lassen“ wählen.')
     availability = result['availability']
     availability['outdoorMonths'] = sorted(availability['outdoorMonths'])
     check_windows(availability['windows'])
@@ -279,7 +311,8 @@ CHECK_IN_SCHEMA = obj({'date': text(10), **{key: num(1, 5, integer=True) for key
 
 def effective_availability(profile, week):
     monday = week_start(week)
-    result = {day: {'maxMinutes': value, 'preferLong': day == profile['preferences']['preferredLongSessionDay']}
+    long_days = set(profile['availability'].get('longDays', [])) | {profile['preferences']['preferredLongSessionDay']}
+    result = {day: {'maxMinutes': value, 'preferLong': day in long_days}
               for day, value in profile['availability']['defaultAvailability'].items()}
     override = next((o for o in profile['weeklyOverrides'] if o['week'] == week), {})
     for day, item in override.get('overrides', {}).items():
@@ -467,12 +500,19 @@ def week_events(profile, week):
 
 # --- Plan settings ------------------------------------------------------------------------------
 
-PLAN_SETTINGS_SCHEMA = obj({'startDate': text(10), 'endDate': text(10), 'replanMode': {'enum': ['afterReview', 'sunday', 'manual']}})
+# horizonWeeks: how many weeks ahead get sessions (no upper limit besides the plan); taperWeeks: the taper before each
+# A event, None lets the coach decide.
+DEFAULT_HORIZON = 3
+PLAN_SETTINGS_SCHEMA = {**obj({'startDate': text(10), 'endDate': text(10), 'replanMode': {'enum': ['afterReview', 'sunday', 'manual']},
+                               'horizonWeeks': num(1, 520, integer=True), 'taperWeeks': num(1, 3, True, True)}),
+                        'required': ['startDate', 'endDate', 'replanMode']}
 
 
 def plan_settings(value, previous, now):
-    """Validated plan settings; createdAt stays from the first save."""
+    """Validated plan settings; createdAt stays from the first save, horizon and taper stay unless given."""
     data = validate(value, PLAN_SETTINGS_SCHEMA)
     if day_date(data['endDate']) <= day_date(data['startDate']):
         raise CoachError('Das Planende muss nach dem Planstart liegen.')
-    return {**data, 'createdAt': (previous or {}).get('createdAt') or now}
+    previous = previous or {}
+    return {'horizonWeeks': previous.get('horizonWeeks', DEFAULT_HORIZON), 'taperWeeks': previous.get('taperWeeks'),
+            **data, 'createdAt': previous.get('createdAt') or now}

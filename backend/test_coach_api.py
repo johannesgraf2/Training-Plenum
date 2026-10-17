@@ -453,6 +453,7 @@ class CoachAPITests(unittest.TestCase):
                                           {**decision, 'targetHours': 2.5, 'sessions': [recovery, sessions[1]]})
         context = provider.generate.call_args.args[3]
         self.assertEqual(context['trainingRules'], {'source': 'athlete', 'trainingDaysPerWeek': 2, 'noConsecutiveRestDays': False,
+                                                    'preferredRestDays': [], 'longSessionDays': [],
                                                     'sports': ['ride', 'run'], 'environment': 'outdoor', 'minRideMinutes': 90})
         self.assertIn('rideMinutesMedian', context['recentPattern'])
 
@@ -918,6 +919,47 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/coach/plan/create', json={}).status_code, 409)  # Already created.
         self.plan_settings(weeks=10)
         self.assertIn('beenden', self.client.post('/api/coach/plan/create', json={}).get_json()['error'])
+
+    def test_phases_by_hand_with_a_longer_horizon_and_the_check_in_after_the_onboarding(self):
+        self.assertFalse(self.client.get('/api/coach/today').get_json()['onboarded'])
+        self.plan_settings()
+        settings = self.client.get('/api/coach/plan/settings').get_json()['settings']
+        self.assertEqual((settings['horizonWeeks'], settings['taperWeeks']), (3, None))
+        body = {key: settings[key] for key in ('startDate', 'endDate', 'replanMode')}
+        self.assertEqual(self.client.put('/api/coach/plan/settings', json={**body, 'horizonWeeks': 4}).status_code, 200)
+        provider, calls = self.planner()
+        job = self.create(provider)
+        self.assertEqual(job['status'], 'done', job)
+        self.assertEqual([c['task'] for c in calls], ['frame', 'week', 'week', 'week', 'week'])
+        self.assertEqual(calls[0]['periodization'], {'source': 'athlete', 'backwardsFromEvent': True, 'loadWeeks': 3,
+                                                     'deloadWeeks': 1, 'taperWeeks': None})
+        self.assertIn('trainingBase', calls[0])
+        self.assertTrue(self.client.get('/api/coach/today').get_json()['onboarded'])
+        overview = self.client.get('/api/coach/plan/weeks').get_json()
+        self.assertEqual(overview['horizonWeeks'], 4)
+        self.assertIn('vo2max', [t['id'] for t in overview['blockTypes']])
+        fifth = overview['weeks'][4]
+        self.assertEqual(fifth['replanDate'], (date.fromisoformat(fifth['startDate']) - timedelta(days=22)).isoformat())
+        grundlage, schwelle = [p['id'] for p in overview['phases']]
+        too_long = {'phases': [{'id': grundlage, 'blockType': 'grundlage', 'weeks': 9},
+                               {'id': schwelle, 'blockType': 'schwelle', 'weeks': 4}], 'taperWeeks': None}
+        response = self.client.put('/api/coach/plan/phases', json=too_long)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('länger als der Plan', response.get_json()['error'])
+        edit = {'phases': [{'id': grundlage, 'blockType': 'grundlage', 'weeks': 6}, {'id': None, 'blockType': 'vo2max', 'weeks': 2},
+                           {'id': schwelle, 'blockType': 'schwelle', 'weeks': 4}], 'taperWeeks': None}
+        response = self.client.put('/api/coach/plan/phases', json=edit)
+        self.assertEqual(response.status_code, 200, response.get_json())
+        first = response.get_json()
+        self.assertEqual(first['staleWeeks'], sorted(first['weeks']))
+        self.assertEqual(first['adapt']['changes'], ['phases'])
+        self.assertEqual(first['frame']['source'], 'athlete')
+        again = self.client.put('/api/coach/plan/phases', json=edit).get_json()
+        self.assertEqual(again['blocks'], first['blocks'])
+        overview = self.client.get('/api/coach/plan/weeks').get_json()
+        self.assertEqual([(p['blockType'], p['weeks']) for p in overview['phases']], [('grundlage', 6), ('vo2max', 2), ('schwelle', 4)])
+        self.assertEqual([w['phaseName'] for w in overview['weeks']][5:9], ['Grundlage', 'VO2max', 'VO2max', 'Schwelle'])
+        self.assertEqual(len(calls), 5)  # No AI call for the edit.
 
     def test_a_failed_step_keeps_what_is_saved_and_a_retry_continues(self):
         self.plan_settings()
