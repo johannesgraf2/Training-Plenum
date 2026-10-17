@@ -1,0 +1,100 @@
+/* Onboarding: a sheet over the coach, full screen on phones. Dialogs it opens (DataHub, WHOOP) sit above at z-index 1000. */
+.onboarding-backdrop { position: fixed; inset: 0; z-index: 900; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(27, 26, 23, .45); }
+.onboarding-sheet { width: min(760px, 100%); max-height: calc(100dvh - 48px); overflow-y: auto; overscroll-behavior: contain; background: var(--bg-ffffff); border-radius: 4px; box-shadow: 0 20px 60px #0f172a30; padding: 22px 28px 0; }
+.onboarding-header { position: sticky; top: -22px; z-index: 1; display: flex; align-items: flex-start; gap: 16px; margin: -22px -28px 18px; padding: 18px 28px 14px; background: var(--bg-ffffff); border-bottom: 1px solid var(--bd-e2e8f0); }
+.onboarding-header > :first-child { flex: 1; min-width: 0; }
+.ai-coach button.onboarding-close { border: 0; background: transparent; font-size: 22px; line-height: 1; padding: 2px 8px; color: var(--fg-64748b); }
+.onboarding-progress { display: flex; flex-direction: column; gap: 9px; }
+.onboarding-bar { display: flex; gap: 5px; }
+.onboarding-bar i { flex: 1; height: 4px; border-radius: 2px; background: var(--bd-e2e8f0); }
+.onboarding-bar i.done { background: var(--success); }
+.onboarding-bar i.current { background: var(--accent); }
+.onboarding-step h2 { margin-top: 0; }
+.onboarding-step h4 { font-size: 12px; margin: 16px 0 8px; }
+.onboarding-footer { position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 24px -28px 0; padding: 14px 28px; background: var(--bg-ffffff); border-top: 1px solid var(--bd-e2e8f0); }
+.onboarding-footer-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+
+.onboarding-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 10px 0 14px; }
+.ai-coach button.onboarding-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 14px; min-height: 58px; }
+.ai-coach button.onboarding-tile:is([aria-pressed="true"], [aria-checked="true"]) { border-color: var(--accent); background: var(--accent-bg); color: var(--fg-1e293b); }
+.ai-coach button.onboarding-tile:disabled { opacity: 1; cursor: default; }
+.onboarding-tile small, .onboarding-lock { font-size: 11px; font-weight: 400; color: var(--fg-64748b); display: inline-flex; align-items: center; gap: 4px; }
+
+.onboarding-segments, .onboarding-yesno { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 12px; }
+.onboarding-yesno > span { min-width: 90px; font-size: 12px; font-weight: 600; }
+.ai-coach .onboarding-segments button[aria-checked="true"], .ai-coach .onboarding-yesno button[aria-checked="true"], .ai-coach .onboarding-priorities button[aria-checked="true"] { border-color: var(--accent); background: var(--accent-bg); color: var(--fg-1e293b); }
+.onboarding-priorities { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.ai-coach .onboarding-priorities button { display: flex; flex-direction: column; gap: 4px; text-align: left; }
+.onboarding-priorities small { font-weight: 400; color: var(--fg-64748b); line-height: 1.4; }
+
+.onboarding-card, .onboarding-threshold, .onboarding-summary { border: 1px solid var(--bd-e2e8f0); border-radius: 4px; padding: 16px 18px; margin: 12px 0; background: var(--bg-f8fafc); }
+.onboarding-card h3, .onboarding-summary h3 { margin-top: 0; }
+.onboarding-threshold h4 { margin-top: 0; }
+.onboarding-origin { margin: 4px 0 0; }
+.onboarding-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 18px; margin: 0; }
+.onboarding-facts dt { font-size: 11px; color: var(--fg-64748b); }
+.onboarding-facts dd { margin: 4px 0 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.onboarding-facts small { font-size: 11px; font-weight: 400; color: var(--fg-64748b); }
+.onboarding-hint { font-size: 12px; color: var(--fg-475569); padding: 8px 12px; border-left: 3px solid var(--line-strong); background: var(--bg-f8fafc); }
+.onboarding-hint.warning { border-left-color: var(--ochre); }
+.onboarding-slider { display: flex; align-items: center; gap: 10px; }
+.onboarding-slider input { flex: 1; accent-color: var(--accent); }
+.onboarding-slider strong { min-width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
+.onboarding-duration { display: grid; grid-template-columns: repeat(3, minmax(0, 110px)); gap: 10px; }
+
+.onboarding-sources, .onboarding-events, .onboarding-days, .onboarding-plan-events, .onboarding-create { list-style: none; padding: 0; margin: 10px 0; }
+.onboarding-sources li, .onboarding-events li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--bd-e2e8f0); }
+.onboarding-sources li > div, .onboarding-events li > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.onboarding-sources small, .onboarding-sources span, .onboarding-events small { font-size: 11px; color: var(--fg-64748b); }
+.onboarding-sources .onboarding-ok { color: var(--success); font-weight: 600; }
+.ai-coach button.onboarding-add { width: 100%; padding: 16px; font-size: 13px; border-style: dashed; }
+.onboarding-priority { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 11px; font-weight: 700; margin-right: 6px; background: var(--bg-f1f5f9); color: var(--fg-475569); }
+.onboarding-priority.priority-a { background: var(--accent); color: var(--btn-fg); }
+.onboarding-priority.priority-b { background: var(--accent-bg); color: var(--accent-text); }
+
+.onboarding-days li { padding: 10px 0; border-top: 1px solid var(--bd-e2e8f0); }
+.onboarding-day-head { display: flex; align-items: center; gap: 10px; }
+.onboarding-day-head strong { min-width: 90px; font-size: 13px; }
+.onboarding-day-head small { color: var(--fg-64748b); font-variant-numeric: tabular-nums; }
+.onboarding-day-head button { margin-left: auto; }
+.onboarding-window { display: flex; align-items: center; gap: 8px; margin: 8px 0 0 100px; padding: 8px 10px; font-size: 12px; border-left: 3px solid var(--sport-ride); background: var(--bg-f8fafc); }
+.onboarding-window.unavailable { border-left-color: var(--line-strong); color: var(--fg-64748b); }
+.onboarding-window span { flex: 1; }
+.ai-coach .onboarding-window button { padding: 6px 10px; }
+.onboarding-window-sport { margin-bottom: 8px; }
+
+.onboarding-summary-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.onboarding-summary p { margin: 6px 0 0; }
+.onboarding-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.onboarding-chip { font-size: 12px; padding: 5px 10px; border-radius: 999px; background: var(--bg-ffffff); border: 1px solid var(--bd-e2e8f0); }
+.onboarding-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; text-align: center; font-size: 11px; }
+.onboarding-week span { display: block; color: var(--fg-64748b); }
+.onboarding-week strong { font-variant-numeric: tabular-nums; }
+.onboarding-plan-events li { display: flex; align-items: center; font-size: 12px; padding: 4px 0; }
+
+.onboarding-timeline { margin: 16px 0 8px; }
+.onboarding-timeline-track { position: relative; height: 34px; border-bottom: 3px solid var(--line-strong); }
+.onboarding-timeline-event { position: absolute; bottom: -8px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--accent-bg); border: 2px solid var(--accent); }
+.onboarding-timeline-event.priority-a { width: 16px; height: 16px; margin-left: -8px; bottom: -11px; background: var(--accent); }
+.onboarding-timeline-event em { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-style: normal; font-size: 11px; font-weight: 600; }
+.onboarding-timeline-event.end em { left: auto; right: -2px; transform: none; }
+.onboarding-timeline-event.start em { left: -2px; transform: none; }
+.onboarding-timeline-ends { display: flex; justify-content: space-between; margin-top: 12px; font-size: 11px; color: var(--fg-64748b); }
+
+.onboarding-create li { display: flex; align-items: center; gap: 10px; padding: 10px 0; font-size: 13px; border-top: 1px solid var(--bd-e2e8f0); color: var(--fg-64748b); }
+.onboarding-create li > span:first-child { width: 18px; text-align: center; }
+.onboarding-create li.done, .onboarding-create li.running { color: var(--fg-1e293b); }
+.onboarding-create li.done > span:first-child { color: var(--success); font-weight: 700; }
+.onboarding-create li.failed > span:first-child { color: var(--danger); font-weight: 700; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.coach-cost { margin: -4px 0 14px; }
+
+@media (max-width: 650px) {
+  .onboarding-backdrop { padding: 0; align-items: stretch; }
+  .onboarding-sheet { max-height: none; height: 100dvh; border-radius: 0; padding: 18px 16px 0; }
+  .onboarding-header { margin: -18px -16px 16px; padding: 14px 16px 12px; top: -18px; }
+  .onboarding-footer { margin: 20px -16px 0; padding: 12px 16px; }
+  .onboarding-window { margin-left: 0; flex-wrap: wrap; }
+  .onboarding-day-head strong { min-width: 0; }
+  .onboarding-duration { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

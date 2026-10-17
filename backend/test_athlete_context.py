@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from dateutil.tz import gettz
 
-from athlete_context import build_snapshot, run_threshold_pace, session_pattern, summarize_period
+from athlete_context import build_snapshot, run_threshold_pace, session_pattern, summarize_period, training_background
 
 
 TODAY = date(2026, 9, 23)
@@ -260,3 +260,21 @@ class ThresholdPaceTests(unittest.TestCase):
         self.assertEqual(run_threshold_pace(efforts, 'Europe/Berlin', TODAY),
                          {'source': 'calculated', 'paceSecPerKm': 274, 'basis': '10km', 'durationSeconds': 2700, 'date': '2026-09-01'})
         self.assertEqual(run_threshold_pace(efforts[2:], 'Europe/Berlin', TODAY), None)  # too old or too short
+
+    def test_training_background_prefills_the_onboarding(self):
+        # FTP 200 W: 250 W lies above 90 %; max HR 200: 170 bpm lies above 80 %.
+        hard = row('2026-09-15T08:00:00Z', 1)
+        hard['power'] = {'histogram': {'250': 900, '150': 2700}, 'seconds': 3600, 'np': 210}
+        short = row('2026-09-19T08:00:00Z', 1)
+        short['power'] = {'histogram': {'250': 300, '150': 3300}, 'seconds': 3600, 'np': 180}
+        run = row('2026-09-12T08:00:00Z', 1, sport='run')
+        run['hr'] = {'histogram': {'170': 1200, '140': 2400}, 'seconds': 3600, 'np': None}
+        rows = [hard, short, run, row('2026-07-10T08:00:00Z', 1, sport='swim'), row('2026-08-01T08:00:00Z', 2, sport='training'),
+                row('2026-09-20T08:00:00Z', 2, sport='walking'), row('2026-05-01T08:00:00Z', 3, sport='run')]
+        result = training_background(rows, 'Europe/Berlin', TODAY, ftp=200, max_hr=200)
+        self.assertEqual(result['recentSports'], ['ride', 'run', 'strength', 'swim'])  # walking is no profile sport
+        self.assertEqual((result['hasData'], result['mainSport'], result['weeklyHours']), (True, 'ride', 0.8))  # 5 h / 6 weeks
+        self.assertEqual(result['intervals'], {'ride': '2026-09-15', 'run': '2026-09-12'})  # 5 min hard is no interval session
+        self.assertEqual(training_background(rows, 'Europe/Berlin', TODAY)['intervals'], {})  # no thresholds, no intervals
+        empty = training_background([], 'Europe/Berlin', TODAY)
+        self.assertEqual((empty['hasData'], empty['recentSports'], empty['mainSport'], empty['weeklyHours']), (False, [], None, None))

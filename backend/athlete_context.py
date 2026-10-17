@@ -10,7 +10,7 @@ from statistics import median
 
 from dateutil.tz import gettz
 
-from analytics import add, bucket, finish, utc, valid
+from analytics import HR_LIMITS, POWER_LIMITS, add, bucket, finish, utc, valid, zones
 from best_efforts import TARGETS
 
 
@@ -326,6 +326,50 @@ def _performance(efforts, zone, today):
                 'date': day.isoformat(), 'ageDays': (today - day).days,
                 'activityId': effort.get('activityId')}
     return {'bestEfforts': result}
+
+
+# Activity sports as the athlete profile names them; walking, hiking and unknown sports stay out.
+PROFILE_SPORT = {'ride': 'ride', 'run': 'run', 'swim': 'swim', 'training': 'strength', 'strength': 'strength',
+                 'strength_training': 'strength', 'cross_country_skiing': 'xcski', 'xcski': 'xcski'}
+# A session counts as intervals with at least this much time at >= 90 % FTP or >= 80 % max HR.
+INTERVAL_SECONDS = 10 * 60
+
+
+def _hard_seconds(row, ftp, max_hr):
+    """Seconds above threshold intensity by power (rides with FTP) or else heart rate; None without either."""
+    power, hr = row.get('power') or {}, row.get('hr') or {}
+    if ftp and row['sport'] == 'ride' and power.get('seconds'):
+        return sum(zones(power['histogram'], ftp, POWER_LIMITS)[3:])
+    if max_hr and hr.get('seconds'):
+        return sum(zones(hr['histogram'], max_hr, HR_LIMITS)[3:])
+    return None
+
+
+def training_background(rows, zone, today, ftp=None, max_hr=None):
+    """What the onboarding prefills: sports of the last 90 days, the main sport and weekly hours of the last 6 weeks,
+    the strongest 4-week stretch and per sport the last interval session of the last 21 days."""
+    zone = _zone(zone)
+    today = _day(today, zone)
+    dated = [(day, row) for day, row in _prepared(rows, zone)[0] if day <= today]
+    since = lambda days: [(day, row) for day, row in dated if day >= today - timedelta(days=days - 1)]
+    recent = sorted({PROFILE_SPORT[row['sport']] for _, row in since(90) if row['sport'] in PROFILE_SPORT})
+    hours = defaultdict(float)
+    for _, row in since(42):
+        if valid(row.get('seconds')):
+            hours[row['sport']] += row['seconds'] / 3600
+    main = max((sport for sport in hours if sport in PROFILE_SPORT), key=lambda sport: hours[sport], default=None)
+    intervals = {}
+    for day, row in since(21):
+        sport = PROFILE_SPORT.get(row['sport'])
+        seconds = _hard_seconds(row, _threshold(ftp), _threshold(max_hr))
+        if sport and seconds is not None and seconds >= INTERVAL_SECONDS and day.isoformat() > intervals.get(sport, ''):
+            intervals[sport] = day.isoformat()
+    capacity = _capacity(dated, today)
+    return {'source': 'calculated', 'asOf': today.isoformat(), 'hasData': bool(dated), 'recentSports': recent,
+            'mainSport': PROFILE_SPORT.get(main), 'weeklyHours': round(sum(hours.values()) / 6, 1) if hours else None,
+            'best4WeekHours': capacity['max4WeekAverageHours'], 'intervals': intervals,
+            'definition': 'Sports with activities in the last 90 days; main sport and weekly hours over the last 42 days; '
+                          'intervals mean at least 10 min at >= 90 % FTP (rides) or >= 80 % max HR in the last 21 days.'}
 
 
 RIEGEL_EXPONENT = 1.06

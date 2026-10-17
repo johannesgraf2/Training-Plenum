@@ -2,6 +2,8 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Icon } from './icons';
 import { localDate, mainPace, summary as workoutSummary } from './workoutModel';
 import { workoutLibrary } from './workoutLibraryData';
+import CoachOnboarding from './CoachOnboarding';
+import { KeyNotice, ProviderForm } from './CoachProvider';
 import { CheckInDialog, CheckInHistory, InjuryList, PeriodHeader, ReadinessCard, TodaySessions, healInjury, loadToday } from './CoachToday';
 import './AICoach.css';
 
@@ -34,8 +36,6 @@ const SITUATION_HINTS = { nach_pause: 'Du steigst nach Krankheit, Urlaub oder Pa
 const WIZARD_STEPS = ['Ausgangslage', 'Weg', 'Auswahl', 'Vorschau'];
 const SEASON_WIZARD_STEPS = ['Ausgangslage', 'Block gestalten', 'Vorschau'];
 const EMPTY_WORKOUTS = [];
-const MODEL_PRESETS = ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5-mini', 'gpt-5', 'gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'];
-const REASONING_LEVELS = [['', 'Standard des Modells'], ['low', 'Niedrig'], ['medium', 'Mittel'], ['high', 'Hoch']];
 const number = value => value === '' || value == null ? null : Number(value);
 const fmt = value => value == null ? '—' : Number(value).toLocaleString('de-DE', { maximumFractionDigits: 1 });
 const sourceValue = value => value && typeof value === 'object' && 'value' in value ? value.value : value;
@@ -193,15 +193,14 @@ function WeekSummary({ availability, recentWeeklyHours }) {
   </div>;
 }
 
-function KeyNotice({ provider }) {
-  const { encryptionKeySource: source, encryptionKeyFile: file } = provider;
-  if (!provider.encryptionConfigured) {
-    const reason = source === 'invalid' ? `Die Schlüsseldatei ${file} enthält keinen gültigen Schlüssel. TrainHub überschreibt sie nicht, damit kein vorhandener Schlüssel verloren geht.`
-      : source === 'unavailable' ? `TrainHub konnte die Schlüsseldatei ${file} nicht anlegen oder lesen.` : 'Dem Server fehlt der Schlüssel, mit dem API-Keys verschlüsselt werden.';
-    return <div className="coach-message" role="note"><div><strong>API-Keys lassen sich gerade nicht speichern.</strong> {reason} Normalerweise legt TrainHub diesen Schlüssel beim ersten Start selbst an. Wie du das behebst, steht in AI-COACH.md unter „Einrichtung und erster Plan“.</div></div>;
-  }
-  return <p className="coach-muted coach-key-note">Dein API-Key wird verschlüsselt gespeichert. {source === 'environment' ? 'Den Schlüssel dafür liefert die Umgebungsvariable TRAINHUB_AI_ENCRYPTION_KEY.'
-    : <>Der Schlüssel dafür liegt in <code>{file}</code>{source === 'created' ? ' und wurde beim letzten Start angelegt' : ''}. Sichere diese Datei getrennt von der Datenbank. Geht sie verloren, gibst du den API-Key einfach neu ein; deine Trainingsdaten brauchen sie nicht.</>}</p>;
+// Until the plan is created through the onboarding, Heute invites to build it; a started onboarding continues.
+function OnboardingStart({ profile, onStart }) {
+  const started = (profile.onboarding?.completed || []).length > 0;
+  return <section className="coach-card coach-onboarding-start" aria-label="Plan bauen">
+    <span className="coach-eyebrow">Neu · ca. 5 Minuten</span><h2>Lass uns deinen Plan bauen</h2>
+    <p className="coach-muted">Sportarten, Leistungsdaten, Ziel und Zeitfenster – danach legt der Coach Phasen fest und plant die ersten 3 Wochen.</p>
+    <div className="coach-actions"><button type="button" className="coach-primary" onClick={onStart}>{started ? 'Weitermachen' : "Los geht's"}</button></div>
+  </section>;
 }
 
 function SeasonGoal({ goal }) {
@@ -766,10 +765,6 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
   const [snapshot, setSnapshot] = useState(null);
   const [profile, setProfile] = useState(null);
   const [provider, setProvider] = useState(null);
-  const [model, setModel] = useState('gpt-4.1-mini');
-  const [customModel, setCustomModel] = useState(false);
-  const [reasoningEffort, setReasoningEffort] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [plan, setPlan] = useState(null);
   const [week, setWeek] = useState(() => isoWeek());
   const [weekly, setWeekly] = useState({ overrides: {}, note: '' });
@@ -801,6 +796,8 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [onboarding, setOnboarding] = useState(false);
+  const [reloads, setReloads] = useState(0);  // A finished or closed onboarding loads the coach again.
   const contextVersion = useRef(0);
   const pending = useRef(false);
   const stopPlanning = useRef(false);
@@ -836,14 +833,14 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
     Promise.all([request(`/api/athlete-snapshot?${tzQuery()}`), request('/api/athlete-profile'), request('/api/ai-provider'), request('/api/coach/plan'), request('/api/coach/block-types')])
       .then(([s, p, ai, saved, types]) => {
         if (cancelled) return;
-        setSnapshot(s); setProfile(blankProfile(p)); setProvider(ai); setModel(ai.model || 'gpt-4.1-mini'); setReasoningEffort(ai.reasoningEffort || ''); setPlan(saved); setCatalog(types);
+        setSnapshot(s); setProfile(blankProfile(p)); setProvider(ai); setPlan(saved); setCatalog(types);
         const range = blockRange(currentBlock(saved.blocks));
         if (range && localDate() < range.start) setWeek(isoWeek(range.start)); // An upcoming block starts with its first week.
       })
       .catch(e => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; contextVersion.current += 1; };
     // apiBase selects the backend; individual writes refresh their own state.
-  }, [apiBase]);
+  }, [apiBase, reloads]);
 
   useEffect(() => {
     if (dirty.weekly) return;
@@ -1250,16 +1247,16 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
     {!loading && provider && tab === 'provider' && <section className="coach-card coach-provider">
       <span className="coach-eyebrow">Bring your own key</span><h2>Dein AI Provider</h2><p className="coach-muted">Training Plēnum sendet verdichteten Trainingskontext und Workout-Templates an deinen Provider. Modellanfragen werden über deinen API-Zugang abgerechnet.</p>
       <KeyNotice provider={provider} />
-      <form onSubmit={event => { event.preventDefault(); const key = apiKey.trim(); setApiKey(''); run('Provider wird gespeichert …', async () => { const saved = await request('/api/ai-provider', 'PUT', { provider: 'openai', model: model.trim(), reasoningEffort: reasoningEffort || null, ...(key ? { apiKey: key } : {}) }); setProvider(saved); setModel(saved.model || model); setReasoningEffort(saved.reasoningEffort || ''); setDirty(d => ({ ...d, provider: false })); invalidate(); setNotice('Provider-Einstellungen gespeichert.'); }); }}>
-        <fieldset disabled={occupied}><div className="coach-form-grid"><Field label="Provider"><select value="openai" disabled><option value="openai">OpenAI</option></select></Field><Field label="Modell"><select value={customModel || !MODEL_PRESETS.includes(model) ? 'custom' : model} onChange={e => { invalidate('provider'); const custom = e.target.value === 'custom'; setCustomModel(custom); if (!custom) setModel(e.target.value); }}>{MODEL_PRESETS.map(m => <option key={m} value={m}>{m}</option>)}<option value="custom">Anderes Modell …</option></select></Field>{(customModel || !MODEL_PRESETS.includes(model)) && <Field label="Modell-ID" hint="Beliebige OpenAI-Modell-ID mit Unterstützung für strukturierte Responses."><input required spellCheck="false" value={model} onChange={e => { invalidate('provider'); setModel(e.target.value); }} /></Field>}<Field label="Reasoning" hint="Nur für Reasoning-Modelle. Höhere Stufen denken länger und kosten mehr."><select value={reasoningEffort} onChange={e => { invalidate('provider'); setReasoningEffort(e.target.value); }}>{REASONING_LEVELS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field></div>
-          <Field label={provider.configured ? `API Key ersetzen (gespeichert: ••••${provider.keyLast4 || ''})` : 'API Key'} hint="Das Feld wird nach dem Absenden geleert. Der Key bleibt nur verschlüsselt im Backend."><input type="password" autoComplete="new-password" spellCheck="false" value={apiKey} placeholder={provider.configured ? 'Leer lassen, um den vorhandenen Key zu behalten' : 'API Key eingeben'} onChange={e => { invalidate('provider'); setApiKey(e.target.value); }} /></Field>
-          <div className="coach-actions"><button className="coach-primary" type="submit" disabled={!provider.encryptionConfigured}>Provider speichern</button><button type="button" disabled={!provider.configured || dirty.provider} onClick={() => run('Verbindung wird geprüft …', async () => { await request('/api/ai-provider/test', 'POST', {}); setNotice('Verbindung zum Provider erfolgreich.'); })}>Verbindung testen</button>{provider.configured && <button type="button" className="coach-danger" onClick={() => run('Key wird entfernt …', async () => { const saved = await request('/api/ai-provider', 'DELETE'); setProvider({ ...provider, ...saved, configured: false, keyLast4: null }); setApiKey(''); setDirty(d => ({ ...d, provider: false })); invalidate(); setNotice('API Key entfernt.'); })}>Gespeicherten Key entfernen</button>}</div>
-          {messages}
-        </fieldset>
-      </form>
+      <ProviderForm provider={provider} disabled={occupied} request={request} run={run} dirty={dirty.provider} onEdit={() => invalidate('provider')}
+        onSaved={saved => { setProvider(saved); setDirty(d => ({ ...d, provider: false })); invalidate(); setNotice('Provider-Einstellungen gespeichert.'); }}
+        onTested={() => setNotice('Verbindung zum Provider erfolgreich.')}
+        onRemoved={saved => { setProvider({ ...provider, ...saved, configured: false, keyLast4: null }); setDirty(d => ({ ...d, provider: false })); invalidate(); setNotice('API Key entfernt.'); }}>
+        {messages}
+      </ProviderForm>
     </section>}
 
     {!loading && profile && tab === 'today' && <>
+      {!profile.onboarding?.completed?.includes('created') && <OnboardingStart profile={profile} onStart={() => setOnboarding(true)} />}
       {stage === 'setup' && <SetupChecklist missing={dirty.profile ? [...missing, 'Änderungen speichern'] : missing} providerReady={!!provider?.configured} onProfile={() => setTab('profile')} onProvider={() => setTab('provider')} />}
       {dayView ? <>
         <section className="coach-card coach-today-period"><PeriodHeader today={dayView} /></section>
@@ -1352,5 +1349,7 @@ export default function AICoach({ initialTab = 'today', tabVersion = 0, adjustVe
     </>}
     {checkInOpen && dayView && <CheckInDialog apiBase={apiBase} today={dayView} onClose={() => setCheckInOpen(false)} onSaved={savedCheckIn}
       onAdjust={() => { setCheckInOpen(false); adjustToToday(); }} />}
+    {onboarding && <CoachOnboarding apiBase={apiBase} onClose={() => { setOnboarding(false); setReloads(n => n + 1); }}
+      onCreated={() => { setOnboarding(false); setTab('week'); setReloads(n => n + 1); onWorkoutsChanged?.(); }} />}
   </div>;
 }

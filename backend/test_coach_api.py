@@ -782,6 +782,16 @@ class CoachAPITests(unittest.TestCase):
         main = self.client.get('/api/workouts').json[0]['steps'][1]
         self.assertEqual((main['target']['type'], main['target']['low'] < 400 < main['target']['high']), ('pace', True))
 
+    def test_onboarding_reads_the_training_data(self):
+        self.assertEqual(self.client.get('/api/coach/onboarding').json['hasData'], False)
+        with self.backend.app.app_context():
+            for days, sport in ((3, 'ride'), (20, 'run'), (120, 'swim')):
+                self.backend.db.session.add(self.backend.Activity(user_id=self.backend.DEMO_USER_ID, sport=sport, duration=60,
+                                                                  date=datetime.now() - timedelta(days=days)))
+            self.backend.db.session.commit()
+        result = self.client.get('/api/coach/onboarding').json
+        self.assertEqual((result['hasData'], result['recentSports'], result['source']), (True, ['ride', 'run'], 'calculated'))
+
     def test_events_are_week_entries_and_shape_the_week_check(self):
         self.block()
         saturday = (self.start + timedelta(days=5)).isoformat()
