@@ -21,7 +21,7 @@ from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, DELOAD_PHASES, GRO
                           block_status, block_type, catalog as block_catalog, check_block, check_choice, check_event_rules, check_formats,
                           check_options, check_week_rules,
                           interval_formats, migrate_plan, new_block, place_block, public_blocks, rule_texts)
-from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
+from coach_domain import (CoachError, DAYS, DAY_NAMES, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
                           CHECK_IN_SCHEMA, apply_patch, complete_event, complete_profile, day_date, effective_availability, iso_week,
                           min_ride_minutes, num, obj, plan_settings, preferred_hours, response_schemas, rest_day_pairs, text,
                           onboarded, ten_k_pace, threshold_pace, update_profile, validate, week_events, week_season, week_start)
@@ -811,15 +811,19 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             def pairs(sessions):
                 days = training(sessions)
                 result = rest_day_pairs(days, limits, elapsed)
-                # Sunday and Monday next to each other over the week boundary; a day already over stays as it was.
-                for day, other, (trained, minutes) in (('mon', 'sun', neighbours['previousSunday']),
-                                                       ('sun', 'mon', neighbours['nextMonday'])):
-                    if trained is False and day not in days and day not in elapsed and (limits[day]['maxMinutes'] or minutes):
+                # Sunday and Monday next to each other over the week boundary; only this week's day can still take
+                # training, so a day without time here leaves the gap to the other week.
+                for day, other, trained in (('mon', 'sun', neighbours['previousSunday']),
+                                            ('sun', 'mon', neighbours['nextMonday'])):
+                    if trained is False and day not in days and day not in elapsed and limits[day]['maxMinutes']:
                         result.add((day, f'{other}*'))
                 return result
             # A week planned before the rule was set only fails for new gaps.
-            if pairs(value['sessions']) - (pairs(previous.values()) if previous else set()):
-                raise CoachError('Keine zwei Ruhetage hintereinander – so steht es in deinem Profil, auch über den '
+            gaps = pairs(value['sessions']) - (pairs(previous.values()) if previous else set())
+            if gaps:
+                # The days go into the message, so the coach knows exactly what to fix on its second try.
+                names = ', '.join(rest_gap_label(*gap) for gap in sorted(gaps, key=lambda g: DAYS.index(g[0])))
+                raise CoachError(f'Keine zwei Ruhetage hintereinander ({names}) – so steht es in deinem Profil, auch über den '
                                  'Wochenwechsel von Sonntag auf Montag.')
         for day in DAYS:
             if used[day] > limits[day]['maxMinutes'] + 0.01:
@@ -844,18 +848,29 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         return (((plan.get('volume') or {}).get('weeks') or {}).get(week) or {}).get('hours')
 
     def neighbour_days(current_profile, week, weeks):
-        """Whether the Sunday before and the Monday after this week have training (None while not planned) and their
-        available minutes, for the rest-day rule over the week boundary."""
+        """Whether the Sunday before and the Monday after this week have training (None while not planned), for the
+        rest-day rule over the week boundary. A Monday after without any time is a rest day already, so this week's
+        Sunday trains before the next week is planned."""
         monday = week_start(week)
         result = {}
         for name, key, day in (('previousSunday', iso_week(monday - timedelta(weeks=1)), 'sun'),
                                ('nextMonday', iso_week(monday + timedelta(weeks=1)), 'mon')):
             other = weeks.get(key)
-            trained = None if other is None else any(
-                s['day'] == day and s['template'] != 'rest' for s in other['sessions']) or any(
-                f['day'] == day for f in other.get('fixedSessions') or [])
-            result[name] = (trained, effective_availability(current_profile, key)[day]['maxMinutes'] or 0)
+            if other is not None:
+                result[name] = any(s['day'] == day and s['template'] != 'rest' for s in other['sessions']) or any(
+                    f['day'] == day for f in other.get('fixedSessions') or [])
+            else:
+                result[name] = False if day == 'mon' and not effective_availability(current_profile, key)[day]['maxMinutes'] \
+                    else None
         return result
+
+    def rest_gap_label(day, other):
+        """Two neighbouring rest days in German, e.g. „Sa und So“ or „So der Vorwoche und Mo“."""
+        if other == 'sun*':
+            return f'{DAY_NAMES["sun"]} der Vorwoche und {DAY_NAMES[day]}'
+        if other == 'mon*':
+            return f'{DAY_NAMES[day]} und {DAY_NAMES["mon"]} der Folgewoche'
+        return f'{DAY_NAMES[day]} und {DAY_NAMES[other]}'
 
     def block_history(plan, block, week):
         """Earlier planned weeks of this block, so sessions progress along their chains."""
@@ -1029,7 +1044,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'Plan only the sports in trainingRules.sports (plus strength). With trainingRules.noConsecutiveRestDays two '
         'neighbouring days are never both without training, unless neither has available time; this holds over the week '
         'boundary too: trainingRules.neighbourDays says whether the Sunday before and the Monday after this week are rest or '
-        'training days (null while not planned), so after a rest Sunday the Monday has training and before a rest Monday '
+        'training days (null while not planned; a next Monday without time is rest), so after a rest Sunday the Monday has training and before a rest Monday '
         'the Sunday has. '
         'blockWeek.targetHours is the volume of the week from the plan (athleteHours true: the athlete set it): targetHours '
         'stays within 30 minutes of it unless the availability does not allow it (systemNote.rejectedChange: your previous '
@@ -1188,7 +1203,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                                       'trainingDaysPerWeek': current_profile['availability']['trainingDaysPerWeek'],
                                       'noConsecutiveRestDays': current_profile['availability']['noConsecutiveRestDays'],
                                       'neighbourDays': {name: None if trained is None else 'training' if trained else 'rest'
-                                                        for name, (trained, _) in
+                                                        for name, trained in
                                                         neighbour_days(current_profile, week, plan['weeks']).items()},
                                       'preferredRestDays': current_profile['availability']['restDays'],
                                       'longSessionDays': current_profile['availability']['longDays'],
