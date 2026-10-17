@@ -2,7 +2,7 @@ import copy
 import unittest
 from datetime import date
 
-from coach_blocks import (BLOCK_TYPES, block_guidance, rule_texts, block_for_week, block_status, catalog, check_block, check_event_rules, check_week_rules,
+from coach_blocks import (BLOCK_TYPES, block_guidance, easy_runs_over_long_run, rule_texts, block_for_week, block_status, catalog, check_block, check_event_rules, check_week_rules,
                           migrate_plan, place_block, suggested_rhythm)
 from coach_domain import DEFAULT_PROFILE, CoachError, complete_event
 
@@ -115,6 +115,13 @@ class WeekRuleTests(unittest.TestCase):
         with self.assertRaisesRegex(CoachError, 'höchstens 1×'):
             check_week_rules(block, {'phase': 'build'}, [session('bike_vo2'), session('bike_vo2'),
                                                          session('bike_sweetspot'), session('bike_threshold')])
+
+    def test_easy_runs_stay_shorter_than_the_long_run(self):
+        run = lambda identity, template, minutes: {'id': identity, 'template': template, 'rendered': {'durationMin': minutes}}
+        week = [run('mi', 'run_easy', 85), run('sa', 'run_long', 85), run('so', 'run_strides', 92)]
+        self.assertEqual(easy_runs_over_long_run(week), {'so'})
+        self.assertEqual(easy_runs_over_long_run(week[:2] + [run('so', 'run_long_mp', 150)]), set())
+        self.assertEqual(easy_runs_over_long_run([run('mi', 'run_easy', 85)]), set())  # Without a long run nothing to compare.
 
     def test_forbidden_templates_easy_share_and_secondary_focus(self):
         with self.assertRaisesRegex(CoachError, 'keine VO2max'):

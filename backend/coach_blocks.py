@@ -143,6 +143,18 @@ RUN_GUIDANCE = {
 }
 
 
+EASY_RUNS = {'run_easy', 'run_strides', 'run_hill_sprints'}
+LONG_RUNS = {'run_long', 'run_long_mp'}
+
+
+def easy_runs_over_long_run(sessions):
+    """Ids of easy runs longer than the week's longest long run (none without a long run)."""
+    longest = max((s['rendered']['durationMin'] or 0 for s in sessions if s['template'] in LONG_RUNS), default=None)
+    if longest is None:
+        return set()
+    return {s['id'] for s in sessions if s['template'] in EASY_RUNS and (s['rendered']['durationMin'] or 0) > longest + 0.01}
+
+
 def run_focus(sports):
     """Whether the plan is a running plan: run without ride among the goal sports."""
     return 'run' in sports and 'ride' not in sports

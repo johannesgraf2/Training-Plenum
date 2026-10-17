@@ -487,6 +487,17 @@ class CoachAPITests(unittest.TestCase):
         templates = {t['sport'] for t in provider.generate.call_args.args[3]['templates']}
         self.assertEqual(templates, {'ride', 'strength', 'rest'})
 
+    def test_no_easy_run_is_longer_than_the_long_run_of_its_week(self):
+        self.block()
+        self.client.put('/api/athlete-profile', json={'goal': {'sports': ['run']}})
+        sessions = [self.session('di', 'tue', 60, 'run_easy'), self.session('sa', 'sat', 85, 'run_long'),
+                    self.session('so', 'sun', 92, 'run_easy')]
+        decision = {'week': self.week, 'targetHours': round(237 / 60, 2), 'focus': 'Basis', 'hinweise': [], 'sessions': sessions}
+        response, _ = self.propose({'kind': 'week', 'week': self.week}, decision, expected=400)
+        self.assertIn('länger als der lange Lauf der Woche (So)', response['error'])
+        sessions[2] = self.session('so', 'sun', 80, 'run_easy')
+        self.propose({'kind': 'week', 'week': self.week}, {**decision, 'targetHours': round(225 / 60, 2), 'sessions': sessions})
+
     def test_no_two_rest_days_in_a_row_when_the_athlete_asks(self):
         self.block()
         self.assertEqual(self.client.put('/api/athlete-profile', json={'availability': {'noConsecutiveRestDays': True}}).status_code, 200)
@@ -1010,6 +1021,16 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual([(p['blockType'], p['weeks']) for p in overview['phases']], [('grundlage', 6), ('vo2max', 2), ('schwelle', 4)])
         self.assertEqual([w['phaseName'] for w in overview['weeks']][5:9], ['Grundlage', 'VO2max', 'VO2max', 'Schwelle'])
         self.assertEqual(len(calls), 5)  # No AI call for the edit.
+        self.assertEqual(overview['adapt']['weeks'], first['staleWeeks'])
+        # „Plan anpassen“ works the weeks with a changed phase out anew, with the guidance of their block.
+        provider, calls = self.adapter([])
+        job = self.adapt(provider, ['phases'])
+        self.assertEqual(job['status'], 'done', job)
+        worked = calls[0]['workedOutWeeks']
+        self.assertEqual([w['week'] for w in worked if w.get('rebuild')], first['staleWeeks'])
+        self.assertNotIn('rebuild', worked[-1])
+        self.assertTrue(all(w['block']['guidance'] for w in worked))
+        self.assertIsNone(self.client.get('/api/coach/plan/weeks').get_json()['adapt'])
 
     def test_a_failed_step_keeps_what_is_saved_and_a_retry_continues(self):
         self.plan_settings()
@@ -1552,6 +1573,7 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual((frame['replan']['changes'], frame['replan']['phasesSoFar'][0]['weeks']), (['availability', 'events'], 3))
         self.assertEqual((adapt['task'], adapt['changes']['areas']), ('adapt', ['availability', 'events']))
         self.assertEqual([w['week'] for w in adapt['workedOutWeeks']], weeks[:3])
+        self.assertFalse(any(w.get('rebuild') for w in adapt['workedOutWeeks']))  # New events alone rebuild no week.
         overview = self.client.get('/api/coach/plan/weeks').get_json()
         self.assertEqual([(p['blockType'], p['weeks']) for p in overview['phases']], [('grundlage', 3), ('vo2max', 5), ('wettkampfspezifisch', 4)])
         self.assertEqual((overview['frame']['rationale'], overview['frame']['hinweise'], overview['adapt']),

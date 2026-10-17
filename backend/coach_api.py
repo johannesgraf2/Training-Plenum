@@ -18,7 +18,7 @@ from ai_provider import (DEFAULT_MODEL, REASONING_EFFORTS, ProviderError, decryp
                          get_provider, key_file, usage_cost, validate_model, validate_reasoning_effort)
 from athlete_context import build_snapshot, run_threshold_pace, session_pattern, summarize_period, training_background
 from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, DELOAD_PHASES, GROUPS, SECONDARY_FOCUS, SITUATIONS, block_for_week,
-                          block_guidance, block_status, block_type, catalog as block_catalog, check_block, check_choice, check_event_rules, check_formats,
+                          block_guidance, block_status, easy_runs_over_long_run, block_type, catalog as block_catalog, check_block, check_choice, check_event_rules, check_formats,
                           check_options, check_week_rules,
                           interval_formats, migrate_plan, new_block, place_block, public_blocks, rule_texts)
 from coach_domain import (CoachError, DAYS, DAY_NAMES, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
@@ -797,6 +797,14 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         if minimum and any(s['template'] in normal and s['rendered']['durationMin'] < minimum - 0.01
                            for s in changed):
             raise CoachError(f'Radeinheiten dauern mindestens {minimum} Minuten (außer Regeneration).')
+        # The long run is the longest run of its week. A week planned before only fails for new or changed runs.
+        if not removal:
+            changed_ids = {s['id'] for s in changed}
+            longer = easy_runs_over_long_run(value['sessions']) - \
+                (easy_runs_over_long_run(list(previous.values())) - changed_ids)
+            if longer:
+                names = ', '.join(DAY_NAMES[s['day']] for s in value['sessions'] if s['id'] in longer)
+                raise CoachError(f'Kein lockerer Lauf ist länger als der lange Lauf der Woche ({names}).')
         days_limit = current_profile['availability']['trainingDaysPerWeek']
         if days_limit:
             fixed_days = {f['day'] for f in fixed}
@@ -1038,6 +1046,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'day of the same week when it fits the availability and no hard day follows; never add volume to make up for it. '
         'Choose only supplied templates and supported params; use null for unused params. Follow exact duration rules including warmup/cooldown. '
         'targetHours must equal total duration including fixed sessions, within 15 minutes. Never change fixed or locked sessions. '
+        'block.guidance in workedOutWeeks holds for every new or changed session; when the athlete asks to work a week '
+        'out anew, rebuild it like a freshly planned week. No easy run (run_easy, run_strides, run_hill_sprints) is longer '
+        'than the long run of its week; the server rejects it. '
         'Use unique short session ids. A patch contains only changed sessions, with matching sessionId/id; remove uses session:null. '
         'The hinweise of a patch replace the notes of its week: keep the notes that still hold and drop those about removed '
         'or replaced sessions. '
@@ -1148,7 +1159,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'level of the last load week, deloads at periodization.deloadShare of it, never above weeklyLimits.maxHours; write '
         'rationale and focus to fit that curve. '
         'Adapt task with changes.areas phases: the athlete changed the phases by hand; adapt each worked-out week to the '
-        'phase, target hours and rules of its week now. '
+        'phase, target hours and rules of its week now. A week with rebuild true is worked out anew for its phase: one '
+        'patch that replaces, adds or removes sessions so the week looks like a freshly planned week of that phase following '
+        'block.guidance and blockRules (key sessions embedded with durationMin where the template allows, easy and long '
+        'sessions balanced again), never a swap of single sessions that keeps their old durations; locked sessions and '
+        'elapsedDays stay. '
         'Adapt task: the athlete changed settings (changes.areas: availability, events, thresholds, sports, period, phases). Check '
         'each week in workedOutWeeks against its current rules (availability, events, fixedSessions, elapsedDays, '
         'blockRules, thresholds, training rules) and put one patch into adjustments for each week that should change; '
@@ -2104,13 +2119,15 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         plan, current_profile = current_plan(), profile()
         today = datetime.now(zone()).date()
         keys = worked_out_weeks(plan, today)
+        # Weeks whose phase changed by hand are worked out anew; an older note without its weeks rebuilds them all.
+        rebuild = set((plan.get('adapt') or {}).get('weeks') or (keys if 'phases' in changes else []))
         decision, afters, befores, hinweise, rejected = None, {}, {}, [], []
         if keys:
             first_day = plan_start_day(plan, today)
             context = {'task': 'adapt', 'today': today.isoformat(), 'changes': {'source': 'athlete', 'areas': changes},
                        **plan_context(plan, current_profile, today), 'wellness': wellness_context(current_profile, today),
                        'workedOutWeeks': [
-                           worked_week(plan, current_profile, key, first_day) for key in keys]}
+                           worked_week(plan, current_profile, key, first_day, key in rebuild) for key in keys]}
             schema = adapt_response_schema(response_schemas(SESSION_SCHEMA)['patch'], len(keys))
             decision = generate('adapt', context, schema)
             current_profile, plan = profile(), current_plan()  # Re-read after the provider call.
@@ -2149,7 +2166,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         noted = (plan.get('adapt') or {}).get('changes', [])
         changes = [area for area in ADAPT_SCHEMA['properties']['changes']['items']['enum'] if area in {*noted, *data['changes']}]
         # Noted first, so a failed run leaves the hint in the plan.
-        plan['adapt'] = {'changes': changes, 'since': (plan.get('adapt') or {}).get('since') or datetime.now(zone()).date().isoformat()}
+        plan['adapt'] = {**(plan.get('adapt') or {}), 'changes': changes,
+                         'since': (plan.get('adapt') or {}).get('since') or datetime.now(zone()).date().isoformat()}
         save_plan(plan)
         db.session.commit()
         if data.get('later'):
@@ -2210,7 +2228,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         if stale:
             noted = plan.get('adapt') or {}
             plan['adapt'] = {'changes': [area for area in ADAPT_AREAS if area in {*noted.get('changes', []), 'phases'}],
-                             'since': noted.get('since') or today.isoformat()}
+                             'since': noted.get('since') or today.isoformat(),
+                             'weeks': sorted({*noted.get('weeks', []), *stale})}
         return stale
 
     @app.route('/api/coach/plan/volume', methods=['PUT'])
@@ -2394,8 +2413,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                               'createdAt': row.created_at.replace(tzinfo=timezone.utc).isoformat(timespec='seconds'),
                               'change': change_view(proposals.get(row.proposal_id))} for row in rows]}
 
-    def worked_week(plan, current_profile, key, first_day):
-        """A worked-out week with the rules a change of it has to keep."""
+    def worked_week(plan, current_profile, key, first_day, rebuild=False):
+        """A worked-out week with the rules a change of it has to keep; rebuild marks a week to work out anew."""
         value, monday = plan['weeks'][key], week_start(key)
         block, number = block_for_week(plan['blocks'], monday)
         item = {'week': key, 'targetHours': value['targetHours'], 'calculatedHours': value['calculatedHours'], 'focus': value['focus'],
@@ -2405,9 +2424,12 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         if block:
             item['block'] = {'type': block['blockType'], 'name': BLOCK_TYPES[block['blockType']]['name'], 'weekNumber': number,
                              'phase': block['weeks'][number - 1]['phase'] if number <= len(block['weeks']) else None}
+            item['block']['guidance'] = block_guidance(block['blockType'], current_profile['goal']['sports'])
             item['blockRules'] = rule_texts(block['blockType'], current_profile['goal']['sports'])
         if monday <= first_day <= monday + timedelta(days=6):
             item['elapsedDays'] = DAYS[:first_day.weekday()]
+        if rebuild:
+            item['rebuild'] = True
         return item
 
     def plan_context(plan, current_profile, today):
