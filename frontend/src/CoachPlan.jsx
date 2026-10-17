@@ -204,9 +204,10 @@ function History({ weeks, apiBase, version }) {
   </details>;
 }
 
-/** The plan area of the coach. advance = the running replanning job, proposalId = an open adjustment after replanning. */
-export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}, advance, proposalId, reviewWeek, onAsk, onStart, onAdvance,
-  onJob, onChanged, onOpenWorkout }) {
+/** The plan area of the coach. advance = the running replanning or adapting job, proposalId = an open adjustment of the
+ * worked-out weeks after it. */
+export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}, advance, proposalId, reviewWeek, pendingChanges = [], onAsk, onStart, onAdvance,
+  onAdapt, onJob, onChanged, onOpenWorkout }) {
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState('');
   const [detail, setDetail] = useState(null);
@@ -269,6 +270,7 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
   const outlined = weeks.filter(w => !w.plan && w.state !== 'past');
   const past = weeks.filter(w => w.state === 'past');
   const proposalWeeks = proposal ? Object.keys(proposal.after || {}).sort().map(key => ({ week: key, before: proposal.before[key], after: proposal.after[key] })) : [];
+  const settingsChange = proposal?.reason === 'settings';
   const reviewed = review && weeks.find(w => w.week === review.week);
   return <div className="coach-plan">
     <section className="coach-card plan-head" aria-label="Plan">
@@ -278,10 +280,13 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
       {overview.frame.rationale && <p className="coach-muted">{overview.frame.rationale}</p>}
     </section>
     {error && <div role="alert" className="coach-message error">{error}</div>}
-    {advance?.status === 'running' && <div role="status" className="coach-message"><span className="coach-spinner" />{advance.steps?.[0]?.label || 'Nächste Woche'} … Der Coach plant.</div>}
-    {proposal && <section className="coach-card" aria-label="Anpassung nach deiner Woche"><span className="coach-eyebrow">Nach deiner letzten Woche</span>
-      <h2>Soll ich die nächsten Wochen anpassen?</h2>
-      <ChangeCard change={{ summary: 'Leichter nach einer schwierigen Woche', status: proposal.status, hinweise: proposal.hinweise, weeks: proposalWeeks }} busy={busy}
+    {advance?.status === 'running' && <div role="status" className="coach-message"><span className="coach-spinner" />{(advance.steps?.find(s => s.status === 'running') || advance.steps?.[0])?.label || 'Nächste Woche'} … Der Coach plant.</div>}
+    {(overview.adapt || pendingChanges.length > 0) && advance?.status !== 'running' && <div className="coach-message plan-adapt"><span><strong>Deine Einstellungen haben sich geändert.</strong> Soll ich deinen Plan daran anpassen?</span>
+      <button type="button" onClick={() => onAdapt?.(overview.adapt?.changes || [])}>Plan anpassen</button></div>}
+    {proposal && <section className="coach-card" aria-label={settingsChange ? 'Anpassung an deine Einstellungen' : 'Anpassung nach deiner Woche'}>
+      <span className="coach-eyebrow">{settingsChange ? 'Nach deinen Einstellungen' : 'Nach deiner letzten Woche'}</span>
+      <h2>Soll ich die ausgearbeiteten Wochen anpassen?</h2>
+      <ChangeCard change={{ summary: settingsChange ? 'Passend zu deinen geänderten Einstellungen' : 'Leichter nach einer schwierigen Woche', status: proposal.status, hinweise: proposal.hinweise, weeks: proposalWeeks }} busy={busy}
         onConfirm={() => decide('confirm')} onDiscard={() => decide('discard')} /></section>}
     {reviewed && <WeekReview key={reviewed.week} apiBase={apiBase} week={reviewed} completedHours={reviewed.completedHours} onClose={() => setReview(null)}
       onSaved={result => { setReview(null); setReloads(n => n + 1); onChanged?.(result); if (result.job) onJob?.(result.job); }} />}

@@ -278,3 +278,13 @@
 .coach-tab-dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
 .coach-checkin-open { justify-content: space-between; flex-wrap: wrap; }
 .coach-checkin-open button { margin-left: auto; }
+/* Settings: one section at a time, chosen from a wrapping list. */
+.settings-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }
+.ai-coach .settings-nav button { padding: 8px 13px; border: 1px solid var(--bd-d4dce7); border-radius: 999px; background: var(--bg-ffffff); color: var(--fg-475569); font-size: 12px; font-weight: 500; }
+.ai-coach .settings-nav button[aria-current="page"] { border-color: var(--accent); background: var(--accent-bg); color: var(--accent-text); }
+.settings-section h2 { margin: 0 0 6px; }
+.settings-section h3 { margin: 22px 0 8px; font-size: 13px; }
+.settings-usage { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--bd-e2e8f0); }
+.settings-usage h3 { margin: 0 0 6px; font-size: 13px; }
+.settings-usage p { margin: 4px 0; font-size: 13px; }
+.plan-adapt { justify-content: space-between; }

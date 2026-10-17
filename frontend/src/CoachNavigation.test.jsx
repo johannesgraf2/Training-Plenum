@@ -13,12 +13,12 @@ jest.mock('./AICoach', () => ({ ...jest.requireActual('./AICoach'), __esModule: 
   useEffect(() => { mockMounts += 1; }, []);
   useEffect(() => { onBusyChange?.(busy); }, [busy]);
   const start = () => {
-    setBusy('Der Coach erstellt einen Vorschlag …');
+    setBusy('Der Coach passt deinen Plan an …');
     new Promise(resolve => { mockFinish = resolve; }).then(text => { setResult(text); setBusy(''); });
   };
   return <div className="fake-coach">
     <span data-testid="tab">{initialTab}:{tabVersion}</span>
-    <button type="button" onClick={start}>Saisonplan vorschlagen lassen</button>
+    <button type="button" onClick={start}>Plan anpassen lassen</button>
     <p data-testid="result">{result}</p>
   </div>;
 } }));
@@ -49,20 +49,20 @@ test('a running coach request goes on while the athlete looks at the calendar an
   await act(async () => root.render(<App />));
   expect(coach()).toBeNull(); // The coach loads only once it is opened.
   click(nav('AI Coach'));
-  click([...coach().querySelectorAll('button')].find(b => b.textContent === 'Saisonplan vorschlagen lassen'));
+  click([...coach().querySelectorAll('button')].find(b => b.textContent === 'Plan anpassen lassen'));
   expect(container.querySelector('.app-nav-status')).toBeNull(); // No marker while the coach is on screen.
 
   click(nav('Kalender'));
   expect(coach().closest('[hidden]')).not.toBeNull();
-  expect(container.querySelector('.app-nav-status.busy').getAttribute('aria-label')).toBe('Läuft: Der Coach erstellt einen Vorschlag …');
+  expect(container.querySelector('.app-nav-status.busy').getAttribute('aria-label')).toBe('Läuft: Der Coach passt deinen Plan an …');
   click(nav('Dashboard'));
-  await act(async () => mockFinish('Drei Saisonpläne'));
+  await act(async () => mockFinish('Plan angepasst'));
   expect(container.querySelector('.app-nav-status.busy')).toBeNull();
   expect(container.querySelector('.app-nav-status.done')).not.toBeNull();
 
   click(nav('AI Coach'));
   expect(coach().closest('[hidden]')).toBeNull();
-  expect(container.querySelector('[data-testid="result"]').textContent).toBe('Drei Saisonpläne');
+  expect(container.querySelector('[data-testid="result"]').textContent).toBe('Plan angepasst');
   expect(container.querySelector('.app-nav-status')).toBeNull();
   expect(mockMounts).toBe(1);
 });

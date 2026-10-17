@@ -229,7 +229,8 @@ export default function App() {
   const openCoachPlan = () => { setCoachTab(t => ({ tab: 'today', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
   const checkInSaved = view => { setToday(view); setTodayVersion(v => v + 1); };
   const adjustAfterCheckIn = () => { setCheckInOpen(false); setCoachAdjust(v => v + 1); openCoachPlan(); };
-  const openCoachProfile = () => { setCoachTab(t => ({ tab: 'profile', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
+  // Goal, events and availability live in the coach settings.
+  const openCoachSettings = section => { setCoachTab(t => ({ tab: 'settings', section, version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
 
   const todayStr = new Date().toDateString();
 
@@ -335,7 +336,7 @@ export default function App() {
           </button>
           <UserMenu apiBase={API} user={user}
             onSaved={(saved, changed) => { setUser(saved); if (changed) { setProfileVersion(v => v + 1); setToast('Profil gespeichert.'); setTimeout(() => setToast(null), 3000); } }}
-            onOpenCoachProfile={openCoachProfile} onOpenWhoop={() => setShowWhoop(true)} onOpenGarmin={() => openHub('garmin')} />
+            onOpenCoachProfile={() => openCoachSettings('events')} onOpenWhoop={() => setShowWhoop(true)} onOpenGarmin={() => openHub('garmin')} />
         </div>
       </header>
 
@@ -354,7 +355,7 @@ export default function App() {
         ) : page === 'home' ? (
           <Home apiBase={API} activities={activities} plannedWorkouts={plannedWorkouts} workoutLoadError={workoutLoadError}
             onReloadWorkouts={reloadWorkouts} onOpenActivity={openActivity} onOpenWorkout={setWorkoutEditor}
-            onEditGoal={openCoachProfile} bestEffortsYear={calMonth.getFullYear()}
+            onEditGoal={() => openCoachSettings('events')} bestEffortsYear={calMonth.getFullYear()}
             whoopDays={whoopDays} onOpenWhoop={() => setShowWhoop(true)} onOpenCoach={openCoachPlan}
             today={today} onOpenCheckIn={() => setCheckInOpen(true)} />
         ) : page === 'calendar' ? (
@@ -427,7 +428,7 @@ export default function App() {
                         style={{ '--calendar-sport-color': sportColor(workout.sport) }}
                         aria-label={`${workout.name} am ${cell.date.toLocaleDateString('de-DE')} bearbeiten`}
                         draggable={!workout.locked}
-                        title={workout.locked ? 'Fixiert – im AI Coach lösen, um die Einheit zu verschieben' : 'Zum Verschieben auf einen anderen Tag ziehen'}
+                        title={workout.locked ? 'Wird behalten – im Plan des AI Coach lösen, um die Einheit zu verschieben' : 'Zum Verschieben auf einen anderen Tag ziehen'}
                         onDragStart={event => {
                           event.dataTransfer.setData(WORKOUT_DRAG_TYPE, workout.id);
                           event.dataTransfer.effectAllowed = 'move';
@@ -520,7 +521,7 @@ export default function App() {
           </div>
         ) : null}
         {coachOpened && <div hidden={!coachVisible}>
-          <AICoach initialTab={coachTab.tab} tabVersion={coachTab.version} adjustVersion={coachAdjust} todayVersion={todayVersion}
+          <AICoach initialTab={coachTab.tab} initialSection={coachTab.section} tabVersion={coachTab.version} adjustVersion={coachAdjust} todayVersion={todayVersion}
             apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
             onBusyChange={coachBusyChanged} onTodayChanged={setToday}
             onWorkoutsChanged={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })} />

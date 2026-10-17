@@ -27,8 +27,9 @@ from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OV
                           threshold_pace, update_profile, validate, week_events, week_season, week_start)
 from coach_chat import (MAX_HISTORY, MESSAGE_SCHEMA, apply_settings, check_ref, compact_session,
                         response_schema as chat_response_schema, week_lines)
-from coach_plan import (FRAME_RESPONSE_SCHEMA, REVIEW_SCHEMA, check_frame, check_tests, deviation, due_week, frame_blocks,
-                        frame_hint, group_sessions, horizon, plan_span, plan_weeks, reference_monday, required_tests)
+from coach_plan import (ADAPT_SCHEMA, FRAME_RESPONSE_SCHEMA, REFRAME_AREAS, REVIEW_SCHEMA, adapt_response_schema, adopt_blocks,
+                        check_frame, check_tests, cut_frame, deviation, due_week, frame_blocks, frame_hint, group_sessions, horizon,
+                        plan_span, plan_weeks, reference_monday, required_tests)
 from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_order,
                           check_season, first_monday, new_season, public_season, season_frame, typical_season, with_fixed)
 from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, flat_steps, render_session, template_catalog
@@ -191,11 +192,16 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
     def workouts():
         return {row.id: row for row in PlannedWorkout.query.filter_by(user_id=user_id).all()}
 
+    def stored_plan(current_profile):
+        """The saved plan in the current shape; blocks from before the phases read as a plan with phases."""
+        # Saved in the new shape with the next change.
+        return adopt_blocks(migrate_plan(json.loads(state().plan)), current_profile, datetime.now(zone()).date())
+
     def current_plan():
         value = state()
-        plan = migrate_plan(json.loads(value.plan))  # Saved in the new shape on the next confirmed change.
-        saved = workouts()
         current_profile = profile()
+        plan = stored_plan(current_profile)
+        saved = workouts()
         for week in plan['weeks'].values():
             updated = []
             for session in week['sessions']:
@@ -587,10 +593,15 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
     @app.route('/api/coach/plan/settings', methods=['GET', 'PUT'])
     def edit_plan_settings():
         record = state()
-        stored = migrate_plan(json.loads(record.plan))
+        stored = stored_plan(profile())
         if request.method == 'PUT':
-            stored['settings'] = plan_settings(request.get_json(silent=True), stored.get('settings'),
-                                               datetime.now(timezone.utc).isoformat(timespec='seconds'))
+            settings = plan_settings(request.get_json(silent=True), stored.get('settings'),
+                                     datetime.now(timezone.utc).isoformat(timespec='seconds'))
+            frame = stored.get('frame')
+            # A running plan keeps its start; a new end lays out its phases again once the athlete agrees.
+            if frame and frame['status'] == 'active' and settings['startDate'] != stored['settings']['startDate']:
+                raise CoachError('Der Start eines laufenden Plans bleibt. Für einen neuen Start den Plan beenden und neu erstellen.')
+            stored['settings'] = settings
             record.plan = packed(stored)
             record.revision += 1
             db.session.commit()
@@ -1039,7 +1050,14 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'weeks not yet worked out goes into settings and acts when they are worked out; patch the worked-out weeks inside '
         'the period as well. change.summary is one short German line for the change card. systemNote.rejectedChange is '
         'why the server rejected your previous change: say in one sentence why it does not work and offer an alternative '
-        'change that keeps the rules.'
+        'change that keeps the rules. '
+        'replan in a frame task means the plan already runs and the athlete changed its events or end (replan.changes): lay '
+        'out only the rest from plan.firstMonday; replan.phasesSoFar are the phases up to there and the next phase may '
+        'continue their build-up. '
+        'Adapt task: the athlete changed settings (changes.areas: availability, events, thresholds, sports, period). Check '
+        'each week in workedOutWeeks against its current rules (availability, events, fixedSessions, elapsedDays, '
+        'blockRules, thresholds, training rules) and put one patch into adjustments for each week that should change; '
+        'weeks that still fit stay out. targetHours is the new total of that week; never make up missed volume.'
     )
 
     def previous_block(block, plan, rows, today):
@@ -1511,8 +1529,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                                      on_usage=usage_recorder(kind, model))
         return copy.deepcopy(validate(decision, schema))  # Also enforce schema for alternate provider adapters.
 
-    def build_frame(settings):
-        """One AI call for all phases with their weekly targets, stored as blocks with source plan."""
+    def ask_frame(settings, extra=None):
+        """One AI call for the phases from the plan start to its end with their weekly targets, checked."""
         current_profile, plan = profile(), current_plan()
         today = datetime.now(zone()).date()
         first, total = plan_span(settings)
@@ -1546,9 +1564,16 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         context['snapshot']['selfReported']['dailyOverrides'] = []
         context['snapshot']['selfReported']['weeklyOverrides'] = []
         context['snapshot']['selfReported']['injuries'] = wellness_context(current_profile, today)['injuries']
+        context.update(extra or {})
         decision = generate('frame', context, FRAME_RESPONSE_SCHEMA)
-        current_profile, plan = profile(), current_plan()  # Re-read after the provider call.
-        check_frame(decision['phases'], settings, current_profile)
+        check_frame(decision['phases'], settings, profile())  # Re-read after the provider call.
+        return decision
+
+    def build_frame(settings):
+        """The phases of a new plan, stored as blocks with source plan."""
+        decision = ask_frame(settings)
+        plan = current_plan()
+        first, _ = plan_span(settings)
         blocks = plan['blocks']
         new_blocks = frame_blocks(decision['phases'], first)
         for block in new_blocks:
@@ -1654,6 +1679,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
     @app.route('/api/coach/plan/create/<identity>')
     @app.route('/api/coach/plan/advance/<identity>')
+    @app.route('/api/coach/plan/adapt/<identity>')
     def get_job(identity):
         job = CoachJob.query.filter_by(id=identity, user_id=user_id).first_or_404()
         return jsonify(job=job_view(job))
@@ -1775,6 +1801,112 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             return jsonify({**public_plan(), 'job': response.get_json()['job']}), 200 if status == 202 else status
         return jsonify({**public_plan(), 'job': None})
 
+    def worked_out_weeks(plan, today):
+        """The weeks of the plan with sessions that are not over yet."""
+        weeks = plan_weeks(plan['settings'])
+        return [key for key in sorted(plan['weeks']) if key in weeks and week_start(key) + timedelta(days=6) >= today]
+
+    def rebuild_frame(changes):
+        """Phases after the worked-out weeks again, up to the possibly moved plan end; earlier phases stay."""
+        plan = current_plan()
+        settings, frame = plan['settings'], active_frame(plan)
+        today = datetime.now(zone()).date()
+        first, total = plan_span(settings)
+        worked = worked_out_weeks(plan, today)
+        start = max(first, week_start(worked[-1]) + timedelta(weeks=1) if worked else today - timedelta(days=today.weekday()))
+        after_end = first + timedelta(weeks=total)
+        decision = None
+        if start < after_end:
+            blocks, kept = cut_frame(plan['blocks'], set(frame['blockIds']), start)
+            decision = ask_frame({**settings, 'startDate': start.isoformat()}, {'replan': {
+                'source': 'calculated', 'changes': changes, 'planStart': settings['startDate'],
+                'phasesSoFar': [{key: b[key] for key in ('blockType', 'startDate', 'endDate')} | {'weeks': len(b['weeks'])}
+                                for b in blocks if b['id'] in kept]}})
+            plan = current_plan()  # Re-read after the provider call.
+        blocks, kept = cut_frame(plan['blocks'], set(frame['blockIds']), min(start, after_end))
+        new_blocks = frame_blocks(decision['phases'], start) if decision else []
+        if new_blocks:
+            blocks, _ = place_block(blocks, plan['weeks'], start, sum(len(b['weeks']) for b in new_blocks))
+        plan['blocks'] = blocks + new_blocks
+        plan['frame'] = {**frame, 'endDate': settings['endDate'], 'blockIds': kept + [b['id'] for b in new_blocks],
+                         'updatedAt': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                         **({'rationale': decision['rationale'], 'hinweise': [h.strip() for h in decision['hinweise'] if h.strip()]}
+                            if decision else {})}
+        save_plan(plan)
+        db.session.commit()
+
+    def adapt_weeks(changes):
+        """Checks the worked-out weeks against the changed settings in one AI call; changed weeks become a proposal."""
+        plan, current_profile = current_plan(), profile()
+        today = datetime.now(zone()).date()
+        keys = worked_out_weeks(plan, today)
+        decision, afters, befores, hinweise, rejected = None, {}, {}, [], []
+        if keys:
+            first_day = plan_start_day(plan, today)
+            context = {'task': 'adapt', 'today': today.isoformat(), 'changes': {'source': 'athlete', 'areas': changes},
+                       **plan_context(plan, current_profile, today), 'wellness': wellness_context(current_profile, today),
+                       'workedOutWeeks': [
+                           worked_week(plan, current_profile, key, first_day) for key in keys]}
+            schema = adapt_response_schema(response_schemas(SESSION_SCHEMA)['patch'])
+            decision = generate('adapt', context, schema)
+            current_profile, plan = profile(), current_plan()  # Re-read after the provider call.
+            hinweise = [h.strip() for h in decision['hinweise'] if h.strip()]
+            for item in decision['adjustments']:
+                key = item['week']
+                try:
+                    if key not in keys or key in afters:
+                        raise CoachError('Anpassungen gibt es nur für die schon ausgearbeiteten Wochen.')
+                    after = finish_week(item, plan['weeks'][key], key, 'patch', current_profile, plan, first_day)
+                except (CoachError, TemplateError) as error:
+                    rejected.append({'week': key, 'reason': str(error)})  # The other weeks still count.
+                    continue
+                if week_lines(plan['weeks'][key], after) or after['targetHours'] != plan['weeks'][key]['targetHours']:
+                    befores[key], afters[key] = plan['weeks'][key], after
+                    hinweise += [h.strip() for h in item['hinweise'] if h.strip()]
+        # The note is gone before the proposal takes its fingerprint.
+        plan.pop('adapt', None)
+        save_plan(plan)
+        db.session.commit()
+        proposal = None
+        if afters:
+            proposal, _ = stage('weeks', befores, afters, hinweise, decision['adjustments'], fingerprint(),
+                                timezone_name=g.get('coach_timezone'), reason='settings')
+        return {'proposalId': proposal.id if proposal else None, 'weeks': len(keys), 'changedWeeks': sorted(afters),
+                'hinweise': hinweise, 'rejectedAdjustments': rejected}
+
+    @app.route('/api/coach/plan/adapt', methods=['POST'])
+    def adapt_plan():
+        """"Soll ich deinen Plan anpassen?" after plan-relevant settings: later only notes it for the plan; otherwise new
+        phases after the worked-out weeks for events and the plan end, and a proposal for the worked-out weeks."""
+        data = validate(request.get_json(silent=True), ADAPT_SCHEMA)
+        plan = current_plan()
+        if not active_frame(plan):
+            raise CoachError('Es gibt noch keinen Plan, den der Coach anpassen könnte.')
+        noted = (plan.get('adapt') or {}).get('changes', [])
+        changes = [area for area in ADAPT_SCHEMA['properties']['changes']['items']['enum'] if area in {*noted, *data['changes']}]
+        # Noted first, so a failed run leaves the hint in the plan.
+        plan['adapt'] = {'changes': changes, 'since': (plan.get('adapt') or {}).get('since') or datetime.now(zone()).date().isoformat()}
+        save_plan(plan)
+        db.session.commit()
+        if data.get('later'):
+            return jsonify({'adapt': plan['adapt'], 'job': None})
+        configured_provider()
+        reframe = bool(REFRAME_AREAS & set(changes))
+        steps = ([{'id': 'frame', 'label': 'Phasen neu festlegen', 'status': 'pending'}] if reframe else []) + \
+            [{'id': 'weeks', 'label': 'Ausgearbeitete Wochen prüfen', 'status': 'pending'}]
+
+        def work(identity):
+            if reframe:
+                update_job(identity, 'frame', 'running')
+                rebuild_frame(changes)
+                update_job(identity, 'frame', 'done')
+            update_job(identity, 'weeks', 'running')
+            result = adapt_weeks(changes)
+            update_job(identity, 'weeks', 'done')
+            return {'changes': changes, 'frameChanged': reframe, **result}
+
+        return start_job('adapt', steps, work)
+
     @app.route('/api/coach/plan/reset', methods=['POST'])
     def reset_plan():
         """Ends the running phases: later weeks and today's and later sessions go, the past stays."""
@@ -1814,6 +1946,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                 blocks.append({**block, 'status': 'abandoned', 'endDate': sunday.isoformat()})
         plan['blocks'] = blocks
         plan.pop('season', None)
+        plan.pop('adapt', None)
         if plan.get('frame'):
             plan['frame'] = {**plan['frame'], 'status': 'ended', 'endedAt': datetime.now(timezone.utc).isoformat(timespec='seconds')}
         save_plan(plan)
@@ -1862,6 +1995,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             'events': [{**e, 'planWeek': (day_date(e['startDate']) - first).days // 7 + 1} for e in current_profile['events']
                        if first.isoformat() <= e['startDate'] <= (first + timedelta(weeks=total, days=-1)).isoformat()],
             'weeks': weeks, 'nextManualWeek': advance_state(plan, 'manual'), 'job': job_view(busy) if busy else None,
+            # Settings changed and the athlete chose "Später": the plan offers to adapt.
+            'adapt': plan.get('adapt'),
             'sources': {'targetHours': 'aiRecommendation', 'plan': 'aiRecommendation', 'completedHours': 'calculated'}})
 
     @app.route('/api/coach/proposals/<identity>')
@@ -1900,53 +2035,35 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                               'createdAt': row.created_at.replace(tzinfo=timezone.utc).isoformat(timespec='seconds'),
                               'change': change_view(proposals.get(row.proposal_id))} for row in rows]}
 
-    def chat_context(plan, current_profile, today, message, ref):
-        """Snapshot, phases, worked-out weeks with their rules, events, availability, wellness and the last messages."""
-        current = iso_week(today)
+    def worked_week(plan, current_profile, key, first_day):
+        """A worked-out week with the rules a change of it has to keep."""
+        value, monday = plan['weeks'][key], week_start(key)
+        block, number = block_for_week(plan['blocks'], monday)
+        item = {'week': key, 'targetHours': value['targetHours'], 'calculatedHours': value['calculatedHours'], 'focus': value['focus'],
+                'sessions': [compact_session(s) for s in value['sessions']], 'fixedSessions': fixed_sessions(key, value),
+                'availability': effective_availability(current_profile, key), 'events': week_events(current_profile, key),
+                'minRideMinutes': min_ride_minutes(current_profile, monday)}
+        if block:
+            item['block'] = {'type': block['blockType'], 'name': BLOCK_TYPES[block['blockType']]['name'], 'weekNumber': number,
+                             'phase': block['weeks'][number - 1]['phase'] if number <= len(block['weeks']) else None}
+            item['blockRules'] = rule_texts(block['blockType'])
+        if monday <= first_day <= monday + timedelta(days=6):
+            item['elapsedDays'] = DAYS[:first_day.weekday()]
+        return item
+
+    def plan_context(plan, current_profile, today):
+        """Phases, events, availability, thresholds, templates and training rules for changes of worked-out weeks."""
         frame = active_frame(plan)
-        first_day = plan_start_day(plan, today) if plan.get('settings') else today
-        rows = load_rows()
         blocks = [b for b in plan['blocks'] if frame and b['id'] in frame['blockIds']] or \
             [b for b in plan['blocks'] if b['status'] != 'abandoned' and day_date(b['endDate']) >= today]
-        worked = []
-        for key in sorted(k for k in plan['weeks'] if k >= current):
-            value, monday = plan['weeks'][key], week_start(key)
-            block, number = block_for_week(plan['blocks'], monday)
-            item = {'week': key, 'targetHours': value['targetHours'], 'calculatedHours': value['calculatedHours'], 'focus': value['focus'],
-                    'sessions': [compact_session(s) for s in value['sessions']], 'fixedSessions': fixed_sessions(key, value),
-                    'availability': effective_availability(current_profile, key), 'events': week_events(current_profile, key),
-                    'minRideMinutes': min_ride_minutes(current_profile, monday)}
-            if block:
-                item['block'] = {'type': block['blockType'], 'name': BLOCK_TYPES[block['blockType']]['name'], 'weekNumber': number,
-                                 'phase': block['weeks'][number - 1]['phase'] if number <= len(block['weeks']) else None}
-                item['blockRules'] = rule_texts(block['blockType'])
-            if monday <= first_day <= monday + timedelta(days=6):
-                item['elapsedDays'] = DAYS[:first_day.weekday()]
-            worked.append(item)
-        past = []
-        for key in sorted(k for k in plan['weeks'] if k < current)[-6:]:
-            value, monday = plan['weeks'][key], week_start(key)
-            past.append({'week': key, 'targetHours': value['targetHours'], 'plannedHours': value['calculatedHours'], 'focus': value['focus'],
-                         'completedHours': summarize_period(rows, zone(), monday, monday + timedelta(days=6), user().ftp,
-                                                            user().max_hr)['trainingHours'],
-                         'review': value.get('review'), 'missedSessions': value.get('missedSessions')})
-        history = CoachChatMessage.query.filter_by(user_id=user_id, hidden=False).order_by(CoachChatMessage.id.desc()).limit(MAX_HISTORY).all()
-        changes = {row.proposal_id: db.session.get(CoachProposal, row.proposal_id) for row in history if row.proposal_id}
         availability = current_profile['availability']
-        context = {
-            'task': 'chat', 'today': today.isoformat(), 'weekday': DAYS[today.weekday()],
-            'message': {'source': 'athlete', 'text': message}, 'ref': ref,
-            'history': [{'role': row.role, 'text': row.text,
-                         **({'change': {'summary': json.loads(changes[row.proposal_id].definition)['summary'],
-                                        'status': proposal_status(changes[row.proposal_id])}} if changes.get(row.proposal_id) else {})}
-                        for row in reversed(history)],
+        return {
             'plan': {'frame': {key: frame[key] for key in ('startDate', 'endDate', 'rationale')} if frame else None,
                      'replanMode': (plan.get('settings') or {}).get('replanMode'),
                      'phases': [{'blockType': b['blockType'], 'name': BLOCK_TYPES[b['blockType']]['name'], 'purpose': b.get('purpose'),
                                  'startDate': b['startDate'], 'endDate': b['endDate'],
                                  'weeks': [{k: w[k] for k in ('week', 'phase', 'targetHours', 'focus')} for w in b['weeks']]}
                                 for b in blocks]},
-            'workedOutWeeks': worked, 'pastWeeks': past,
             'events': [{**{k: e[k] for k in ('title', 'sport', 'subtype', 'priority', 'handling', 'startDate', 'endDate',
                                               'distanceKm', 'targetSeconds', 'elevationM')},
                         'athleteWish': {'source': 'athlete', 'text': e['description']}}
@@ -1958,7 +2075,32 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                            'thresholdPaceSecPerKm': threshold_pace(current_profile), 'metrics': current_profile['metrics']},
             'templates': [t for t in template_catalog() if t['sport'] in (*current_profile['goal']['sports'], 'strength', 'rest')],
             'trainingRules': {'source': 'athlete', 'sports': current_profile['goal']['sports'],
-                              'gymAvailability': current_profile['preferences']['gymAvailability']},
+                              'gymAvailability': current_profile['preferences']['gymAvailability']}}
+
+    def chat_context(plan, current_profile, today, message, ref):
+        """Snapshot, phases, worked-out weeks with their rules, events, availability, wellness and the last messages."""
+        current = iso_week(today)
+        first_day = plan_start_day(plan, today) if plan.get('settings') else today
+        rows = load_rows()
+        worked = [worked_week(plan, current_profile, key, first_day) for key in sorted(k for k in plan['weeks'] if k >= current)]
+        past = []
+        for key in sorted(k for k in plan['weeks'] if k < current)[-6:]:
+            value, monday = plan['weeks'][key], week_start(key)
+            past.append({'week': key, 'targetHours': value['targetHours'], 'plannedHours': value['calculatedHours'], 'focus': value['focus'],
+                         'completedHours': summarize_period(rows, zone(), monday, monday + timedelta(days=6), user().ftp,
+                                                            user().max_hr)['trainingHours'],
+                         'review': value.get('review'), 'missedSessions': value.get('missedSessions')})
+        history = CoachChatMessage.query.filter_by(user_id=user_id, hidden=False).order_by(CoachChatMessage.id.desc()).limit(MAX_HISTORY).all()
+        changes = {row.proposal_id: db.session.get(CoachProposal, row.proposal_id) for row in history if row.proposal_id}
+        context = {
+            'task': 'chat', 'today': today.isoformat(), 'weekday': DAYS[today.weekday()],
+            'message': {'source': 'athlete', 'text': message}, 'ref': ref,
+            'history': [{'role': row.role, 'text': row.text,
+                         **({'change': {'summary': json.loads(changes[row.proposal_id].definition)['summary'],
+                                        'status': proposal_status(changes[row.proposal_id])}} if changes.get(row.proposal_id) else {})}
+                        for row in reversed(history)],
+            **plan_context(plan, current_profile, today),
+            'workedOutWeeks': worked, 'pastWeeks': past,
             'snapshot': snapshot()}
         context['snapshot']['selfReported']['checkIns'] = current_profile['checkIns'][-7:]
         context['snapshot']['selfReported']['dailyOverrides'] = []
