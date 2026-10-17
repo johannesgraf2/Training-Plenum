@@ -10,7 +10,7 @@ from urllib.error import HTTPError, URLError
 from cryptography.fernet import Fernet
 
 from ai_provider import (DEFAULT_MODEL, MAX_RESPONSE_BYTES, OpenAIProvider, ProviderError,
-                         _NoRedirect, decrypt_key, encrypt_key, ensure_server_key, get_provider, validate_response)
+                         _NoRedirect, decrypt_key, encrypt_key, ensure_server_key, get_provider, usage_cost, validate_response)
 
 
 SCHEMA = {'type': 'object', 'properties': {'hours': {'type': 'number', 'minimum': 0, 'maximum': 20}},
@@ -91,6 +91,22 @@ class ProviderTests(unittest.TestCase):
             with self.assertRaises(ProviderError):
                 self.provider.generate('secret-api-key', 'gpt-6-sol', 'x', {}, SCHEMA, reasoning_effort='extreme')
             request.assert_not_called()
+
+    def test_token_usage_is_reported_even_when_the_answer_is_unusable(self):
+        usage = {'input_tokens': 1200, 'output_tokens': 300, 'input_tokens_details': {'cached_tokens': 1000},
+                 'output_tokens_details': {'reasoning_tokens': 200}}
+        reported = []
+        with patch('ai_provider.build_opener', return_value=self.fake_http({**envelope(), 'usage': usage})):
+            self.provider.generate('secret-api-key', DEFAULT_MODEL, 'x', {}, SCHEMA, on_usage=reported.append)
+        with patch('ai_provider.build_opener', return_value=self.fake_http({**envelope('{"hours": 99}'), 'usage': usage})):
+            with self.assertRaises(ProviderError):
+                self.provider.generate('secret-api-key', DEFAULT_MODEL, 'x', {}, SCHEMA, on_usage=reported.append)
+        with patch('ai_provider.build_opener', return_value=self.fake_http(envelope())):
+            self.provider.generate('secret-api-key', DEFAULT_MODEL, 'x', {}, SCHEMA, on_usage=reported.append)
+        self.assertEqual(reported, [{'inputTokens': 1200, 'outputTokens': 300, 'cachedTokens': 1000}] * 2)
+        self.assertAlmostEqual(usage_cost('gpt-6-astra', 1_000_000, 100_000), 15)
+        self.assertAlmostEqual(usage_cost('gpt-6.1-sol', 50_000, 30_000), .4)
+        self.assertIsNone(usage_cost('gpt-4.1-mini', 1000, 1000))
 
     def test_connection_does_not_generate_and_checks_model(self):
         opener = self.fake_http({'id': DEFAULT_MODEL, 'object': 'model'})

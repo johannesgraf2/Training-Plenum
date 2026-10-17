@@ -2,8 +2,9 @@ import copy
 import unittest
 from datetime import date
 
-from coach_domain import (CHECK_IN_SCHEMA, DAILY_SCHEMA, DEFAULT_PROFILE, DAYS, BLOCK_WEEKS_SCHEMA,
-                          WEEK_OVERRIDE_SCHEMA, CoachError, apply_patch, day_date,
+from coach_domain import (CHECK_IN_SCHEMA, DAILY_SCHEMA, DEFAULT_PROFILE, DAYS, BLOCK_WEEKS_SCHEMA, EVENT_DEFAULTS,
+                          WEEK_OVERRIDE_SCHEMA, CoachError, apply_patch, complete_event, day_date, plan_settings, threshold_pace,
+                          week_events,
                           complete_profile, effective_availability, iso_week, min_ride_minutes, preferred_hours,
                           response_schemas, rest_day_pairs, update_profile, week_season,
                           validate, week_start)
@@ -226,3 +227,124 @@ class PatchTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def window(identity, day, start=None, end=None, kind='available', sports=None, group=None):
+    return {'id': identity, 'day': day, 'kind': kind, 'allDay': start is None, 'from': start, 'to': end,
+            'sports': {'ride': {'indoor': True, 'outdoor': True}} if sports is None else sports, 'group': group}
+
+
+class PlanInputTests(unittest.TestCase):
+    def test_sports_metrics_and_thresholds_with_their_origin(self):
+        stored = profile()
+        for key in ('sports', 'metrics', 'thresholds'):
+            del stored[key]  # stored before these fields existed
+        stored['preferences'] = {'gymAvailability': True}
+        value = complete_profile(stored)
+        self.assertEqual((value['sports'], value['metrics'], value['thresholds']),
+                         (['ride', 'strength'], {'ride': 'power', 'run': 'pace'}, {}))
+        value = update_profile(value, {'sports': ['ride', 'run', 'strength'], 'metrics': {'run': 'heart_rate'},
+                                       'thresholds': {'ride': {'source': 'test'},
+                                                      'run': {'source': 'calculated', 'paceSecPerKm': 270, 'basis': '10km'}}})
+        self.assertEqual(value['metrics'], {'ride': 'power', 'run': 'heart_rate'})
+        self.assertIsNone(threshold_pace(value))  # heart rate is the primary metric
+        self.assertEqual(threshold_pace(update_profile(value, {'metrics': {'run': 'pace'}})), 270)
+        self.assertIsNone(threshold_pace(update_profile(value, {'thresholds': {'run': {'source': 'test', 'paceSecPerKm': None,
+                                                                                        'basis': None}}})))
+        for bad in ({'sports': ['ride', 'ride']}, {'sports': ['golf']}, {'metrics': {'ride': 'pace'}},
+                    {'thresholds': {'run': {'source': 'athlete', 'paceSecPerKm': None, 'basis': None}}},
+                    {'thresholds': {'run': {'source': 'athlete', 'paceSecPerKm': 60, 'basis': None}}}):
+            with self.subTest(value=bad), self.assertRaises(CoachError):
+                update_profile(value, bad)
+
+    def test_a_named_goal_date_becomes_the_a_event(self):
+        stored = profile()
+        del stored['events']
+        stored['goal'] = {'type': 'event', 'sports': ['ride'], 'name': ' NorthCape 4000 ', 'date': '2027-07-29', 'target': 'Ankommen'}
+        events = complete_profile(stored)['events']
+        self.assertEqual(events, [{**EVENT_DEFAULTS, 'id': 'goal-2027-07-29', 'title': 'NorthCape 4000', 'sport': 'ride',
+                                   'startDate': '2027-07-29', 'endDate': '2027-07-29', 'priority': 'A',
+                                   'description': 'Ankommen'}])
+        self.assertEqual(complete_profile(stored)['events'], events)
+        stored['goal']['name'] = ''
+        self.assertEqual(complete_profile(stored)['events'], [])
+        stored['events'] = []
+        stored['goal']['name'] = 'Saved later'
+        self.assertEqual(complete_profile(stored)['events'], [])  # only profiles from before events move over
+
+    def test_events_take_ultra_distances_multi_day_times_and_b_c_options(self):
+        event = complete_event({'title': 'NorthCape 4000', 'sport': 'ride', 'subtype': 'ultra', 'startDate': '2027-07-29',
+                                'endDate': '2027-08-12', 'priority': 'A', 'distanceKm': 4000,
+                                'targetSeconds': 10 * 86400 + 12 * 3600, 'elevationM': 30000}, 'nc')
+        self.assertEqual((event['handling'], event['allDay'], event['time'], event['description']), (None, True, None, ''))
+        self.assertEqual(complete_event({'title': 'Gran Fondo', 'sport': 'ride', 'startDate': '2027-05-16', 'priority': 'B',
+                                         'allDay': False, 'time': '08:30'}, 'gf')['handling'], 'miniTaper')
+        self.assertEqual(complete_event({'title': 'Kriterium', 'sport': 'ride', 'startDate': '2027-05-16', 'priority': 'C',
+                                         'time': '18:00'}, 'c')['handling'], 'replaceHard')
+        base = {'title': 'Rennen', 'sport': 'ride', 'startDate': '2027-05-16', 'priority': 'B'}
+        for bad in ({'endDate': '2027-05-15'}, {'endDate': '2027-08-01'}, {'priority': 'A', 'handling': 'miniTaper'},
+                    {'handling': 'replaceHard'}, {'subtype': 'marathon'}, {'distanceKm': 10001},
+                    {'targetSeconds': 61 * 86400}, {'elevationM': 100001}, {'allDay': False}, {'title': '  '},
+                    {'time': '25:00'}, {'startDate': '2027-02-30'}, {'unknown': 1}):
+            with self.subTest(value=bad), self.assertRaises(CoachError):
+                complete_event({**base, **bad}, 'x')
+
+    def test_windows_set_the_minutes_per_day_and_the_week_settings(self):
+        windows = [window('tue', 'tue', '18:00', '19:00', sports={'ride': {'indoor': True, 'outdoor': False},
+                                                                  'run': {'treadmill': False, 'outdoor': True}}),
+                   window('wed', 'wed', '18:00', '20:00', group={'sport': 'ride', 'intensity': 'hard', 'note': 'Vereinsausfahrt'}),
+                   window('sat', 'sat', '07:00', '14:00'), window('sat-late', 'sat', '13:00', '15:00'),
+                   window('sat-off', 'sat', '10:00', '11:00', kind='unavailable', sports={}),
+                   window('sun', 'sun', sports={'strength': {'equipment': ['kettlebell']}})]
+        value = update_profile(profile(), {'availability': {'windows': windows, 'maxWeeklyHours': None,
+                                                            'restDay': 'mon', 'longDay': 'sat'}})
+        minutes = value['availability']['defaultAvailability']
+        self.assertEqual(minutes, {'mon': 0, 'tue': 60, 'wed': 120, 'thu': 0, 'fri': 0, 'sat': 420, 'sun': 1440})
+        self.assertEqual(value['availability']['absoluteMaxWeeklyHours'], 34)
+        self.assertEqual((value['preferences']['preferredRestDay'], value['preferences']['preferredLongSessionDay']), ('mon', 'sat'))
+        self.assertTrue(effective_availability(value, '2026-W40')['sat']['preferLong'])
+        capped = update_profile(value, {'availability': {'maxWeeklyHours': 10}})
+        self.assertEqual(capped['availability']['absoluteMaxWeeklyHours'], 10)
+        self.assertEqual(update_profile(value, {'availability': {'windows': [window('a', 'mon', '06:00', '24:00')]}})
+                         ['availability']['defaultAvailability']['mon'], 1080)
+        for bad in ([window('a', 'mon', '19:00', '18:00')], [window('a', 'mon', '18:00', None)],
+                    [window('a', 'mon', '18:00', '19:00'), window('a', 'tue', '18:00', '19:00')],
+                    [window('a', 'mon', kind='unavailable')],
+                    [window('a', 'mon', group={'sport': 'ride', 'intensity': 'easy', 'note': ''})],
+                    [window('a', 'mon', '18:00', '19:00', group={'sport': 'run', 'intensity': 'easy', 'note': ''})],
+                    [window('a', 'mon', '24:00', '24:00')], [{**window('a', 'mon'), 'sports': {'ride': {'indoor': True}}}]):
+            with self.subTest(value=bad), self.assertRaises(CoachError):
+                update_profile(value, {'availability': {'windows': bad}})
+
+    def test_exceptions_act_as_daily_overrides(self):
+        value = update_profile(profile(), {'availability': {'exceptions': [
+            {'id': 'mallorca', 'from': '2026-10-01', 'to': '2026-10-03', 'kind': 'available', 'maxMinutes': 300, 'note': 'Mallorca'},
+            {'id': 'sick', 'from': '2026-09-28', 'to': '2026-09-29', 'kind': 'unavailable', 'maxMinutes': 60, 'note': 'Erkältet'}]}})
+        self.assertEqual([e['id'] for e in value['availability']['exceptions']], ['sick', 'mallorca'])
+        self.assertIsNone(value['availability']['exceptions'][0]['maxMinutes'])
+        # A cleared override ({} or only a note) leaves the exception in place.
+        value['dailyOverrides'] = [{'date': '2026-09-28'}, {'date': '2026-10-02', 'note': 'Flug'},
+                                   {'date': '2026-10-03', 'maxMinutes': 90}]
+        week = effective_availability(value, '2026-W40')  # Mon 28 Sep - Sun 4 Oct
+        self.assertEqual([week[d]['maxMinutes'] for d in DAYS], [0, 0, 120, 300, 300, 90, 120])
+        self.assertEqual(week['fri']['note'], 'Flug')
+        self.assertEqual(week['thu']['exception'], {'id': 'mallorca', 'note': 'Mallorca'})
+        self.assertNotIn('exception', week['sat'])
+        for bad in ({'from': '2026-10-03', 'to': '2026-10-01'}, {'kind': 'available', 'maxMinutes': None}, {'to': '2026-13-01'}):
+            item = {'id': 'x', 'from': '2026-10-01', 'to': '2026-10-02', 'kind': 'unavailable', 'maxMinutes': None, 'note': '', **bad}
+            with self.subTest(value=bad), self.assertRaises(CoachError):
+                update_profile(value, {'availability': {'exceptions': [item]}})
+
+    def test_week_entries_and_plan_settings(self):
+        value = profile()
+        value['events'] = [complete_event({'title': 'NC', 'sport': 'ride', 'startDate': '2026-09-27', 'endDate': '2026-09-29',
+                                           'priority': 'A'}, 'nc'),
+                           complete_event({'title': 'Later', 'sport': 'run', 'startDate': '2026-10-05', 'priority': 'C'}, 'later')]
+        self.assertEqual([(e['kind'], e['id']) for e in week_events(value, '2026-W40')], [('event', 'nc')])
+        first = plan_settings({'startDate': '2026-10-19', 'endDate': '2027-08-12', 'replanMode': 'afterReview'}, None, 'now')
+        self.assertEqual(first['createdAt'], 'now')
+        self.assertEqual(plan_settings({'startDate': '2026-10-19', 'endDate': '2030-01-01', 'replanMode': 'manual'}, first, 'later'),
+                         {'startDate': '2026-10-19', 'endDate': '2030-01-01', 'replanMode': 'manual', 'createdAt': 'now'})
+        for bad in ({'endDate': '2026-10-19'}, {'replanMode': 'daily'}, {'startDate': 'soon'}):
+            with self.subTest(value=bad), self.assertRaises(CoachError):
+                plan_settings({'startDate': '2026-10-19', 'endDate': '2027-01-01', 'replanMode': 'sunday', **bad}, None, 'now')

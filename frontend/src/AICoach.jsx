@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Icon } from './icons';
-import { localDate, summary as workoutSummary } from './workoutModel';
+import { localDate, mainPace, summary as workoutSummary } from './workoutModel';
 import { workoutLibrary } from './workoutLibraryData';
 import { CheckInDialog, CheckInHistory, InjuryList, PeriodHeader, ReadinessCard, TodaySessions, healInjury, loadToday } from './CoachToday';
 import './AICoach.css';
@@ -34,7 +34,7 @@ const SITUATION_HINTS = { nach_pause: 'Du steigst nach Krankheit, Urlaub oder Pa
 const WIZARD_STEPS = ['Ausgangslage', 'Weg', 'Auswahl', 'Vorschau'];
 const SEASON_WIZARD_STEPS = ['Ausgangslage', 'Block gestalten', 'Vorschau'];
 const EMPTY_WORKOUTS = [];
-const MODEL_PRESETS = ['gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5-mini', 'gpt-5', 'gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'];
+const MODEL_PRESETS = ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5-mini', 'gpt-5', 'gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'];
 const REASONING_LEVELS = [['', 'Standard des Modells'], ['low', 'Niedrig'], ['medium', 'Mittel'], ['high', 'Hoch']];
 const number = value => value === '' || value == null ? null : Number(value);
 const fmt = value => value == null ? '—' : Number(value).toLocaleString('de-DE', { maximumFractionDigits: 1 });
@@ -277,7 +277,7 @@ function SessionList({ value }) {
   return <><p className="coach-week-focus"><strong>{hours(value.targetHours)}</strong> · {value.focus || 'Trainingswoche'}</p>
     <div className="coach-sessions">{(value.sessions || []).map((session, i) => <div className="coach-session" key={session.id || i}>
       <strong className="coach-day">{DAYS.find(([d]) => d === session.day)?.[1] || session.day}</strong>
-      <div><strong>{sessionName(session)}</strong><small>{session.rendered?.date && `${dateLabel(session.rendered.date)} · `}{sessionDuration(session) == null ? 'Dauer offen' : `${fmt(sessionDuration(session))} min`}{session.rendered?.estimatedTss != null && ` · ${fmt(session.rendered.estimatedTss)} TSS`}</small>{session.rendered?.notes && <small className="coach-session-note">{session.rendered.notes}</small>}</div>
+      <div><strong>{sessionName(session)}</strong><small>{session.rendered?.date && `${dateLabel(session.rendered.date)} · `}{sessionDuration(session) == null ? 'Dauer offen' : `${fmt(sessionDuration(session))} min`}{session.rendered?.estimatedTss != null && ` · ${fmt(session.rendered.estimatedTss)} TSS`}{mainPace(session.rendered?.workout) && ` · ${mainPace(session.rendered.workout)}`}</small>{session.rendered?.notes && <small className="coach-session-note">{session.rendered.notes}</small>}</div>
       {session.locked && <span className="coach-badge">Fixiert</span>}
     </div>)}</div></>;
 }
@@ -287,7 +287,7 @@ function WeekSessions({ value, own, workoutsById, busy, onLock, onOpen }) {
   const rows = [
     ...(value?.sessions || []).map(session => ({ id: session.id, date: session.rendered?.date || '', name: sessionName(session), locked: !!session.locked, notes: session.rendered?.notes,
       day: DAYS.find(([d]) => d === session.day)?.[1] || session.day, lockable: !!session.rendered?.workout, workout: workoutsById[session.id],
-      detail: `${sessionDuration(session) == null ? 'Dauer offen' : `${fmt(sessionDuration(session))} min`}${session.rendered?.estimatedTss != null ? ` · ${fmt(session.rendered.estimatedTss)} TSS` : ''}` })),
+      detail: `${sessionDuration(session) == null ? 'Dauer offen' : `${fmt(sessionDuration(session))} min`}${session.rendered?.estimatedTss != null ? ` · ${fmt(session.rendered.estimatedTss)} TSS` : ''}${mainPace(session.rendered?.workout) ? ` · ${mainPace(session.rendered.workout)}` : ''}` })),
     ...own.map(workout => ({ id: workout.id, date: workout.date, name: workout.name, locked: !!workout.locked, notes: workout.notes, day: weekday(workout.date), lockable: true, own: true, workout,
       detail: workout.steps ? workoutSummary(workout) : '' })),
   ].sort((a, b) => a.date.localeCompare(b.date));

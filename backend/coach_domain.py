@@ -67,30 +67,80 @@ def iso_week(value):
 
 
 SPORTS = ['ride', 'run', 'swim']
-GOAL_TYPES = ['event', 'performance', 'fitness']
+# Sports the athlete trains regularly; stage 1 plans ride, run and strength, the others stay open for stage 2.
+PROFILE_SPORTS = ['ride', 'run', 'strength', 'swim', 'xcski', 'hyrox']
+# Primary metric per sport, the first one is the default.
+METRICS = {'ride': ['power', 'heart_rate'], 'run': ['pace', 'heart_rate', 'power'], 'swim': ['pace', 'rpe'],
+           'strength': ['rpe'], 'xcski': ['heart_rate'], 'hyrox': ['heart_rate', 'rpe']}
+# Where a threshold comes from; 'test' means the coach plans a test in the first plan week.
+THRESHOLD_SOURCES = ['athlete', 'calculated', 'test']
+# Without an event the goal is vo2max, threshold or fitness; event and performance stay for earlier profiles.
+GOAL_TYPES = ['event', 'performance', 'fitness', 'vo2max', 'threshold']
 # Goal types of earlier profiles, before the goal became sport-neutral.
 GOAL_ALIASES = {'cycling_event': 'event', 'running_event': 'event', 'marathon': 'event', 'ftp': 'performance',
                 'endurance': 'fitness', 'general_endurance': 'fitness'}
 LEGACY_PREFERENCES = ('indoorPreference', 'outdoorPreference', 'trainingEnvironment')
+CLOCK = r'^([01]\d|2[0-3]):[0-5]\d$'
+WINDOW_END = r'^(([01]\d|2[0-3]):[0-5]\d|24:00)$'
+
+
+def clock(pattern=CLOCK):
+    return {'type': ['string', 'null'], 'pattern': pattern}
+
+
+def flags(*names):
+    return obj({name: {'type': 'boolean'} for name in names})
+
+
+EQUIPMENT = ['studio', 'dumbbells', 'kettlebell', 'bodyweight']
+# Options per sport inside an availability window, e.g. indoor trainer or outdoors for rides.
+SPORT_OPTIONS = {
+    'ride': flags('indoor', 'outdoor'), 'run': flags('treadmill', 'outdoor'), 'swim': flags('pool', 'openWater'),
+    'strength': obj({'equipment': {'type': 'array', 'uniqueItems': True, 'items': {'enum': EQUIPMENT}}}),
+    'xcski': flags('rollerski', 'snow'),
+    'hyrox': obj({'equipment': {'type': 'array', 'uniqueItems': True, 'items': {'enum': EQUIPMENT}}}),
+}
+WINDOW_SCHEMA = obj({
+    'id': text(80), 'day': {'enum': DAYS}, 'kind': {'enum': ['available', 'unavailable']}, 'allDay': {'type': 'boolean'},
+    'from': clock(), 'to': clock(WINDOW_END), 'sports': {**obj(SPORT_OPTIONS), 'required': []},
+    # A fixed group session the coach plans around, e.g. a club ride.
+    'group': {'anyOf': [{'type': 'null'}, obj({'sport': {'enum': PROFILE_SPORTS},
+                                                'intensity': {'enum': ['easy', 'moderate', 'hard']}, 'note': text(300)})]}})
+# One-off changes such as holidays, travel or illness; per day either unavailable or available for maxMinutes.
+EXCEPTION_SCHEMA = obj({'id': text(80), 'from': text(10), 'to': text(10), 'kind': {'enum': ['unavailable', 'available']},
+                        'maxMinutes': num(0, 1440, True, True), 'note': text(1000)})
+THRESHOLD_SCHEMA = {**obj({sport: obj({'source': {'enum': [None, *THRESHOLD_SOURCES]}}) for sport in PROFILE_SPORTS}),
+                    'required': []}
+# Threshold pace in seconds per km; FTP and maximum heart rate stay in the athlete settings.
+THRESHOLD_SCHEMA['properties']['run'] = obj({'source': {'enum': [None, *THRESHOLD_SOURCES]},
+                                             'paceSecPerKm': num(120, 900, True), 'basis': text(120, True)})
 DEFAULT_PROFILE = {
     'goal': {'type': 'fitness', 'sports': ['ride'], 'name': '', 'date': None, 'target': None},
+    'sports': ['ride'], 'metrics': {'ride': 'power', 'run': 'pace'}, 'thresholds': {},
     'availability': {'preferredWeeklyHours': None, 'indoorWeeklyHours': None, 'absoluteMaxWeeklyHours': None,
                      'outdoorMonths': [], 'defaultAvailability': dict.fromkeys(DAYS), 'trainingDaysPerWeek': None,
-                     'noConsecutiveRestDays': False, 'minRideMinutes': {'indoor': None, 'outdoor': None}},
+                     'noConsecutiveRestDays': False, 'minRideMinutes': {'indoor': None, 'outdoor': None},
+                     'windows': [], 'exceptions': [], 'maxWeeklyHours': None, 'restDay': None, 'longDay': None},
     'preferences': {'preferredRestDay': None, 'preferredLongSessionDay': None, 'gymAvailability': False, 'dailyCheckIn': True},
     'limitations': {'notes': ''}, 'currentState': {'notes': ''},
-    'weeklyOverrides': [], 'dailyOverrides': [], 'checkIns': [], 'injuries': [],
+    'weeklyOverrides': [], 'dailyOverrides': [], 'checkIns': [], 'injuries': [], 'events': [],
 }
 PROFILE_SCHEMA = obj({
     'goal': obj({'type': {'enum': GOAL_TYPES},
                  'sports': {'type': 'array', 'minItems': 1, 'uniqueItems': True, 'items': {'enum': SPORTS}},
                  'name': text(200), 'date': text(10, True), 'target': text(300, True)}),
+    'sports': {'type': 'array', 'uniqueItems': True, 'maxItems': len(PROFILE_SPORTS), 'items': {'enum': PROFILE_SPORTS}},
+    'metrics': {**obj({sport: {'enum': choices} for sport, choices in METRICS.items()}), 'required': []},
+    'thresholds': THRESHOLD_SCHEMA,
     'availability': obj({'preferredWeeklyHours': num(0, 80, True), 'indoorWeeklyHours': num(0, 80, True),
                          'absoluteMaxWeeklyHours': num(0, 80, True),
                          'outdoorMonths': {'type': 'array', 'uniqueItems': True, 'items': num(1, 12, integer=True)},
                          'defaultAvailability': obj({day: num(0, 1440, True, True) for day in DAYS}),
                          'trainingDaysPerWeek': num(1, 7, True, True), 'noConsecutiveRestDays': {'type': 'boolean'},
-                         'minRideMinutes': obj({place: num(0, 600, True, True) for place in ('indoor', 'outdoor')})}),
+                         'minRideMinutes': obj({place: num(0, 600, True, True) for place in ('indoor', 'outdoor')}),
+                         'windows': {'type': 'array', 'maxItems': 70, 'items': WINDOW_SCHEMA},
+                         'exceptions': {'type': 'array', 'maxItems': 100, 'items': EXCEPTION_SCHEMA},
+                         'maxWeeklyHours': num(0, 80, True), 'restDay': {'enum': [None, *DAYS]}, 'longDay': {'enum': [None, *DAYS]}}),
     'preferences': obj({'preferredRestDay': {'enum': [None, *DAYS]}, 'preferredLongSessionDay': {'enum': [None, *DAYS]},
                         'gymAvailability': {'type': 'boolean'}, 'dailyCheckIn': {'type': 'boolean'}}),
     'limitations': obj({'notes': text(1500)}), 'currentState': obj({'notes': text(1500)}),
@@ -114,6 +164,17 @@ def complete_profile(value):
         result[section] = {**copy.deepcopy(DEFAULT_PROFILE[section]), **result.get(section, {})}
     for key in ('weeklyOverrides', 'dailyOverrides', 'checkIns', 'injuries'):
         result.setdefault(key, [])
+    if 'sports' not in result:
+        result['sports'] = list(result['goal']['sports']) + (['strength'] if result['preferences']['gymAvailability'] else [])
+    result['metrics'] = {**DEFAULT_PROFILE['metrics'], **result.get('metrics', {})}
+    result.setdefault('thresholds', {})
+    if 'events' not in result:
+        # A named goal date of earlier profiles becomes the A event; the stable id keeps unsaved reads equal.
+        goal = result['goal']
+        result['events'] = [complete_event({
+            'title': goal['name'].strip(), 'sport': next((s for s in goal['sports'] if s in EVENT_SUBTYPES), 'other'),
+            'startDate': goal['date'], 'priority': 'A', 'description': goal['target'] or ''}, f"goal-{goal['date']}")] \
+            if goal['date'] and goal['name'].strip() else []
     return result
 
 
@@ -142,6 +203,13 @@ def min_ride_minutes(profile, monday):
     return min((v for v in values.values() if v), default=None)
 
 
+def threshold_pace(profile):
+    """Threshold pace for run targets; None when heart rate is the primary metric or no pace is known."""
+    if profile['metrics'].get('run') == 'heart_rate':
+        return None
+    return (profile['thresholds'].get('run') or {}).get('paceSecPerKm')
+
+
 def rest_day_pairs(training_days, limits, elapsed=()):
     """Neighbouring days of one week that both stay without training although one of them could still get it."""
     rest = [day not in training_days for day in DAYS]
@@ -155,14 +223,28 @@ def update_profile(current, changes):
     result = complete_profile(current)
     for key, value in changes.items():
         # Clients that predate a field keep its stored value.
-        result[key] = {**result[key], **value} if key in ('goal', 'availability', 'preferences') and isinstance(value, dict) else value
+        result[key] = {**result[key], **value} if key in ('goal', 'availability', 'preferences', 'metrics', 'thresholds') \
+            and isinstance(value, dict) else value
     if isinstance(result['goal'], dict):
         result['goal']['type'] = GOAL_ALIASES.get(result['goal'].get('type'), result['goal'].get('type'))
     validate({key: result[key] for key in PROFILE_SCHEMA['properties']}, PROFILE_SCHEMA)
     if result['goal']['date']:
         day_date(result['goal']['date'])
+    run = result['thresholds'].get('run')
+    if run and run['source'] in ('athlete', 'calculated') and run['paceSecPerKm'] is None:
+        raise CoachError('Bitte eine Schwellenpace eintragen oder „Testen lassen“ wählen.')
     availability = result['availability']
     availability['outdoorMonths'] = sorted(availability['outdoorMonths'])
+    check_windows(availability['windows'])
+    check_exceptions(availability['exceptions'])
+    if availability['windows']:
+        # The windows decide the minutes per day; week checks keep working on defaultAvailability.
+        availability['defaultAvailability'] = window_minutes(availability['windows'])
+        total = sum(availability['defaultAvailability'].values()) / 60
+        maximum = availability['maxWeeklyHours']
+        availability['absoluteMaxWeeklyHours'] = round(min(total if maximum is None else maximum, 80), 2)
+        result['preferences']['preferredRestDay'] = availability['restDay']
+        result['preferences']['preferredLongSessionDay'] = availability['longDay']
     maximum = availability['absoluteMaxWeeklyHours']
     if maximum is not None and any(availability[key] is not None and availability[key] > maximum
                                    for key in ('preferredWeeklyHours', 'indoorWeeklyHours')):
@@ -194,8 +276,13 @@ def effective_availability(profile, week):
             result[day]['maxMinutes'] = 0
     for index, day in enumerate(DAYS):
         stamp = (monday + timedelta(days=index)).isoformat()
+        # Exceptions act as daily overrides; a daily override that sets the time of that day wins.
         item = next((o for o in profile['dailyOverrides'] if o['date'] == stamp), {})
-        result[day].update({k: v for k, v in item.items() if k != 'date'})
+        if not {'available', 'maxMinutes', 'action'} & set(item):
+            item = {**exception_override(profile, stamp), **item}
+        result[day].update({k: v for k, v in item.items() if k not in ('date', 'exception')})
+        if item.get('exception'):
+            result[day]['exception'] = item['exception']
         # A daily override supersedes the weekly level, including availability.
         if item.get('available') is True and 'maxMinutes' not in item and result[day].get('available') is True:
             result[day]['maxMinutes'] = profile['availability']['defaultAvailability'][day]
@@ -246,3 +333,134 @@ def apply_patch(before, patch):
             sessions[identity] = item
     result.update(targetHours=patch['targetHours'], focus=patch['focus'], sessions=list(sessions.values()))
     return result
+
+
+# --- Availability windows and exceptions ----------------------------------------------------
+
+def minutes_of(value):
+    hours, minutes = value.split(':')
+    return int(hours) * 60 + int(minutes)
+
+
+def check_windows(windows):
+    if len({w['id'] for w in windows}) != len(windows):
+        raise CoachError('Jedes Zeitfenster braucht eine eigene ID.')
+    for window in windows:
+        if window['allDay']:
+            window['from'] = window['to'] = None
+        elif window['from'] is None or window['to'] is None or minutes_of(window['to']) <= minutes_of(window['from']):
+            raise CoachError('Ein Zeitfenster braucht eine Startzeit vor dem Ende oder „Den ganzen Tag“.')
+        if window['kind'] == 'unavailable' and (window['sports'] or window['group']):
+            raise CoachError('Ein Zeitfenster „Nicht verfügbar“ hat keine Sportarten und kein Gruppentraining.')
+        group = window['group']
+        if group and (window['allDay'] or group['sport'] not in window['sports']):
+            raise CoachError('Gruppentraining braucht eine feste Uhrzeit und eine Sportart dieses Zeitfensters.')
+
+
+def window_minutes(windows):
+    """Minutes per weekday: the union of available windows without the unavailable ones."""
+    result = {}
+    for day in DAYS:
+        free, blocked = set(), set()
+        for window in (w for w in windows if w['day'] == day):
+            span = range(0, 1440) if window['allDay'] else range(minutes_of(window['from']), minutes_of(window['to']))
+            (free if window['kind'] == 'available' else blocked).update(span)
+        result[day] = len(free - blocked)
+    return result
+
+
+def check_exceptions(exceptions):
+    if len({e['id'] for e in exceptions}) != len(exceptions):
+        raise CoachError('Jede Ausnahme braucht eine eigene ID.')
+    for item in exceptions:
+        if day_date(item['to']) < day_date(item['from']):
+            raise CoachError('Eine Ausnahme endet nicht vor ihrem Beginn.')
+        if item['kind'] == 'available' and item['maxMinutes'] is None:
+            raise CoachError('Für eine Ausnahme „Verfügbar“ bitte die Minuten pro Tag angeben.')
+        if item['kind'] == 'unavailable':
+            item['maxMinutes'] = None
+    exceptions.sort(key=lambda e: (e['from'], e['to']))
+
+
+def exception_override(profile, stamp):
+    """The latest exception covering that day as a daily override, or {}."""
+    item = next((e for e in reversed(profile['availability'].get('exceptions', [])) if e['from'] <= stamp <= e['to']), None)
+    if item is None:
+        return {}
+    override = {'available': False} if item['kind'] == 'unavailable' else {'maxMinutes': item['maxMinutes']}
+    return {**override, 'exception': {'id': item['id'], 'note': item['note']}}
+
+
+# --- Events -------------------------------------------------------------------------------------
+
+EVENT_SUBTYPES = {
+    'ride': ['criterium', 'cyclocross', 'timeTrial', 'crossCountry', 'roadRace', 'granFondo', 'xcMarathon', 'gravel', 'ultra', 'custom'],
+    'run': ['5k', '10k', 'halfMarathon', 'marathon', 'trail', 'ultra', 'custom'],
+    'swim': ['pool', 'openWater', 'custom'],
+    'xcski': ['classic', 'skating', 'marathon', 'custom'],
+    'hyrox': ['open', 'pro', 'doubles', 'relay'],
+    'triathlon': ['sprint', 'olympic', 'middle', 'long', 'custom'],
+    'duathlon': ['sprint', 'standard', 'custom'],
+    'other': ['custom'],
+}
+# How the coach treats B and C events; the first one is the default. A events get a full taper from the plan.
+HANDLING = {'A': [None], 'B': ['miniTaper', 'trainThrough'], 'C': ['replaceHard', 'easy']}
+MAX_EVENTS = 50
+EVENT_SCHEMA = obj({
+    'title': text(200), 'sport': {'enum': list(EVENT_SUBTYPES)}, 'subtype': text(40, True),
+    'startDate': text(10), 'endDate': text(10, True), 'allDay': {'type': 'boolean'}, 'time': clock(),
+    'location': text(200, True), 'priority': {'enum': list(HANDLING)},
+    'handling': {'enum': [None, *{h for options in HANDLING.values() for h in options if h}]},
+    'distanceKm': num(0, 10000, True), 'targetSeconds': num(1, 60 * 86400, True, True), 'elevationM': num(0, 100000, True),
+    'description': text(1500)})
+EVENT_SCHEMA['required'] = ['title', 'sport', 'startDate', 'priority']
+EVENT_DEFAULTS = {'subtype': None, 'endDate': None, 'allDay': True, 'time': None, 'location': None, 'handling': None,
+                  'distanceKm': None, 'targetSeconds': None, 'elevationM': None, 'description': ''}
+
+
+def complete_event(value, identity):
+    """A validated event with its id; missing optional fields get their defaults."""
+    event = {'id': identity, **EVENT_DEFAULTS, **validate(value, EVENT_SCHEMA)}
+    event['title'] = event['title'].strip()
+    if not event['title']:
+        raise CoachError('Bitte einen Titel für das Event eingeben.')
+    start = day_date(event['startDate'])
+    end = day_date(event['endDate'] or event['startDate'])
+    if end < start:
+        raise CoachError('Das Enddatum darf nicht vor dem Start liegen.')
+    if (end - start).days > 60:
+        raise CoachError('Ein Event dauert höchstens 60 Tage.')
+    event['endDate'] = end.isoformat()
+    if event['subtype'] is not None and event['subtype'] not in EVENT_SUBTYPES[event['sport']]:
+        raise CoachError('Dieser Untertyp passt nicht zur Sportart des Events.')
+    if event['handling'] is None:
+        event['handling'] = HANDLING[event['priority']][0]
+    if event['handling'] not in HANDLING[event['priority']]:
+        raise CoachError('Diese Option passt nicht zur Priorität des Events.')
+    if event['allDay']:
+        event['time'] = None
+    elif event['time'] is None:
+        raise CoachError('Bitte eine Uhrzeit angeben oder „Ganzer Tag“ wählen.')
+    return event
+
+
+def week_events(profile, week):
+    """Events on days of this week as week entries of kind event, not as workouts."""
+    monday = week_start(week)
+    sunday = (monday + timedelta(days=6)).isoformat()
+    return [{'kind': 'event', **{key: e[key] for key in ('id', 'title', 'sport', 'subtype', 'priority', 'handling',
+                                                         'startDate', 'endDate', 'allDay', 'time')}}
+            for e in profile['events'] if e['startDate'] <= sunday and e['endDate'] >= monday.isoformat()]
+
+
+# --- Plan settings ------------------------------------------------------------------------------
+
+PLAN_SETTINGS_SCHEMA = obj({'startDate': text(10), 'endDate': text(10), 'replanMode': {'enum': ['afterReview', 'sunday', 'manual']}})
+
+
+def plan_settings(value, previous, now):
+    """Validated plan settings; createdAt stays from the first save."""
+    data = validate(value, PLAN_SETTINGS_SCHEMA)
+    if day_date(data['endDate']) <= day_date(data['startDate']):
+        raise CoachError('Das Planende muss nach dem Planstart liegen.')
+    return {**data, 'createdAt': (previous or {}).get('createdAt') or now}

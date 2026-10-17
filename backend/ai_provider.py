@@ -25,6 +25,8 @@ REQUEST_TIMEOUT_SECONDS = 60
 # Reasoning models think before answering: allow them more time and output budget.
 REASONING_EFFORTS = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh')
 REASONING_TIMEOUT_SECONDS = 300
+# USD per 1 million input and output tokens (OpenAI standard, October 2026). Other models show tokens only.
+MODEL_PRICES = {'gpt-6-astra': (10, 50), 'gpt-6.1-sol': (2, 10), 'gpt-6-luna': (.10, .50)}
 
 
 class ProviderError(ValueError):
@@ -133,10 +135,28 @@ def validate_response(value, schema):
     return value
 
 
+def token_usage(value):
+    """Input, output and cached input tokens of a Responses API usage object, or None."""
+    if not isinstance(value, dict):
+        return None
+    count = lambda item: item if isinstance(item, int) and not isinstance(item, bool) and 0 <= item < 10 ** 9 else 0
+    details = value.get('input_tokens_details') if isinstance(value.get('input_tokens_details'), dict) else {}
+    return {'inputTokens': count(value.get('input_tokens')), 'outputTokens': count(value.get('output_tokens')),
+            'cachedTokens': count(details.get('cached_tokens'))}
+
+
+def usage_cost(model, input_tokens, output_tokens):
+    """Cost in USD for a known model, cached input counted at the full price; None otherwise."""
+    if model not in MODEL_PRICES:
+        return None
+    price_in, price_out = MODEL_PRICES[model]
+    return (input_tokens * price_in + output_tokens * price_out) / 1_000_000
+
+
 class AIProvider(ABC):
     @abstractmethod
-    def generate(self, api_key, model, instructions, context, schema, reasoning_effort=None):
-        """Return a schema-validated JSON recommendation."""
+    def generate(self, api_key, model, instructions, context, schema, reasoning_effort=None, on_usage=None):
+        """Return a schema-validated JSON recommendation; on_usage receives the token counts of the call."""
 
     @abstractmethod
     def test_connection(self, api_key, model):
@@ -192,7 +212,7 @@ class OpenAIProvider(AIProvider):
         return {'provider': 'openai', 'model': model, 'connected': True,
                 'message': 'Verbindung und Modellzugriff bestätigt. Strukturierte Ausgabe wird bei der Planung geprüft.'}
 
-    def generate(self, api_key, model, instructions, context, schema, reasoning_effort=None):
+    def generate(self, api_key, model, instructions, context, schema, reasoning_effort=None, on_usage=None):
         model = validate_model(model)
         reasoning_effort = validate_reasoning_effort(reasoning_effort)
         try:
@@ -212,6 +232,10 @@ class OpenAIProvider(AIProvider):
             payload.update(reasoning={'effort': reasoning_effort}, max_output_tokens=40000)
             timeout = REASONING_TIMEOUT_SECONDS
         result = self._request(api_key, '/responses', payload, timeout=timeout)
+        # Charged tokens count even when the answer turns out unusable.
+        usage = token_usage(result.get('usage'))
+        if usage and on_usage:
+            on_usage(usage)
         if result.get('status') != 'completed' or result.get('error'):
             raise ProviderError('Die AI-Antwort ist unvollständig. Der Plan wurde nicht geändert.')
         texts = []

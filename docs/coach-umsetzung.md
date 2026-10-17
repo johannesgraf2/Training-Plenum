@@ -44,6 +44,8 @@ Jeder Meilenstein ist für sich lauffähig, hat Tests und wird einzeln gemerged.
 
 ### M1 Datenmodell und API (Backend)
 
+**Stand: umgesetzt.** Offen für M2: Test-Templates (FTP-Test, 30-min-Lauftest) und das Einplanen des Gruppentrainings als feste Einheit.
+
 **1. Profil erweitern** (`coach_domain.py`, `PROFILE_SCHEMA`, `complete_profile`)
 - `sports`: regelmäßige Sportarten (A1). Liste offen für Stufe 2: `ride`, `run`, `strength`, später `swim`, `xcski`, `hyrox` …
 - `metrics`: Primärmetrik je Sportart, z. B. `{"ride": "power", "run": "pace"}`

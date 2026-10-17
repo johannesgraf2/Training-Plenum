@@ -2,9 +2,9 @@ import copy
 import unittest
 from datetime import date
 
-from coach_blocks import (block_for_week, block_status, catalog, check_block, check_week_rules,
+from coach_blocks import (BLOCK_TYPES, block_for_week, block_status, catalog, check_block, check_event_rules, check_week_rules,
                           migrate_plan, place_block, suggested_rhythm)
-from coach_domain import DEFAULT_PROFILE, CoachError
+from coach_domain import DEFAULT_PROFILE, CoachError, complete_event
 
 MONDAY = date(2026, 10, 5)
 
@@ -172,3 +172,59 @@ class StoredBlockTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def planned(identity, template, day, minutes=60):
+    return {'id': identity, 'template': template, 'rendered': {'date': day, 'durationMin': minutes}}
+
+
+class EventRuleTests(unittest.TestCase):
+    def event(self, priority, handling=None, start='2026-10-10', end=None):
+        return complete_event({'title': 'Gran Fondo', 'sport': 'ride', 'startDate': start, 'endDate': end,
+                               'priority': priority, 'handling': handling}, 'e')
+
+    def check(self, event, *sessions, changed=None):
+        check_event_rules([event], list(sessions), {s['id'] for s in sessions} if changed is None else changed)
+
+    def test_b_mini_taper_keeps_the_days_around_the_race_easy(self):
+        race = self.event('B')  # Saturday 10 Oct
+        self.check(race, planned('wed', 'bike_vo2', '2026-10-07', 47), planned('fri', 'bike_z2', '2026-10-09'),
+                   planned('sun', 'bike_recovery', '2026-10-11'), planned('tue', 'bike_threshold', '2026-10-13', 68))
+        for sessions, message in (
+                ([planned('fri', 'bike_vo2', '2026-10-09', 47)], 'am Tag vor'),
+                ([planned('wed', 'bike_vo2', '2026-10-07', 47), planned('thu', 'bike_tempo', '2026-10-08', 60)], 'höchstens eine kurze'),
+                ([planned('thu', 'bike_threshold', '2026-10-08', 90)], 'höchstens eine kurze'),
+                ([planned('sat', 'bike_z2', '2026-10-10')], 'keine weitere Einheit'),
+                ([planned('mon', 'bike_tempo', '2026-10-12')], '2 Tage nur locker'),
+                ([planned('sun', 'strength_general', '2026-10-11')], '2 Tage nur locker')):
+            with self.subTest(sessions=sessions), self.assertRaises(CoachError) as error:
+                self.check(race, *sessions)
+            self.assertIn(message, str(error.exception))
+        # Sessions planned before the event existed only fail once they change.
+        self.check(race, planned('fri', 'bike_vo2', '2026-10-09', 47), changed=set())
+
+    def test_other_handlings_and_multi_day_events(self):
+        self.check(self.event('B', 'trainThrough'), planned('fri', 'bike_vo2', '2026-10-09', 47))
+        with self.assertRaises(CoachError):
+            self.check(self.event('B', 'trainThrough'), planned('mon', 'bike_vo2', '2026-10-12', 47))
+        self.check(self.event('C'), planned('mon', 'bike_tempo', '2026-10-12'))  # one easy day after a C race
+        with self.assertRaises(CoachError):
+            self.check(self.event('C'), planned('sun', 'bike_tempo', '2026-10-11'))
+        self.check(self.event('C', 'easy'), planned('sun', 'bike_tempo', '2026-10-11'))
+        with self.assertRaises(CoachError):
+            self.check(self.event('A', end='2026-10-20'), planned('thu', 'bike_z2', '2026-10-15'))
+        self.check(self.event('A', end='2026-10-20'), planned('rest', 'rest', '2026-10-15'))
+
+    def test_a_c_race_replaces_one_hard_session_of_its_week(self):
+        block, load = {'blockType': 'schwelle', 'secondaryFocus': None}, {'phase': 'build'}
+        hard = [session('bike_threshold'), session('bike_sweetspot')]
+        check_week_rules(block, load, hard)
+        check_week_rules(block, load, hard[:1], replaced=1)
+        with self.assertRaises(CoachError) as error:
+            check_week_rules(block, load, hard, replaced=1)
+        self.assertIn('höchstens 1×', str(error.exception))
+        with self.assertRaises(CoachError):
+            check_week_rules({'blockType': 'grundlage', 'secondaryFocus': None}, {'phase': 'base'}, [session('bike_tempo')], replaced=1)
+
+    def test_competition_block_guides_back_to_back_ultra_weekends(self):
+        self.assertIn('back-to-back', BLOCK_TYPES['wettkampfspezifisch']['guidance'])

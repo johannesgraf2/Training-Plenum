@@ -6,7 +6,8 @@ from jsonschema import Draft202012Validator
 from coach_templates import (PARAM_NAMES, SESSION_SCHEMA, TEMPLATES, TemplateError, flat_steps,
                              render_session, template_catalog)
 from coach_api import workout_minutes
-from workout_export import validate_workout
+from garmin_workouts import garmin_workout
+from workout_export import export_workout, validate_workout
 
 
 DAY = '2026-09-23'
@@ -159,3 +160,45 @@ class TemplateTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class UltraAndPaceTests(unittest.TestCase):
+    def test_rides_last_up_to_15_hours_and_bring_ultra_fueling_from_6_hours(self):
+        for template, params in (('bike_long', {'durationMin': 900}), ('bike_z2_long', {'durationMin': 900}),
+                                 ('bike_threshold', {'durationMin': 900}), ('bike_vo2_micro', {'durationMin': 900})):
+            with self.subTest(template=template):
+                session = render_session(template, params, DAY, ftp=250)
+                self.assertEqual(session['durationMin'], 900)
+                self.assertTrue(session['notes'].startswith('Verpflegung (ab 6 h)'))
+                self.assertLessEqual(len(session['notes'].encode()), 250)  # FIT description field
+                self.assertGreater(session['estimatedTss'], 0)
+                with self.assertRaises(TemplateError):
+                    render_session(template, {'durationMin': 901}, DAY, ftp=250)
+        self.assertTrue(render_session('bike_long', {'durationMin': 359}, DAY)['notes'].startswith('Verpflegung (lange Einheit)'))
+        self.assertTrue(render_session('bike_long', {'durationMin': 360}, DAY)['notes'].startswith('Verpflegung (ab 6 h)'))
+        catalog = {t['id']: t for t in template_catalog()}
+        self.assertEqual(catalog['bike_long']['params']['durationMin'], [90, 900])
+        self.assertEqual(catalog['bike_z2_sprints']['params']['durationMin'], [45, 360])
+
+    def test_runs_target_the_threshold_pace_and_fall_back_to_heart_rate(self):
+        session = render_session('run_threshold', {}, DAY, max_hr=190, threshold_pace=270)
+        work = [s for s in session['workout']['steps'] if s['intensity'] == 'interval']
+        # 88 % of max HR sits just below threshold: about 4:27-4:40 /km for a 4:30 threshold pace.
+        self.assertEqual(work[0]['target'], {'type': 'pace', 'low': 267, 'high': 280})
+        easy = render_session('run_easy', {}, DAY, max_hr=190, threshold_pace=270)['workout']['steps'][1]['target']
+        self.assertEqual((easy['type'], easy['low'] > 330, easy['high'] < 370), ('pace', True, True))
+        heart = render_session('run_threshold', {}, DAY, max_hr=190)['workout']['steps'][1]['target']
+        self.assertEqual(heart['type'], 'heart_rate')
+        self.assertEqual(render_session('run_easy', {}, DAY)['workout']['steps'][1]['target'], {'type': 'none'})
+        self.assertEqual(render_session('bike_z2', {}, DAY, ftp=250, threshold_pace=270)['workout']['steps'][1]['target']['type'], 'power')
+        for bad in (0, 60, 1000, float('nan')):
+            with self.subTest(pace=bad), self.assertRaises(TemplateError):
+                render_session('run_easy', {}, DAY, threshold_pace=bad)
+        self.assertIn('pace', next(t for t in template_catalog() if t['id'] == 'run_easy')['targets'])
+
+    def test_pace_targets_export_as_speed_ranges(self):
+        workout = render_session('run_threshold', {}, DAY, max_hr=190, threshold_pace=270)['workout']
+        self.assertTrue(export_workout(workout).startswith(bytes([14])))
+        step = garmin_workout(workout)['workoutSegments'][0]['workoutSteps'][1]
+        self.assertEqual(step['targetType']['workoutTargetTypeKey'], 'pace.zone')
+        self.assertEqual((step['targetValueOne'], step['targetValueTwo']), (round(1000 / 280, 4), round(1000 / 267, 4)))
