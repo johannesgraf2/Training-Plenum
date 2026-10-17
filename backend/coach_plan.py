@@ -265,7 +265,7 @@ def align_frame(phases, settings, profile, caps):
     Before each A event the phases with a rhythm cover whole cycles counted backwards from the taper, so the 3:1 rhythm
     runs on over block boundaries; phases without one (taper, transition) keep their place and length. The hours follow
     the athlete's load, not their time: the first load week starts at the training base and each cycle rises at most
-    10 % up to the peak, the last load week before the final deload, which the available time caps. Load weeks rise
+    5 % up to the peak, the last load week before the final deload, which the available time caps. Load weeks rise
     inside a cycle (LOAD_STEPS), deloads take 65 % of the cycle's highest week and each taper week 80 % of the week
     before. A stretch with more phases than cycles stays as the AI laid it out. caps holds the available hours per plan
     week."""
@@ -304,7 +304,7 @@ def align_frame(phases, settings, profile, caps):
 
 
 # Most a cycle's volume rises over the one before, and each taper week relative to the week before it.
-MAX_RISE = 1.1
+MAX_RISE = 1.05
 TAPER_STEP = .8
 
 
@@ -327,7 +327,7 @@ def _align_stretch(result, stretch, indices, spans, entries, caps, base):
         chosen.append(min(options, key=lambda c: (not spec['minWeeks'] <= ends[c] - first <= spec['maxWeeks'],
                                                   abs(ends[c] - spans[indices[n]][1]))))
     chosen.append(len(ends) - 1)
-    # Cycle levels: from the training base (without one, the AI's first load week) up to the peak, at most 10 % a cycle.
+    # Cycle levels: from the training base (without one, the AI's first load week) up to the peak, at most 5 % a cycle.
     base = base or next((e['targetHours'] for _, e in entries[low:high] if e['phase'] not in DELOAD_PHASES),
                         entries[low][1]['targetHours'])
     peak = ends[-1] - (2 if sizes[-1] > 1 else 1)
