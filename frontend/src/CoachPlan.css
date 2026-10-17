@@ -1,0 +1,117 @@
+/* Plan with phases (CoachPlan.jsx) and the coach chat (CoachChat.jsx) */
+
+.plan-head h2 { margin-bottom: 6px; }
+.plan-phases { height: 52px; margin-top: 16px; }
+.coach-season-segment.past { opacity: .55; }
+.coach-season-segment.wiedereinstieg, .coach-season-segment.taper { background: var(--line-strong); color: var(--ink); }
+.ai-coach button.coach-season-segment.wiedereinstieg, .ai-coach button.coach-season-segment.taper { color: var(--ink); }
+.plan-event-dot { position: absolute; bottom: -9px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--ink); border: 2px solid var(--bg-ffffff); }
+.plan-event-dot.A { width: 16px; height: 16px; margin-left: -8px; bottom: -12px; background: var(--fg-b91c1c); }
+.plan-event-dot.B, .plan-event-dot.C { background: var(--ochre); }
+.plan-phase-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; font-size: 11px; color: var(--fg-64748b); }
+.plan-phase-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.plan-phase-legend .plan-event-dot { position: static; margin: 0; border: 0; }
+.coach-season-today-mark { display: inline-block; width: 2px; height: 12px; background: var(--ink); }
+.plan-phase-detail { margin-top: 12px; padding: 10px 14px; border-left: 3px solid var(--accent); background: var(--bg-f8fafc); font-size: 12px; }
+.plan-phase-detail p { margin: 4px 0 0; }
+
+.plan-week-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.plan-week-head h3 { margin: 6px 0 12px; font-size: 16px; }
+.plan-week.current { border-color: var(--accent); }
+.plan-load { font-size: 10px; font-weight: 600; padding: 5px 8px; border-radius: 2px; white-space: nowrap; background: var(--bg-eff6ff); color: var(--fg-1e40af); }
+.plan-load.deload { background: var(--bg-ecfdf5); color: var(--fg-047857); }
+.plan-days { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.plan-day { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; padding: 5px 0; border-top: 1px solid var(--bd-edf0f4); font-size: 12px; }
+.plan-day > strong { padding-top: 7px; color: var(--fg-475569); }
+.plan-day.empty > strong { padding-top: 0; }
+.plan-day.past { opacity: .6; }
+.plan-day.today > strong { color: var(--accent); }
+.plan-day > div { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.ai-coach .plan-session { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 7px 10px; border: 1px solid var(--bd-e2e8f0); border-left: 3px solid var(--sport-other); border-radius: 3px; background: var(--bg-ffffff); text-align: left; font-size: 12px; font-weight: 600; color: var(--fg-1e293b); max-width: 100%; }
+.plan-session small { font-weight: 400; color: var(--fg-64748b); font-size: 11px; }
+.plan-session.sport-ride { border-left-color: var(--sport-ride); }
+.plan-session.sport-run { border-left-color: var(--sport-run); }
+.plan-session.sport-strength { border-left-color: var(--ochre); }
+.plan-session.fixed { border-left-color: var(--line-strong); background: var(--bg-f8fafc); }
+.plan-event { display: inline-flex; align-items: center; padding: 6px 9px; border-radius: 3px; font-size: 11px; font-weight: 600; background: var(--bg-fffbeb); color: var(--fg-8e641e); }
+.plan-event.A { background: var(--bg-fef2f2); color: var(--fg-b91c1c); }
+.plan-outlined ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.plan-outlined li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 12px; padding: 8px 0; border-top: 1px solid var(--bd-edf0f4); }
+.plan-outlined li small { color: var(--fg-64748b); }
+.plan-history summary { font-weight: 600; cursor: pointer; }
+.plan-history .coach-card { box-shadow: none; }
+
+.plan-review .coach-feedback { margin-bottom: 14px; }
+.plan-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.plan-chips legend { width: 100%; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.ai-coach .plan-chips button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+
+.plan-structure { display: flex; align-items: flex-end; gap: 1px; height: 72px; margin: 4px 0 10px; padding: 4px; background: var(--bg-f8fafc); border-radius: 3px; }
+.plan-structure i { display: block; min-width: 2px; flex-basis: 0; border-radius: 2px 2px 0 0; background: var(--line-strong); }
+.plan-structure i.active { background: var(--blue); }
+.plan-structure i.interval { background: var(--accent); }
+.plan-structure i.recovery { background: var(--line); }
+.plan-targets { margin: 0 0 6px; padding-left: 18px; font-size: 12px; color: var(--fg-334155); }
+.plan-detail-body { padding: 4px 22px 22px; overflow-y: auto; }
+.plan-detail-body h3 { margin: 16px 0 6px; }
+.plan-detail-body p { margin: 0 0 8px; }
+.plan-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ai-coach .plan-detail-actions button { display: inline-flex; align-items: center; gap: 6px; }
+.plan-move { display: flex; gap: 6px; }
+.plan-move select { font: inherit; font-size: 12px; padding: 8px; border: 1px solid var(--bd-d4dce7); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-1e293b); }
+
+.today-quick { margin-top: 12px; }
+.today-outlook { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; font-size: 12px; }
+.today-outlook li { display: grid; grid-template-columns: 90px 1fr; gap: 10px; }
+.today-hints .today-hint { justify-content: space-between; }
+
+/* Coach chat: a window over the area, a full-screen sheet on the phone */
+.ai-coach .coach-ask { position: fixed; right: 24px; bottom: 24px; z-index: 1200; padding: 13px 20px; border-radius: 999px; background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); box-shadow: 0 8px 24px #0f172a33; }
+.ai-coach .coach-ask:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--btn-hover); }
+.chat-overlay { position: fixed; inset: 0; z-index: 1500; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(27, 26, 23, .45); }
+.chat-window { display: flex; flex-direction: column; width: 100%; max-width: 640px; height: min(780px, calc(100dvh - 40px)); overflow: hidden; border-radius: 6px; background: var(--bg-ffffff); box-shadow: 0 20px 60px #0f172a40; }
+.plan-detail { height: auto; max-height: calc(100dvh - 40px); }
+.chat-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 22px 10px; border-bottom: 1px solid var(--bd-edf0f4); }
+.chat-head h2 { margin: 4px 0 0; }
+.chat-head-actions { display: flex; gap: 6px; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 16px 22px; display: flex; flex-direction: column; gap: 12px; }
+.chat-empty { line-height: 1.6; }
+.chat-message { max-width: 88%; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.55; }
+.chat-message p { margin: 0; white-space: pre-wrap; }
+.chat-message.athlete { align-self: flex-end; background: var(--bg-eff6ff); color: var(--fg-1e3a8a); border-bottom-right-radius: 3px; }
+.chat-message.coach { align-self: flex-start; background: var(--bg-f1f5f9); color: var(--fg-1e293b); border-bottom-left-radius: 3px; }
+.chat-message.system { align-self: center; max-width: 100%; background: var(--bg-fffbeb); color: var(--fg-8e641e); font-size: 12px; }
+.chat-message .coach-spinner { margin-right: 8px; }
+.chat-ref-tag { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 600; opacity: .75; }
+.chat-change { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--bd-cbd5e1); border-radius: 6px; background: var(--bg-ffffff); }
+.chat-change.discarded, .chat-change.expired { opacity: .6; }
+.chat-change-title { display: block; margin-bottom: 6px; }
+.chat-change-week { margin-top: 8px; }
+.chat-change-week ul, .chat-hints { margin: 4px 0 0; padding-left: 18px; font-size: 12px; }
+.chat-hints { color: var(--fg-8e641e); }
+.chat-change .coach-actions { margin-top: 12px; }
+.chat-change-status { display: inline-block; margin-top: 10px; font-size: 12px; font-weight: 600; color: var(--fg-047857); }
+.chat-change.discarded .chat-change-status, .chat-change.expired .chat-change-status { color: var(--fg-64748b); }
+.chat-compare summary { margin-top: 6px; font-size: 11px; cursor: pointer; color: var(--fg-475569); }
+.chat-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 6px; }
+.chat-compare-grid small { font-weight: 600; color: var(--fg-64748b); }
+.chat-days { list-style: none; margin: 4px 0 0; padding: 0; font-size: 12px; display: grid; gap: 2px; }
+.chat-foot { padding: 10px 22px 18px; border-top: 1px solid var(--bd-edf0f4); display: grid; gap: 8px; }
+.chat-foot .coach-message { margin: 0; }
+.chat-ref { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; border-radius: 999px; background: var(--bg-eff6ff); color: var(--fg-1e40af); font-size: 11px; font-weight: 600; }
+.ai-coach .chat-ref button { padding: 2px 7px; border: 0; background: transparent; color: inherit; }
+.chat-quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.ai-coach .chat-quick button { padding: 6px 10px; border-radius: 999px; font-weight: 500; }
+.chat-input { display: flex; gap: 8px; align-items: flex-end; }
+.chat-input textarea { flex: 1; font: inherit; font-size: 13px; resize: none; padding: 10px 11px; border: 1px solid var(--bd-d4dce7); border-radius: 4px; background: var(--bg-ffffff); color: var(--fg-1e293b); }
+
+@media (max-width: 650px) {
+  .chat-overlay { padding: 0; }
+  .chat-window, .plan-detail { max-width: none; height: 100dvh; max-height: none; border-radius: 0; }
+  .chat-head, .chat-messages, .chat-foot, .plan-detail-body { padding-left: 16px; padding-right: 16px; }
+  .ai-coach .coach-ask { right: 16px; bottom: 16px; }
+  .chat-compare-grid { grid-template-columns: 1fr; }
+  .today-outlook li { grid-template-columns: 1fr; gap: 2px; }
+}
+/* Room below the last card, so the floating button never covers it. */
+.ai-coach:has(> .coach-ask) { padding-bottom: 96px; }

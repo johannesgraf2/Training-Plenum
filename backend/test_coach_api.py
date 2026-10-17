@@ -45,7 +45,8 @@ class CoachAPITests(unittest.TestCase):
 
     def setUp(self):
         with self.backend.app.app_context():
-            for model in (self.Proposal, self.State, self.Settings, self.backend.app.extensions['coach_usage_model'], self.backend.PlannedWorkout,
+            for model in (self.Proposal, self.State, self.Settings, self.backend.app.extensions['coach_usage_model'],
+                          self.backend.app.extensions['coach_chat_model'], self.backend.PlannedWorkout,
                           self.backend.AnalyticsCache, self.backend.BestEffortCache, self.backend.Activity):
                 model.query.delete()
             user = self.backend.db.session.get(self.backend.User, self.backend.DEMO_USER_ID)
@@ -1064,6 +1065,205 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual((job['status'], job['steps'][0]['status']), ('failed', 'failed'))
         self.assertIn('unterbrochen', job['error'])
         self.assertEqual(self.client.get('/api/coach/plan/create/unknown').status_code, 404)
+
+    # --- Plan, Heute and coach chat (M4) --------------------------------------------------------
+
+    def planned(self, **settings):
+        self.plan_settings(**settings)
+        provider, _ = self.planner()
+        self.assertEqual(self.create(provider)['status'], 'done')
+        return self.client.get('/api/coach/plan').get_json()
+
+    def coach(self, *answers):
+        """A test-double provider for the chat that answers in turn and keeps the contexts."""
+        calls = []
+
+        def answer(key, model, instructions, context, schema, reasoning_effort=None, on_usage=None):
+            calls.append(copy.deepcopy(context))
+            on_usage({'inputTokens': 10, 'outputTokens': 5, 'cachedTokens': 0})
+            from ai_provider import validate_response
+            return validate_response(copy.deepcopy(answers[min(len(calls), len(answers)) - 1]), schema)
+        provider = Mock()
+        provider.generate.side_effect = answer
+        return provider, calls
+
+    def chat(self, provider, body, expected=201):
+        with patch('coach_api.get_provider', return_value=provider):
+            response = self.client.post('/api/coach/chat?timezone=Europe/Berlin', json=body)
+        self.assertEqual(response.status_code, expected, response.get_json())
+        return response.get_json()
+
+    @staticmethod
+    def reply(text='Alles klar.', weeks=(), settings=None, summary='Kürzer'):
+        change = {'summary': summary, 'weeks': list(weeks), 'settings': settings} if weeks or settings else None
+        return {'reply': text, 'change': change}
+
+    @staticmethod
+    def shorter(week, minutes=45, day=None):
+        session = week['sessions'][0]
+        changed = {'id': session['id'], 'day': day or session['day'], 'template': session['template'],
+                   'params': {**session['params'], 'durationMin': minutes}}
+        return {'week': week['week'], 'targetHours': round(minutes / 60, 2), 'focus': week['focus'], 'hinweise': ['Kürzer heute.'],
+                'operations': [{'op': 'replace', 'sessionId': session['id'], 'session': changed}]}
+
+    @staticmethod
+    def settings(**values):
+        return {'exception': None, 'window': None, 'maxWeeklyHours': None, 'event': None, 'threshold': None, **values}
+
+    def test_chat_answers_with_plan_context_and_keeps_its_history(self):
+        plan = self.planned()
+        first = plan['weeks'][self.week]
+        session = first['sessions'][0]
+        self.client.delete('/api/ai-provider')
+        self.assertIn('AI-Provider', self.client.post('/api/coach/chat', json={'message': 'Hallo'}).get_json()['error'])
+        self.client.put('/api/ai-provider', json={'provider': 'openai', 'model': 'gpt-4.1-mini', 'apiKey': 'sk-test-never-a-real-key-1234'})
+        self.assertEqual(self.client.post('/api/coach/chat', json={'message': '   '}).status_code, 400)
+        ref = {'kind': 'session', 'week': self.week, 'sessionId': session['id'], 'label': 'Mo · Grundlage'}
+        self.assertEqual(self.client.post('/api/coach/chat', json={'message': 'x', 'ref': {**ref, 'sessionId': 'fremd'}}).status_code, 400)
+        provider, calls = self.coach(self.reply('Weil die Grundlage zählt.'))
+        view = self.chat(provider, {'message': ' Warum diese Einheit? ', 'ref': ref})
+        self.assertEqual([(m['role'], m['text'], m['change']) for m in view['messages']],
+                         [('athlete', 'Warum diese Einheit?', None), ('coach', 'Weil die Grundlage zählt.', None)])
+        self.assertEqual(view['messages'][0]['ref'], ref)
+        context = calls[0]
+        self.assertEqual((context['task'], context['message'], context['history']),
+                         ('chat', {'source': 'athlete', 'text': 'Warum diese Einheit?'}, []))
+        self.assertEqual((context['ref']['session']['name'], context['ref']['session']['durationMin']), ('Grundlagenausdauer Rad', 60))
+        self.assertEqual([w['week'] for w in context['workedOutWeeks']], [iso_week(self.start + timedelta(weeks=i)) for i in range(3)])
+        self.assertEqual(context['workedOutWeeks'][0]['block']['name'], 'Grundlage')
+        self.assertTrue(context['workedOutWeeks'][0]['blockRules'])
+        self.assertEqual([p['blockType'] for p in context['plan']['phases']], ['grundlage', 'schwelle'])
+        self.assertIn('readinessToday', context['snapshot']['selfReported'])
+        provider, calls = self.coach(self.reply('Gern.'))
+        self.assertEqual(len(self.chat(provider, {'message': 'Danke'})['messages']), 4)
+        self.assertEqual([h['role'] for h in calls[0]['history']], ['athlete', 'coach'])
+        self.assertEqual(self.client.get('/api/coach/usage').get_json()['byKind']['chat'], 2)
+        failing = Mock()
+        failing.generate.side_effect = ProviderError('Der AI-Provider ist derzeit nicht erreichbar.')
+        self.chat(failing, {'message': 'Noch da?'}, 502)
+        self.assertEqual(len(self.client.get('/api/coach/chat').get_json()['messages']), 4)  # Nothing half saved.
+        self.assertEqual(self.client.delete('/api/coach/chat').get_json(), {'messages': []})
+        provider, calls = self.coach(self.reply('Neu hier.'))
+        self.assertEqual(len(self.chat(provider, {'message': 'Neuer Chat'})['messages']), 2)
+        self.assertEqual(calls[0]['history'], [])
+
+    def test_a_chat_change_is_a_card_that_only_confirm_applies(self):
+        plan = self.planned()
+        first = plan['weeks'][self.week]
+        workout = first['sessions'][0]['id']
+        provider, _ = self.coach(self.reply('Ich kürze auf 45 Minuten.', [self.shorter(first)]))
+        view = self.chat(provider, {'message': 'Morgen schaffe ich nur 45 Minuten.'})
+        change = view['messages'][-1]['change']
+        self.assertEqual((change['status'], change['summary'], change['hinweise']), ('pending', 'Kürzer', ['Kürzer heute.']))
+        self.assertEqual(change['weeks'][0]['lines'], ['Mo Grundlagenausdauer Rad 60 min → 45 min'])
+        self.assertEqual((change['weeks'][0]['before']['calculatedHours'], change['weeks'][0]['after']['calculatedHours']), (1, .75))
+        workouts = lambda: {w['id']: w for w in self.client.get('/api/workouts').get_json()}
+        self.assertEqual(sum(s['duration']['value'] for s in workouts()[workout]['steps'] if s['kind'] == 'step'), 3600)  # Nothing changes yet.
+        # A new card replaces the open one.
+        provider, _ = self.coach(self.reply('Dann 50 Minuten.', [self.shorter(first, 50)]))
+        view = self.chat(provider, {'message': 'Lieber 50 Minuten.'})
+        self.assertEqual(self.client.get(f"/api/coach/proposals/{change['proposalId']}").get_json()['status'], 'discarded')
+        newer = view['messages'][-1]['change']
+        self.assertEqual(self.client.post(f"/api/coach/proposals/{change['proposalId']}/confirm", json={'confirm': True}).status_code, 409)
+        confirmed = self.client.post(f"/api/coach/proposals/{newer['proposalId']}/confirm", json={'confirm': True})
+        self.assertEqual(confirmed.status_code, 200, confirmed.get_json())
+        self.assertEqual(confirmed.get_json()['weeks'][self.week]['calculatedHours'], round(50 / 60, 2))
+        self.assertEqual(sum(s['duration']['value'] for s in workouts()[workout]['steps'] if s['kind'] == 'step'), 3000)
+        self.assertEqual([m['change']['status'] for m in self.client.get('/api/coach/chat').get_json()['messages'] if m['change']],
+                         ['discarded', 'confirmed'])
+
+    def test_a_rule_breaking_change_goes_back_once_for_an_alternative(self):
+        plan = self.planned()
+        first = plan['weeks'][self.week]
+        provider, calls = self.coach(self.reply('3 Stunden.', [self.shorter(first, 200)]), self.reply('Nur 2 Stunden gehen.', [self.shorter(first, 120)]))
+        view = self.chat(provider, {'message': 'Montag 3 Stunden bitte.'})
+        self.assertEqual(len(calls), 2)
+        self.assertIn('verfügbare Zeit', calls[1]['systemNote']['rejectedChange'])
+        self.assertEqual(calls[1]['systemNote']['previousReply'], '3 Stunden.')
+        self.assertEqual([m['role'] for m in view['messages']], ['athlete', 'system', 'coach'])
+        self.assertTrue(view['messages'][1]['text'].startswith('Nicht möglich: mon:'))
+        self.assertEqual((view['messages'][2]['text'], view['messages'][2]['change']['weeks'][0]['after']['calculatedHours']), ('Nur 2 Stunden gehen.', 2))
+        # Changes for weeks that are not worked out yet never pass.
+        later = {**self.shorter(first), 'week': iso_week(self.start + timedelta(weeks=5))}
+        provider, calls = self.coach(self.reply('Mach ich.', [later]))
+        view = self.chat(provider, {'message': 'In sechs Wochen weniger.'})
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([m['role'] for m in view['messages'][-4:]], ['athlete', 'system', 'coach', 'system'])
+        self.assertIsNone(view['messages'][-2]['change'])
+        self.assertTrue(view['messages'][-1]['text'].startswith('Die Änderung wurde nicht übernommen'))
+
+    def test_lasting_settings_from_the_chat_apply_on_confirm(self):
+        self.planned()
+        trip = (self.start + timedelta(weeks=4)).isoformat(), (self.start + timedelta(weeks=4, days=2)).isoformat()
+        event = {'title': 'Gran Fondo', 'sport': 'ride', 'subtype': 'granFondo', 'startDate': (self.start + timedelta(weeks=6, days=5)).isoformat(),
+                 'endDate': None, 'allDay': True, 'time': None, 'location': None, 'priority': 'B', 'handling': None,
+                 'distanceKm': 120, 'targetSeconds': None, 'elevationM': 1500, 'description': ''}
+        settings = self.settings(exception={'from': trip[0], 'to': trip[1], 'kind': 'unavailable', 'maxMinutes': None, 'note': 'Dienstreise'},
+                                 threshold={'sport': 'ride', 'ftp': 280, 'paceSecPerKm': None}, event=event)
+        provider, _ = self.coach(self.reply('Trage ich ein.', settings=settings, summary='Einstellungen'))
+        change = self.chat(provider, {'message': 'Dienstreise, neue FTP 280 und ein Gran Fondo.'})['messages'][-1]['change']
+        day = lambda value: '.'.join(reversed(value.split('-')))
+        self.assertEqual((change['weeks'], change['settings']), ([], [f'Ausnahme {day(trip[0])}–{day(trip[1])}: nicht verfügbar · Dienstreise',
+                                                                      f"Neues B-Event: Gran Fondo am {day(event['startDate'])}", 'FTP: 280 W']))
+        self.assertEqual(self.client.get('/api/athlete-profile').get_json()['availability']['exceptions'], [])
+        confirmed = self.client.post(f"/api/coach/proposals/{change['proposalId']}/confirm", json={'confirm': True})
+        self.assertEqual(confirmed.status_code, 200, confirmed.get_json())
+        saved = self.client.get('/api/athlete-profile').get_json()
+        self.assertEqual([(e['note'], e['kind']) for e in saved['availability']['exceptions']], [('Dienstreise', 'unavailable')])
+        self.assertEqual([(e['title'], e['handling']) for e in saved['events']], [('Gran Fondo', 'miniTaper')])
+        self.assertEqual((saved['thresholds']['ride']['source'], self.client.get('/api/coach/thresholds').get_json()['ride']['ftp']), ('athlete', 280))
+        # A broken setting is a rule violation like a broken week.
+        past = self.settings(exception={'from': '2020-01-01', 'to': '2020-01-02', 'kind': 'unavailable', 'maxMinutes': None, 'note': ''})
+        provider, calls = self.coach(self.reply('Ok.', settings=past))
+        self.assertIsNone(self.chat(provider, {'message': 'Damals'})['messages'][-1]['change'])
+        self.assertIn('heute oder später', calls[1]['systemNote']['rejectedChange'])
+
+    def test_ending_the_plan_also_ends_its_chat(self):
+        plan = self.planned()
+        provider, _ = self.coach(self.reply('Kürzer.', [self.shorter(plan['weeks'][self.week])]))
+        change = self.chat(provider, {'message': 'Kürzer'})['messages'][-1]['change']
+        self.client.post('/api/coach/plan/reset', json={})
+        self.assertEqual(self.client.get('/api/coach/chat').get_json()['messages'], [])
+        self.assertEqual(self.client.get(f"/api/coach/proposals/{change['proposalId']}").get_json()['status'], 'discarded')
+
+    def test_today_shows_plan_week_outlook_and_hints(self):
+        today = date.today()
+        self.planned(start=today, mode='manual')  # The review then starts no replanning.
+        self.client.post('/api/coach/events', json={'title': 'Kriterium', 'sport': 'ride', 'priority': 'C',
+                                                     'startDate': (today + timedelta(days=4)).isoformat()})
+        view = self.client.get('/api/coach/today').get_json()
+        self.assertEqual(view['period']['planWeek'], {'number': 1, 'total': 12})
+        self.assertEqual([o['date'] for o in view['outlook']], [(today + timedelta(days=n)).isoformat() for n in (1, 2, 3)])
+        self.assertEqual([(h['kind'], h.get('days')) for h in view['hints']], [('event', 4)])
+        sunday = today + timedelta(days=6 - today.weekday())
+        hints = self.client.get(f'/api/coach/today?date={sunday.isoformat()}').get_json()['hints']
+        self.assertEqual(hints[0], {'kind': 'review', 'week': iso_week(today)})
+        self.client.put(f'/api/coach/weeks/{iso_week(today)}/review', json={'missedSessions': [], 'effort': 3, 'reasons': ['asPlanned'], 'note': ''})
+        self.assertNotIn('review', [h['kind'] for h in self.client.get(f'/api/coach/today?date={sunday.isoformat()}').get_json()['hints']])
+        week = iso_week(today + timedelta(weeks=2))
+        Job = self.backend.app.extensions['coach_job_model']
+        with self.backend.app.app_context():
+            Job.query.delete()
+            self.backend.db.session.add(Job(id='advance', user_id=self.backend.DEMO_USER_ID, kind='advance', status='done', steps='[]',
+                                            result=json.dumps({'week': week, 'weekNumber': 3, 'proposalId': None})))
+            self.backend.db.session.commit()
+        planned = [h for h in self.client.get('/api/coach/today').get_json()['hints'] if h['kind'] == 'planned']
+        self.assertEqual(planned, [{'kind': 'planned', 'week': week, 'weekNumber': 3, 'hours': 1, 'focus': 'Locker', 'proposalId': None}])
+
+    def test_plan_overview_has_worked_out_outlined_and_past_weeks(self):
+        self.assertEqual(self.client.get('/api/coach/plan/weeks').get_json()['weeks'], [])
+        self.planned()
+        overview = self.client.get('/api/coach/plan/weeks').get_json()
+        self.assertEqual([(p['blockType'], p['typeName'], p['weeks']) for p in overview['phases']], [('grundlage', 'Grundlage', 8), ('schwelle', 'Schwelle', 4)])
+        weeks = overview['weeks']
+        self.assertEqual(len(weeks), 12)
+        self.assertEqual([w['plan'] is not None for w in weeks[:4]], [True, True, True, False])
+        self.assertEqual((weeks[0]['number'], weeks[0]['phaseName'], weeks[0]['state'], weeks[0]['completedHours']), (1, 'Grundlage', 'future', None))
+        self.assertEqual(weeks[3]['replanDate'], (self.start + timedelta(weeks=3, days=-15)).isoformat())
+        self.assertEqual((weeks[3]['targetHours'], weeks[8]['phaseName']), (1, 'Schwelle'))
+        self.assertIsNone(overview['nextManualWeek'])  # The three weeks from the next Monday are ready.
+        self.plan_settings(mode='manual')
+        self.assertIsNone(self.client.get('/api/coach/plan/weeks').get_json()['weeks'][3]['replanDate'])
 
 
 if __name__ == '__main__':

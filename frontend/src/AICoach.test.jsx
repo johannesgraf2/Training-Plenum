@@ -893,3 +893,26 @@ test('Heute invites to build the plan until the onboarding created it', async ()
   await render({ initialTab: 'today', apiBase: 'http://other.test' });
   expect(container.querySelector('[aria-label="Plan bauen"]')).toBeNull();
 });
+
+test('with a plan Heute offers quick buttons that ask the coach chat about today, and opening replans when due', async () => {
+  initialPlan = { revision: 4, blocks: [], weeks: {}, frame: { status: 'active', startDate: '2026-09-21', endDate: '2027-01-31' } };
+  const ok = data => async () => ({ ok: true, json: async () => data });
+  responses['GET /api/coach/today'] = ok({ ...todayView, checkIn: { date: '2026-09-23', version: 2 }, readiness: { ...todayView.readiness, level: 'yellow', reasons: ['Wenig Schlaf'] },
+    period: { ...todayView.period, planWeek: { number: 3, total: 19 } }, outlook: [{ date: '2026-09-24', sessions: [] }, { date: '2026-09-25', sessions: [{ id: 'x', name: 'Sweetspot', durationMin: 75 }] }, { date: '2026-09-26', sessions: [] }],
+    hints: [{ kind: 'event', eventId: 'e', title: 'Kriterium', priority: 'C', startDate: '2026-09-27', days: 4 }] });
+  responses['POST /api/coach/plan/advance'] = ok({ job: { id: 'job-1', kind: 'advance', status: 'done', steps: [], result: { week: '2026-W42', weekNumber: 6, calculatedHours: 8.5, focus: 'Sweetspot', proposalId: null } } });
+  responses['GET /api/coach/chat'] = ok({ messages: [] });
+  responses['POST /api/coach/chat'] = body => ok({ messages: [{ id: 1, role: 'athlete', text: body.message, ref: body.ref, change: null }, { id: 2, role: 'coach', text: 'Dann 40 Minuten locker.', ref: null, change: null }] })();
+  await render({ initialTab: 'today' });
+  expect(requests.find(r => r.path === '/api/coach/plan/advance').body).toEqual({ trigger: 'auto' });
+  expect(container.textContent).toContain('Woche 6 geplant – 8,5 h, Fokus Sweetspot.');
+  expect(container.textContent).toContain('Woche 3 von 19 · Aufbau');
+  expect(container.textContent).toContain('Kriterium (C-Event) in 4 Tagen.');
+  expect(container.textContent).toContain('Sweetspot · 1:15 h');
+  expect(button('Woche an heute anpassen')).toBeUndefined();
+  await click(button('Kürzer'));
+  const sent = requests.find(r => r.method === 'POST' && r.path === '/api/coach/chat');
+  expect(sent.body).toEqual({ message: 'Meine Tagesampel ist heute gelb. Bitte mach die heutige Einheit kürzer.',
+    ref: { kind: 'session', week: '2026-W39', sessionId: 'session-1', label: 'Heute · Grundlage' } });
+  expect(container.querySelector('[role="dialog"]').textContent).toContain('Dann 40 Minuten locker.');
+});

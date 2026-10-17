@@ -75,6 +75,7 @@ function SeasonBar({ segments, date }) {
 export function PeriodHeader({ today, compact = false }) {
   const period = today.period || {};
   const block = period.block;
+  const planWeek = period.planWeek;  // Week of the plan with phases: "Woche 3 von 40 · Grundlage".
   const goal = period.goal || {};
   const facts = block ? [block.deload ? (block.phase === 'taper' ? 'Taper-Woche' : 'Entlastungswoche') : 'Belastungswoche',
     block.targetHours != null && `Wochenziel ${fmt(block.targetHours)} h`, block.focus && `Fokus: ${block.focus}`].filter(Boolean) : [];
@@ -82,8 +83,9 @@ export function PeriodHeader({ today, compact = false }) {
     <div className="today-period-head">
       <div>
         <span className="coach-eyebrow">{longDate(today.date)} · KW {Number(period.week?.split('-W')[1])}</span>
-        <h2>{block ? `${block.typeName}${block.secondaryName ? ` + ${block.secondaryName}` : ''} · Woche ${block.weekNumber} von ${block.totalWeeks}` : 'Kein laufender Trainingsblock'}</h2>
-        <p className="today-facts">{block ? facts.join(' · ') : 'Im Bereich „Saison“ legst du deinen nächsten Trainingsblock an.'}</p>
+        <h2>{planWeek ? `Woche ${planWeek.number} von ${planWeek.total}${block ? ` · ${block.typeName}` : ''}`
+          : block ? `${block.typeName}${block.secondaryName ? ` + ${block.secondaryName}` : ''} · Woche ${block.weekNumber} von ${block.totalWeeks}` : 'Kein laufender Trainingsblock'}</h2>
+        <p className="today-facts">{block ? facts.join(' · ') : planWeek ? 'Diese Woche gehört zu keiner Phase.' : 'Im Bereich „Saison“ legst du deinen nächsten Trainingsblock an.'}</p>
       </div>
       {today.whoop && <div className="today-whoop" aria-label="WHOOP">
         <div><strong>{today.whoop.readiness}</strong><span>Readiness</span></div>
@@ -257,6 +259,44 @@ export function CheckInHistory({ apiBase = '', version = 0 }) {
       {data.injuries.map(injury => <p key={injury.id} className="today-injury-line"><strong>{injury.label}</strong> · {injury.status === 'healed' ? `ausgeheilt am ${shortDate(injury.endDate)}` : 'aktiv'} · Verlauf {injury.history.map(h => `${shortDate(h.date)} ${h.pain}`).join(' → ')}</p>)}
     </section>}
   </>;
+}
+
+// On yellow or red a quick button sends a prepared message to the coach chat about today's session.
+const QUICK = [['Kürzer', 'Bitte mach die heutige Einheit kürzer.'], ['Lockerer', 'Bitte mach die heutige Einheit lockerer.'],
+  ['Ruhetag', 'Bitte mach heute einen Ruhetag.'], ['Auf morgen', 'Bitte verschieb die heutige Einheit auf morgen.']];
+const LEVEL_WORDS = { yellow: 'gelb', red: 'rot' };
+
+/** Kürzer, Lockerer, Ruhetag, Auf morgen and Coach fragen; onAsk(message | null). */
+export function QuickActions({ level, disabled, onAsk }) {
+  if (!LEVEL_WORDS[level]) return null;
+  const intro = `Meine Tagesampel ist heute ${LEVEL_WORDS[level]}. `;
+  return <div className="coach-actions today-quick" role="group" aria-label="Schnell anpassen">
+    {QUICK.map(([label, text]) => <button key={label} type="button" disabled={disabled} onClick={() => onAsk(intro + text)}>{label}</button>)}
+    <button type="button" className="coach-primary" disabled={disabled} onClick={() => onAsk(null)}>Coach fragen</button>
+  </div>;
+}
+
+/** The next three days of the plan. */
+export function Outlook({ days }) {
+  if (!days?.length) return null;
+  return <section className="coach-card" aria-label="Ausblick"><span className="coach-eyebrow">Ausblick · die nächsten 3 Tage</span>
+    <ol className="today-outlook">{days.map(day => <li key={day.date}><strong>{shortDate(day.date)}</strong>
+      {day.sessions.length ? <span>{day.sessions.map(s => `${s.name} · ${hm(s.durationMin)}`).join(' · ')}</span> : <span className="coach-muted">frei</span>}</li>)}</ol>
+  </section>;
+}
+
+const EVENT_WHEN = days => days === 0 ? 'heute' : days === 1 ? 'morgen' : `in ${days} Tagen`;
+
+/** What is coming up: open weekly review, a newly worked-out week, an event within 7 days. */
+export function HintCards({ hints, onReview, onPlan }) {
+  if (!hints?.length) return null;
+  return <div className="today-hints">{hints.map(hint => {
+    if (hint.kind === 'review') return <div key="review" className="coach-message today-hint"><span><strong>Wochenrückblick offen.</strong> Wie lief deine Woche? Danach plant der Coach weiter.</span>
+      <button type="button" onClick={() => onReview(hint.week)}>Rückblick starten</button></div>;
+    if (hint.kind === 'planned') return <div key="planned" className="coach-message success today-hint"><span><strong>Woche {hint.weekNumber} geplant</strong> · {fmt(hint.hours)} h{hint.focus ? ` · Fokus ${hint.focus}` : ''}
+      {hint.proposalId ? ' · Der Coach schlägt auch eine Anpassung der Wochen davor vor.' : ''}</span><button type="button" onClick={onPlan}>Zum Plan</button></div>;
+    return <div key={hint.eventId} className="coach-message today-hint"><span><strong>{hint.title}</strong> ({hint.priority}-Event) {EVENT_WHEN(hint.days)}.</span></div>;
+  })}</div>;
 }
 
 /** Compact line for the start page: open check-in or the traffic light of the day. */
