@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { localDate } from './workoutModel';
 import CoachOnboarding from './CoachOnboarding.jsx';
 import CoachChat from './CoachChat';
-import CoachPlan from './CoachPlan';
+import CoachPlan, { JobProgress } from './CoachPlan';
 import CoachSettings, { SECTIONS } from './CoachSettings';
 import { CheckInDialog, HintCards, InjuryList, Outlook, PeriodHeader, QuickActions, ReadinessCard, TodaySessions, healInjury, loadToday } from './CoachToday';
 import { jobState } from './coachOnboarding';
@@ -84,6 +84,7 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
   const [reloads, setReloads] = useState(0);  // A finished or closed onboarding loads the coach again.
   const [chat, setChat] = useState(null);  // The open coach chat: {ref, message, key}.
   const [job, setJob] = useState(null);  // Rolling replanning or adapting the plan, read with jobState.
+  const [stopping, setStopping] = useState(false);
   const [planProposal, setPlanProposal] = useState(null);  // An adjustment of the worked-out weeks after a job.
   const [reviewWeek, setReviewWeek] = useState(null);
   const [planVersion, setPlanVersion] = useState(0);
@@ -133,6 +134,9 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
       else setNotice(`${result.weeks?.length > 1 ? `${result.weeks.length} Wochen geplant, zuletzt ` : ''}Woche ${result.weekNumber} geplant – ${fmt(result.calculatedHours)} h${result.focus ? `, Fokus ${result.focus}` : ''}.`);
       if (result.proposalId) setPlanProposal(result.proposalId);
       afterPlanChange().catch(() => {});
+    } else if (state.status === 'stopped') {
+      setNotice('Planung gestoppt. Bereits geplante Wochen bleiben erhalten.');
+      afterPlanChange().catch(() => {});
     } else if (state.status === 'failed') {
       setError(`${kind === 'adapt' ? 'Der Plan konnte nicht angepasst werden' : 'Die nächste Woche konnte nicht geplant werden'}: ${state.error || 'unbekannter Fehler'}`);
     }
@@ -140,6 +144,13 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
   function startJob(path, body, quiet) {
     request(`${path}?${tzQuery()}`, 'POST', body)
       .then(data => { if (data.job) followJob(data.job); }, e => { if (e.status === 409 && e.data?.job) followJob(e.data.job); else if (!quiet) setError(e.message); });
+  }
+  // Stopping keeps the finished steps; the answer of the running one is dropped on the server.
+  function stopJob() {
+    if (!job?.id || stopping) return;
+    setStopping(true);
+    request(`/api/coach/plan/jobs/${encodeURIComponent(job.id)}/stop`, 'POST', {})
+      .then(data => followJob({ ...data.job, kind: job.kind }), e => setError(e.message)).finally(() => setStopping(false));
   }
   const startAdvance = trigger => startJob('/api/coach/plan/advance', { trigger }, trigger === 'auto');
   function startAdapt(changes) {
@@ -228,6 +239,7 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
     {error && <div role="alert" className="coach-message error">{error}{!profile && !loading && <button onClick={() => window.location.reload()}>Erneut laden</button>}</div>}
     {notice && <div role="status" className="coach-message success">{notice}</div>}
     {busy && <div role="status" className="coach-message"><span className="coach-spinner" />{busy}</div>}
+    {job?.status === 'running' && <JobProgress job={job} stopping={stopping} onStop={stopJob} />}
   </>;
 
   return <div className="ai-coach">
@@ -252,9 +264,9 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
       </> : <p role="status" className="coach-muted">Dein Tag wird geladen …</p>}
     </>}
 
-    {!loading && profile && tab === 'plan' && <CoachPlan apiBase={apiBase} version={`${plan?.revision ?? ''}-${planVersion}`} workoutsById={workoutsById} advance={job}
+    {!loading && profile && tab === 'plan' && <CoachPlan apiBase={apiBase} version={`${plan?.revision ?? ''}-${planVersion}`} workoutsById={workoutsById} advance={job} stopping={stopping}
       proposalId={planProposal} reviewWeek={reviewWeek} pendingChanges={adaptPending} onAsk={openChat} onStart={() => setOnboarding(true)} onAdvance={() => startAdvance('manual')}
-      onAdapt={startAdapt} onJob={followJob} onChanged={() => afterPlanChange().catch(e => setError(e.message))} onOpenWorkout={onOpenWorkout}
+      onAdapt={startAdapt} onJob={followJob} onStop={stopJob} onChanged={() => afterPlanChange().catch(e => setError(e.message))} onOpenWorkout={onOpenWorkout}
       onHorizon={() => { afterPlanChange().catch(() => {}); if (plan?.settings?.replanMode !== 'manual') startAdvance('auto'); }} />}
 
     {!loading && profile && tab === 'settings' && <CoachSettings apiBase={apiBase} section={section} onSection={part => setTab('settings', part)} planActive={planActive}

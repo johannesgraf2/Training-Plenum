@@ -248,7 +248,7 @@ def check_options(decision, mode, choice=None):
             raise CoachError('Ein Trainingsblock muss alle Wochen lückenlos enthalten.')
 
 
-def check_block(identity, secondary, weeks, *, start, profile):
+def check_block(identity, secondary, weeks, *, start, profile, max_streak=MAX_LOAD_STREAK):
     """Outline rules: length, rhythm, taper and volume caps. Raises CoachError."""
     spec = block_type(identity)
     if secondary is not None and secondary not in SECONDARY_FOCUS:
@@ -277,8 +277,8 @@ def check_block(identity, secondary, weeks, *, start, profile):
         streak = 0
         for deload in deloads:
             streak = 0 if deload else streak + 1
-            if streak > MAX_LOAD_STREAK:
-                raise CoachError(f'Nach höchstens {MAX_LOAD_STREAK} Belastungswochen folgt eine Entlastungswoche.')
+            if streak > max_streak:
+                raise CoachError(f'Nach höchstens {max_streak} Belastungswochen folgt eine Entlastungswoche.')
     if spec['taperDrop'] and len(weeks) > 1:
         peak = max(w['targetHours'] for w in weeks[:-1])
         if weeks[-1]['targetHours'] > peak * (1 - spec['taperDrop']) + 1e-9:

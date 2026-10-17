@@ -28,9 +28,9 @@ from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OV
 from coach_chat import (MAX_HISTORY, MESSAGE_SCHEMA, apply_settings, check_ref, compact_session,
                         response_schema as chat_response_schema, week_lines)
 from coach_plan import (ADAPT_AREAS, ADAPT_SCHEMA, FRAME_RESPONSE_SCHEMA, PHASE_EDIT_SCHEMA, REFRAME_AREAS, REVIEW_SCHEMA,
-                        adapt_response_schema, adopt_blocks, check_frame, check_tests, cut_frame, deviation, due_weeks, edit_phases,
-                        frame_blocks, frame_hint, group_sessions, horizon, horizon_weeks, plan_span, plan_weeks, reference_monday,
-                        replan_date, required_tests)
+                        adapt_response_schema, adopt_blocks, align_frame, check_frame, check_tests, cut_frame, deviation, due_weeks,
+                        edit_phases, frame_blocks, frame_cycles, frame_hint, group_sessions, horizon, horizon_weeks, plan_span,
+                        plan_weeks, reference_monday, replan_date, required_tests)
 from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_order,
                           check_season, first_monday, new_season, public_season, season_frame, typical_season, with_fixed)
 from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, flat_steps, render_session, template_catalog
@@ -38,6 +38,10 @@ from workout_export import WorkoutError, validate_workout
 from coach_wellness import (SPORT_NOUNS, blocked_sports, check_in_averages, heal, injury_label, public_injury, readiness,
                             record_check_in)
 
+
+
+class JobStopped(Exception):
+    """The athlete stopped a running job; the steps it finished stay saved."""
 
 
 def packed(value):
@@ -123,6 +127,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
     app.extensions['coach_job_model'] = CoachJob
     # Threads of running jobs by job id, so a job left over from a restarted server is recognised as interrupted.
     app.extensions['coach_jobs'] = {}
+    # Jobs the athlete stopped while their thread still runs: their next step or provider answer ends them unsaved.
+    app.extensions['coach_stopped'] = set()
     app.extensions['coach_key_source'] = ensure_server_key()
 
     @app.errorhandler(CoachError)
@@ -1068,7 +1074,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'and build up gradually; the load the athlete can handle comes from trainingBase and recent training, the time '
         'budget only caps it. periodization: build the plan backwards from each A event: the taper (periodization.taperWeeks '
         'weeks when set, the server enforces it) ends in the event week, before it cycles of three load weeks and one deload '
-        'week. '
+        'week. periodization.cycles lists these cycles per A event, counted backwards from a taper of taperWeeks weeks (a '
+        'suggestion when periodization.taperWeeks is null); the first cycle may have four or two load weeks so the rhythm '
+        'stays clean up to the event. Every phase with a load/deload rhythm consists of whole cycles: deload weeks are '
+        'exactly the cycle ends, phase changes come after a deload week, and the peak volume is the last load week before '
+        'the final deload (peakWeek). The server aligns the phases to these cycles. '
         'Adapt task with changes.areas phases: the athlete changed the phases by hand; adapt each worked-out week to the '
         'phase, target hours and rules of its week now. '
         'Adapt task: the athlete changed settings (changes.areas: availability, events, thresholds, sports, period, phases). Check '
@@ -1473,6 +1483,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         return job if job and job_view(job)['status'] == 'running' else None
 
     def update_job(identity, step=None, step_status=None, **fields):
+        if identity in app.extensions['coach_stopped']:
+            raise JobStopped()
         job = db.session.get(CoachJob, identity)
         if step:
             steps = json.loads(job.steps)
@@ -1497,9 +1509,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
         def run():
             with app.app_context():
-                g.coach_timezone = timezone_name
+                g.coach_timezone, g.coach_job = timezone_name, identity
                 try:
                     update_job(identity, status='done', result=packed(work(identity)))
+                except JobStopped:
+                    db.session.rollback()  # stop_job already saved the status.
                 except (CoachError, TemplateError, ProviderError, WorkoutError) as error:
                     db.session.rollback()
                     fail_job(identity, str(error))
@@ -1508,6 +1522,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                     app.logger.exception('Coach job %s failed', identity)
                     fail_job(identity, 'Bei der Planung ist ein unerwarteter Fehler aufgetreten. Bitte erneut versuchen.')
                 finally:
+                    app.extensions['coach_stopped'].discard(identity)
                     db.session.remove()
 
         thread = threading.Thread(target=run, name=f'coach-{kind}', daemon=True)
@@ -1547,6 +1562,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         db.session.commit()  # Release SQLite reads while awaiting the provider.
         decision = provider.generate(key, model, instructions, context, schema, reasoning_effort=reasoning_effort,
                                      on_usage=usage_recorder(kind, model))
+        if g.get('coach_job') in app.extensions['coach_stopped']:
+            raise JobStopped()  # The answer of a stopped job is never saved.
         return copy.deepcopy(validate(decision, schema))  # Also enforce schema for alternate provider adapters.
 
     def ask_frame(settings, extra=None):
@@ -1556,13 +1573,12 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         first, total = plan_span(settings)
         last = first + timedelta(weeks=total) - timedelta(days=1)
         rows = load_rows()
-        weekly = []
+        weekly, caps = [], []
         for index in range(total):
             monday = first + timedelta(weeks=index)
             limits = effective_availability(current_profile, iso_week(monday))
-            weekly.append({'week': index + 1, 'startDate': monday.isoformat(),
-                           'maxHours': round(min(current_profile['availability']['absoluteMaxWeeklyHours'],
-                                                 sum(d['maxMinutes'] for d in limits.values()) / 60), 2),
+            caps.append(min(current_profile['availability']['absoluteMaxWeeklyHours'], sum(d['maxMinutes'] for d in limits.values()) / 60))
+            weekly.append({'week': index + 1, 'startDate': monday.isoformat(), 'maxHours': round(caps[-1], 2),
                            'preferredHours': preferred_hours(current_profile, monday),
                            'exceptions': sorted({d['exception']['note'] for d in limits.values() if d.get('exception')})})
         context = {'task': 'frame', 'today': today.isoformat(),
@@ -1581,7 +1597,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                    'trainingBase': {'source': current_profile['background']['source'] or 'athlete',
                                     **{key: current_profile['background'][key] for key in ('type', 'weeklyHours', 'intervals')}},
                    'periodization': {'source': 'athlete', 'backwardsFromEvent': True, 'loadWeeks': 3, 'deloadWeeks': 1,
-                                     'taperWeeks': settings.get('taperWeeks')},
+                                     'taperWeeks': settings.get('taperWeeks'), 'cycles': frame_cycles(settings, current_profile)},
                    'previousBlocks': [previous_block(b, plan, rows, today) for b in plan['blocks']
                                       if day_date(b['startDate']) < first][-3:],
                    'snapshot': snapshot()}
@@ -1591,7 +1607,13 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         context['snapshot']['selfReported']['injuries'] = wellness_context(current_profile, today)['injuries']
         context.update(extra or {})
         decision = generate('frame', context, FRAME_RESPONSE_SCHEMA)
-        check_frame(decision['phases'], settings, profile())  # Re-read after the provider call.
+        current_profile = profile()  # Re-read after the provider call.
+        aligned = align_frame(decision['phases'], settings, current_profile, caps)
+        try:
+            check_frame(aligned, settings, current_profile)
+            decision['phases'] = aligned
+        except CoachError:
+            check_frame(decision['phases'], settings, current_profile)  # The AI's own phases when the cycles do not fit them.
         return decision
 
     def build_frame(settings):
@@ -1707,6 +1729,19 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
     @app.route('/api/coach/plan/adapt/<identity>')
     def get_job(identity):
         job = CoachJob.query.filter_by(id=identity, user_id=user_id).first_or_404()
+        return jsonify(job=job_view(job))
+
+    @app.route('/api/coach/plan/jobs/<identity>/stop', methods=['POST'])
+    def stop_job(identity):
+        """Stops a running job at once: finished steps stay, the answer of the running step is dropped when it arrives."""
+        job = CoachJob.query.filter_by(id=identity, user_id=user_id).first_or_404()
+        if job_view(job)['status'] == 'running':
+            app.extensions['coach_stopped'].add(job.id)
+            steps = json.loads(job.steps)
+            for step in steps:
+                step['status'] = 'stopped' if step['status'] in ('running', 'pending') else step['status']
+            job.steps, job.status, job.error = packed(steps), 'stopped', 'Gestoppt. Bereits Geplantes bleibt erhalten.'
+            db.session.commit()
         return jsonify(job=job_view(job))
 
     def reviewed_weeks(plan):

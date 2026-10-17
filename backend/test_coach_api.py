@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
 from datetime import date, datetime, timedelta
 from unittest.mock import Mock, patch
@@ -932,7 +933,7 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual(job['status'], 'done', job)
         self.assertEqual([c['task'] for c in calls], ['frame', 'week', 'week', 'week', 'week'])
         self.assertEqual(calls[0]['periodization'], {'source': 'athlete', 'backwardsFromEvent': True, 'loadWeeks': 3,
-                                                     'deloadWeeks': 1, 'taperWeeks': None})
+                                                     'deloadWeeks': 1, 'taperWeeks': None, 'cycles': []})
         self.assertIn('trainingBase', calls[0])
         self.assertTrue(self.client.get('/api/coach/today').get_json()['onboarded'])
         overview = self.client.get('/api/coach/plan/weeks').get_json()
@@ -974,6 +975,33 @@ class CoachAPITests(unittest.TestCase):
         job = self.create(provider)
         self.assertEqual((job['status'], [s['status'] for s in job['steps']]), ('done', ['done'] * 4))
         self.assertEqual([c['week'] for c in calls], [second, iso_week(self.start + timedelta(weeks=2))])
+
+    def test_a_stopped_job_keeps_the_finished_weeks_and_drops_the_running_one(self):
+        self.plan_settings()
+        second = iso_week(self.start + timedelta(weeks=1))
+        waiting, release = threading.Event(), threading.Event()
+
+        def hold(context):
+            if context.get('week') == second:
+                waiting.set()
+                release.wait(10)
+            return False
+        provider, calls = self.planner(fail=hold)
+        with patch('coach_api.get_provider', return_value=provider):
+            response = self.client.post('/api/coach/plan/create?timezone=Europe/Berlin', json={})
+            identity = response.get_json()['job']['id']
+            self.assertTrue(waiting.wait(10))
+            job = self.client.post(f'/api/coach/plan/jobs/{identity}/stop', json={}).get_json()['job']
+            self.assertEqual((job['status'], [s['status'] for s in job['steps']]), ('stopped', ['done', 'done', 'stopped', 'stopped']))
+            self.assertIsNone(self.client.get('/api/coach/plan/advance').get_json()['job'])  # A new job may start.
+            release.set()
+            self.backend.app.extensions['coach_jobs'][identity].join(20)
+        job = self.client.get('/api/coach/plan/create/' + identity).get_json()['job']
+        self.assertEqual((job['status'], job['error']), ('stopped', 'Gestoppt. Bereits Geplantes bleibt erhalten.'))
+        self.assertEqual(sorted(self.client.get('/api/coach/plan').get_json()['weeks']), [iso_week(self.start)])
+        self.assertEqual(len(calls), 3)  # The third week was never asked for.
+        self.assertEqual(self.client.post(f'/api/coach/plan/jobs/{identity}/stop', json={}).get_json()['job']['status'], 'stopped')
+        self.assertEqual(self.client.post('/api/coach/plan/jobs/unknown/stop', json={}).status_code, 404)
 
     def test_a_frame_that_breaks_the_rules_saves_nothing(self):
         self.plan_settings(weeks=13)
