@@ -114,6 +114,14 @@ THRESHOLD_SCHEMA = {**obj({sport: obj({'source': {'enum': [None, *THRESHOLD_SOUR
 # Threshold pace in seconds per km; FTP and maximum heart rate stay in the athlete settings.
 THRESHOLD_SCHEMA['properties']['run'] = obj({'source': {'enum': [None, *THRESHOLD_SOURCES]},
                                              'paceSecPerKm': num(120, 900, True), 'basis': text(120, True)})
+# What the athlete did recently (onboarding B1), confirmed from the data or answered without data.
+BACKGROUND_TYPES = ['ride', 'run', 'swim', 'triShort', 'triLong', 'duathlon', 'hyrox', 'xcski', 'other']
+BACKGROUND_SCHEMA = obj({'type': {'enum': [None, *BACKGROUND_TYPES]}, 'weeklyHours': num(0, 80, True),
+                         'intervals': {**obj({sport: {'type': 'boolean'} for sport in PROFILE_SPORTS}), 'required': []},
+                         'source': {'enum': [None, 'calculated', 'athlete']}})
+# Onboarding steps the athlete has finished; the wizard resumes at the first open one. 'created' follows the plan creation.
+ONBOARDING_STEPS = ['sports', 'sources', 'thresholds', 'provider', 'background', 'goal', 'planSports', 'period', 'availability',
+                    'ready', 'created']
 DEFAULT_PROFILE = {
     'goal': {'type': 'fitness', 'sports': ['ride'], 'name': '', 'date': None, 'target': None},
     'sports': ['ride'], 'metrics': {'ride': 'power', 'run': 'pace'}, 'thresholds': {},
@@ -123,6 +131,7 @@ DEFAULT_PROFILE = {
                      'windows': [], 'exceptions': [], 'maxWeeklyHours': None, 'restDay': None, 'longDay': None},
     'preferences': {'preferredRestDay': None, 'preferredLongSessionDay': None, 'gymAvailability': False, 'dailyCheckIn': True},
     'limitations': {'notes': ''}, 'currentState': {'notes': ''},
+    'background': {'type': None, 'weeklyHours': None, 'intervals': {}, 'source': None}, 'onboarding': {'completed': []},
     'weeklyOverrides': [], 'dailyOverrides': [], 'checkIns': [], 'injuries': [], 'events': [],
 }
 PROFILE_SCHEMA = obj({
@@ -144,6 +153,8 @@ PROFILE_SCHEMA = obj({
     'preferences': obj({'preferredRestDay': {'enum': [None, *DAYS]}, 'preferredLongSessionDay': {'enum': [None, *DAYS]},
                         'gymAvailability': {'type': 'boolean'}, 'dailyCheckIn': {'type': 'boolean'}}),
     'limitations': obj({'notes': text(1500)}), 'currentState': obj({'notes': text(1500)}),
+    'background': BACKGROUND_SCHEMA,
+    'onboarding': obj({'completed': {'type': 'array', 'uniqueItems': True, 'items': {'enum': ONBOARDING_STEPS}}}),
 })
 
 
@@ -160,7 +171,7 @@ def complete_profile(value):
     if 'outdoorMonths' not in result.get('availability', {}) and preferences.get('trainingEnvironment') == 'outdoor':
         result.setdefault('availability', {})['outdoorMonths'] = list(range(1, 13))
     result['preferences'] = {key: value for key, value in preferences.items() if key not in LEGACY_PREFERENCES}
-    for section in ('availability', 'preferences'):
+    for section in ('availability', 'preferences', 'background', 'onboarding'):
         result[section] = {**copy.deepcopy(DEFAULT_PROFILE[section]), **result.get(section, {})}
     for key in ('weeklyOverrides', 'dailyOverrides', 'checkIns', 'injuries'):
         result.setdefault(key, [])
@@ -223,7 +234,8 @@ def update_profile(current, changes):
     result = complete_profile(current)
     for key, value in changes.items():
         # Clients that predate a field keep its stored value.
-        result[key] = {**result[key], **value} if key in ('goal', 'availability', 'preferences', 'metrics', 'thresholds') \
+        result[key] = {**result[key], **value} if key in ('goal', 'availability', 'preferences', 'metrics', 'thresholds',
+                                                           'background', 'onboarding') \
             and isinstance(value, dict) else value
     if isinstance(result['goal'], dict):
         result['goal']['type'] = GOAL_ALIASES.get(result['goal'].get('type'), result['goal'].get('type'))

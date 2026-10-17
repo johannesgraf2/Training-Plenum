@@ -124,6 +124,10 @@ Jeder Meilenstein ist für sich lauffähig, hat Tests und wird einzeln gemerged.
 
 ### M3 Onboarding (Frontend)
 
+**Stand: umgesetzt** (Frontend, dazu `GET /api/coach/onboarding` und die Profilfelder `background` und `onboarding`). Einstieg ist bis M5 die Karte „Lass uns deinen Plan bauen“ in „Heute“; das alte Coach-UI bleibt daneben nutzbar.
+
+**B7 mit M2:** Nach „Los geht's“ ruft das Frontend `POST /api/coach/plan/create` mit `{}` auf (Start, Ende und Nachplanen sind seit B4 gespeichert) und fragt den Job alle 1,5 s über `GET /api/coach/plan/create/<id>` ab. Die Schritte zeigt es mit ihren Labels aus `job.steps`. Läuft schon ein Job (409 mit `job`), folgt es diesem; „Erneut versuchen“ startet neu, der Server setzt beim fehlenden Schritt fort. Den Job liest `jobState` in `coachOnboarding.js`.
+
 **Neue Komponenten**
 - `CoachOnboarding.jsx` mit gemeinsamen Bausteinen: Fortschrittsbalken, Zurück/Weiter, Bottom-Sheet auf dem Handy
 - Teil A: `OnboardingSports`, `OnboardingSources` (nutzt `DataHub`, `GarminSync`, `WhoopSync`), `OnboardingThresholds`, `OnboardingProvider` (aus dem heutigen Provider-Tab herausgelöst)

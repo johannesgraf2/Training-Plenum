@@ -348,3 +348,17 @@ class PlanInputTests(unittest.TestCase):
         for bad in ({'endDate': '2026-10-19'}, {'replanMode': 'daily'}, {'startDate': 'soon'}):
             with self.subTest(value=bad), self.assertRaises(CoachError):
                 plan_settings({'startDate': '2026-10-19', 'endDate': '2027-01-01', 'replanMode': 'sunday', **bad}, None, 'now')
+
+    def test_background_and_onboarding_progress(self):
+        stored = profile()
+        del stored['background'], stored['onboarding']  # stored before the onboarding
+        value = complete_profile(stored)
+        self.assertEqual((value['background']['type'], value['onboarding']), (None, {'completed': []}))
+        value = update_profile(value, {'background': {'type': 'ride', 'weeklyHours': 7.8, 'intervals': {'ride': True}, 'source': 'calculated'},
+                                       'onboarding': {'completed': ['sports', 'sources']}})
+        value = update_profile(value, {'background': {'weeklyHours': 6}})  # fields left out keep their value
+        self.assertEqual(value['background'], {'type': 'ride', 'weeklyHours': 6, 'intervals': {'ride': True}, 'source': 'calculated'})
+        for bad in ({'background': {'type': 'golf'}}, {'background': {'intervals': {'golf': True}}},
+                    {'onboarding': {'completed': ['done']}}, {'onboarding': {'completed': ['sports', 'sports']}}):
+            with self.subTest(value=bad), self.assertRaises(CoachError):
+                update_profile(value, bad)

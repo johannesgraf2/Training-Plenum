@@ -16,7 +16,7 @@ from werkzeug.exceptions import NotFound
 
 from ai_provider import (DEFAULT_MODEL, REASONING_EFFORTS, ProviderError, decrypt_key, encrypt_key, ensure_server_key,
                          get_provider, key_file, usage_cost, validate_model, validate_reasoning_effort)
-from athlete_context import build_snapshot, run_threshold_pace, session_pattern, summarize_period
+from athlete_context import build_snapshot, run_threshold_pace, session_pattern, summarize_period, training_background
 from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, DELOAD_PHASES, GROUPS, SECONDARY_FOCUS, SITUATIONS, block_for_week,
                           block_status, block_type, catalog as block_catalog, check_block, check_choice, check_event_rules, check_formats,
                           check_options, check_week_rules,
@@ -530,6 +530,13 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                           'calculated': run_threshold_pace(load_efforts(), zone(), today)},
                   'maxHr': user().max_hr, 'metrics': value['metrics']}
         db.session.commit()  # Best efforts may have been cached.
+        return jsonify(result)
+
+    @app.route('/api/coach/onboarding')
+    def onboarding():
+        """What the training data says for the onboarding: recent sports, main sport, weekly hours and intervals."""
+        result = training_background(load_rows(), zone(), datetime.now(zone()).date(), user().ftp, user().max_hr)
+        db.session.commit()  # Analytics summaries may have been cached.
         return jsonify(result)
 
     @app.route('/api/coach/plan/settings', methods=['GET', 'PUT'])

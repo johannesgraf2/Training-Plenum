@@ -870,3 +870,26 @@ test('the review tab shows the measured context and the check-ins of the last we
   expect([...history.querySelectorAll('tbody td')].map(td => td.textContent)).toEqual(['Di., 22.9.', '', 'gut', 'müde', 'mittel', 'keiner', 'gut', 'passend', '1–2 Getränke']);
   expect(history.querySelector('.today-dot.yellow')).not.toBeNull();
 });
+
+test('Heute invites to build the plan until the onboarding created it', async () => {
+  const ok = data => async () => ({ ok: true, json: async () => data });
+  responses['GET /api/user'] = ok({ ftp: 250, maxHr: 190 });
+  responses['GET /api/coach/onboarding'] = ok({ hasData: false, recentSports: [], intervals: {} });
+  responses['GET /api/coach/events'] = ok({ events: [] });
+  responses['GET /api/coach/plan/settings'] = ok({ settings: null });
+  responses['GET /api/coach/thresholds'] = ok({ ride: { ftp: 250 }, run: {} });
+  responses['GET /api/garmin'] = ok({ available: false });
+  responses['GET /api/athlete-profile'] = ok({ ...profile, sports: ['ride'], metrics: {}, thresholds: {}, onboarding: { completed: [] } });
+  await render({ initialTab: 'today' });
+  expect(container.querySelector('[aria-label="Plan bauen"]').textContent).toContain('Lass uns deinen Plan bauen');
+  await click(button("Los geht's"));
+  expect(container.querySelector('[role="dialog"][aria-label="Plan bauen"]').textContent).toContain('Deine Sportarten');
+  const loads = requests.filter(r => r.path === '/api/athlete-profile').length;
+  await click(container.querySelector('[aria-label="Schließen, später weitermachen"]'));
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  expect(requests.filter(r => r.path === '/api/athlete-profile').length).toBe(loads + 1);  // the coach loads again
+
+  responses['GET /api/athlete-profile'] = ok({ ...profile, onboarding: { completed: ['sports', 'created'] } });
+  await render({ initialTab: 'today', apiBase: 'http://other.test' });
+  expect(container.querySelector('[aria-label="Plan bauen"]')).toBeNull();
+});
