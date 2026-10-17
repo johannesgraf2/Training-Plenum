@@ -197,7 +197,7 @@ const stepStatus = value => DONE.includes(value) ? 'done' : FAILED.includes(valu
 // The job of POST /api/coach/plan/create and its polling endpoint, read tolerantly.
 export function jobState(data = {}) {
   const job = data.job || data;
-  const status = DONE.includes(job.status) ? 'done' : FAILED.includes(job.status) ? 'failed' : 'running';
+  const status = DONE.includes(job.status) ? 'done' : FAILED.includes(job.status) ? 'failed' : job.status === 'stopped' ? 'stopped' : 'running';
   const given = Array.isArray(job.steps) && job.steps.length ? job.steps : null;
   const steps = given ? given.map((step, index) => {
     const key = step.key || step.id || step.name || `step-${index}`;

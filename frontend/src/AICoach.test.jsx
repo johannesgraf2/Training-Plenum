@@ -183,6 +183,26 @@ test('a plan-relevant change asks to adapt the plan; yes runs the adaptation and
   expect(container.querySelector('[aria-label="Anpassung an deine Einstellungen"]').textContent).toContain('Passend zu deinen geänderten Einstellungen');
 });
 
+test('a running replanning shows its progress on top and in the plan, and Stoppen ends it', async () => {
+  const steps = status => [{ id: '2026-W40', label: 'Woche 4 planen', status: status === 'stopped' ? 'done' : 'running' },
+    { id: '2026-W41', label: 'Woche 5 planen', status: status === 'stopped' ? 'stopped' : 'pending' }];
+  const job = status => ({ job: { id: 'adv-1', kind: 'advance', status, steps: steps(status), error: status === 'stopped' ? 'Gestoppt.' : null } });
+  responses['POST /api/coach/plan/advance'] = ok(job('running'));
+  responses['GET /api/coach/plan/advance/adv-1'] = ok(job('running'));
+  responses['POST /api/coach/plan/jobs/adv-1/stop'] = ok(job('stopped'));
+  await render({ initialTab: 'today' });
+  const progress = () => [...container.querySelectorAll('.coach-job')];
+  expect(progress().map(p => p.textContent)).toEqual(['Woche 4 planen … Der Coach plant. Schritt 1 von 2.Stoppen']);
+  await click(button('Plan'));
+  expect(progress()).toHaveLength(2);  // On top and where the weeks are.
+  await click(progress()[1].querySelector('button'));
+  expect(writes('/api/coach/plan/jobs/adv-1/stop')).toHaveLength(1);
+  expect(progress()).toHaveLength(0);
+  expect(container.textContent).toContain('Planung gestoppt. Bereits geplante Wochen bleiben erhalten.');
+  await tick(1500);
+  expect(requests.filter(r => r.path === '/api/coach/plan/advance/adv-1')).toHaveLength(0);  // No more polling.
+});
+
 test('later keeps a hint in the plan that starts the adaptation from there', async () => {
   await render({ initialSection: 'thresholds' });
   await change(inputFor('FTP in Watt'), '265');

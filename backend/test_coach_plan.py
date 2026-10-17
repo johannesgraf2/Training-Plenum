@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 
 from coach_blocks import new_block, suggested_rhythm
 from coach_domain import DAYS, CoachError, complete_profile, DEFAULT_PROFILE, complete_event, iso_week
-from coach_plan import (adopt_blocks, check_frame, check_tests, cut_frame, deviation, due_week, due_weeks, edit_phases, frame_blocks,
+from coach_plan import (adopt_blocks, align_frame, check_frame, cycle_lengths, frame_cycles, check_tests, cut_frame, deviation, due_week, due_weeks, edit_phases, frame_blocks,
                         frame_hint, group_sessions, horizon, outline_weeks, plan_span, plan_weeks, reference_monday, replan_date,
                         required_tests)
 
@@ -79,6 +79,46 @@ class PlanFrameTests(unittest.TestCase):
     def test_hint_shows_the_usual_build_up_to_the_first_a_event(self):
         hint = frame_hint(self.settings, self.profile)
         self.assertEqual((hint['event'], hint['weeks'], sum(s['weeks'] for s in hint['segments'])), ('Rennen', 13, 13))
+
+
+class RhythmTests(unittest.TestCase):
+    def setUp(self):
+        self.profile = complete_profile(copy.deepcopy(DEFAULT_PROFILE))
+        self.profile['availability'].update(defaultAvailability=dict.fromkeys(DAYS, 120), absoluteMaxWeeklyHours=10)
+        # Monday 19.10.2026 to Sunday 07.03.2027: 20 weeks; the A event on Saturday 20.02.2027 lies in week 18.
+        self.settings = {'startDate': '2026-10-19', 'endDate': '2027-03-07', 'replanMode': 'afterReview', 'taperWeeks': 2}
+        self.profile['events'] = [complete_event({'title': 'Rennen', 'sport': 'ride', 'startDate': '2027-02-20', 'priority': 'A'}, 'a')]
+
+    def test_cycles_count_back_from_the_end_and_put_leftover_weeks_first(self):
+        self.assertEqual([cycle_lengths(n) for n in (0, 1, 2, 3, 4, 6, 7, 9, 10, 12, 13, 14)],
+                         [[], [1], [2], [3], [4], [3, 3], [3, 4], [5, 4], [5, 5], [4, 4, 4], [5, 4, 4], [5, 5, 4]])
+
+    def test_the_ai_gets_the_cycles_up_to_the_taper_with_the_peak_three_weeks_before_the_event(self):
+        [hint] = frame_cycles(self.settings, self.profile)
+        self.assertEqual((hint['eventWeek'], hint['taperWeeks'], hint['peakWeek']), (18, 2, 15))
+        self.assertEqual([(c['fromWeek'], c['deloadWeek']) for c in hint['cycles']], [(1, 4), (5, 8), (9, 12), (13, 16)])
+        self.assertEqual(frame_cycles({**self.settings, 'taperWeeks': None}, self.profile)[0]['peakWeek'], 15)
+
+    def test_phases_move_to_whole_cycles_so_the_rhythm_runs_over_block_boundaries(self):
+        phases = [phase('grundlage', 7), phase('vo2max', 5), phase('wettkampfspezifisch', 4), phase('taper', 2, 3),
+                  phase('uebergang', 2, 3)]
+        check_frame(phases, self.settings, self.profile)
+        aligned = align_frame(phases, self.settings, self.profile, [10] * 20)
+        check_frame(aligned, self.settings, self.profile)
+        self.assertEqual([(p['blockType'], len(p['weeks'])) for p in aligned],
+                         [('grundlage', 8), ('vo2max', 4), ('wettkampfspezifisch', 4), ('taper', 2), ('uebergang', 2)])
+        pattern = [''.join('D' if w['phase'] in ('recovery', 'taper') else 'L' for w in p['weeks']) for p in aligned[:3]]
+        self.assertEqual(pattern, ['LLLDLLLD', 'LLLD', 'LLLD'])
+        # Week 8 was a load week of the AI and becomes the deload at 65 % (in half hours); week 7 was a deload.
+        self.assertEqual([w['targetHours'] for w in aligned[0]['weeks'][5:]], [6.0, 6.0, 3.5])
+        self.assertEqual([w['focus'] for w in aligned[0]['weeks'][6:]], ['', ''])
+        self.assertEqual(aligned[3:], phases[3:])
+
+    def test_a_stretch_with_more_phases_than_cycles_stays(self):
+        settings = {**self.settings, 'endDate': '2027-02-21'}  # 18 weeks, the event in the last one.
+        phases = [phase('wiedereinstieg', 2), phase('grundlage', 6), phase('vo2max', 3), phase('schwelle', 4),
+                  phase('wettkampfspezifisch', 3)]
+        self.assertEqual(align_frame(phases, {**settings, 'taperWeeks': None}, self.profile, [10] * 18), phases)
 
 
 class RollingTests(unittest.TestCase):

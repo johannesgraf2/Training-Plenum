@@ -59,6 +59,15 @@ export function replanText(week, mode, today = localDate()) {
   return mode === 'afterReview' ? `wird nach deinem Wochenrückblick am ${shortDay(week.replanDate)} ausgearbeitet` : `wird am ${shortDay(week.replanDate)} ausgearbeitet`;
 }
 
+/** A running replanning or adapting job: the step at work, how far it is and "Stoppen". */
+export function JobProgress({ job, stopping, onStop }) {
+  const steps = job.steps || [];
+  const index = Math.max(0, steps.findIndex(s => s.status === 'running'));
+  return <div role="status" className="coach-message coach-job"><span className="coach-spinner" />
+    <span>{steps[index]?.label || 'Nächste Woche'} … Der Coach plant.{steps.length > 1 ? ` Schritt ${index + 1} von ${steps.length}.` : ''}</span>
+    {onStop && <button type="button" disabled={stopping} onClick={onStop}>{stopping ? 'Wird gestoppt …' : 'Stoppen'}</button>}</div>;
+}
+
 function PhaseBar({ overview, today }) {
   const [selected, setSelected] = useState(null);
   const { phases, events, weeks } = overview;
@@ -208,8 +217,8 @@ function History({ weeks, apiBase, version }) {
 
 /** The plan area of the coach. advance = the running replanning or adapting job, proposalId = an open adjustment of the
  * worked-out weeks after it. */
-export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}, advance, proposalId, reviewWeek, pendingChanges = [], onAsk, onStart, onAdvance,
-  onAdapt, onJob, onChanged, onOpenWorkout, onHorizon }) {
+export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}, advance, stopping, proposalId, reviewWeek, pendingChanges = [], onAsk, onStart, onAdvance,
+  onAdapt, onJob, onStop, onChanged, onOpenWorkout, onHorizon }) {
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState('');
   const [detail, setDetail] = useState(null);
@@ -291,7 +300,7 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
     <HorizonSetting key={`horizon-${overview.horizonWeeks}`} apiBase={apiBase} overview={overview} disabled={advance?.status === 'running'}
       onSaved={() => { setReloads(n => n + 1); onHorizon?.(); }} />
     {error && <div role="alert" className="coach-message error">{error}</div>}
-    {advance?.status === 'running' && <div role="status" className="coach-message"><span className="coach-spinner" />{(advance.steps?.find(s => s.status === 'running') || advance.steps?.[0])?.label || 'Nächste Woche'} … Der Coach plant.</div>}
+    {advance?.status === 'running' && <JobProgress job={advance} stopping={stopping} onStop={onStop} />}
     {(overview.adapt || pendingChanges.length > 0) && advance?.status !== 'running' && <div className="coach-message plan-adapt"><span>{onlyPhases
       ? <><strong>Deine Blöcke haben sich geändert.</strong> Die ausgearbeiteten Wochen passen nicht mehr dazu. Soll ich sie neu ausarbeiten?</>
       : <><strong>Deine Einstellungen haben sich geändert.</strong> Soll ich deinen Plan daran anpassen?</>}</span>
