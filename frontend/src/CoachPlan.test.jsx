@@ -37,6 +37,7 @@ beforeEach(() => {
     requests.push({ path, method, body: options.body ? JSON.parse(options.body) : undefined });
     if (path === '/api/coach/plan/weeks') return { ok: true, json: async () => data };
     if (path === '/api/coach/plan/phases') return { ok: true, json: async () => ({ revision: 4 }) };
+    if (path === '/api/coach/plan/volume') return { ok: true, json: async () => ({ revision: 5, staleWeeks: [] }) };
     if (path === '/api/coach/plan/settings') return { ok: true, json: async () => ({ settings: {} }) };
     if (path.endsWith('/review')) return { ok: true, json: async () => ({ revision: 3, job: { id: 'j1', status: 'running', steps: [] } }) };
     if (path.endsWith('/lock')) return { ok: true, json: async () => ({}) };
@@ -124,6 +125,36 @@ test('the weekly hours chart shows every week up to the goal with phases below t
   await act(async () => Simulate.mouseEnter(chart.querySelectorAll('.plan-hours-hit')[5]));
   expect(chart.querySelector('.plan-hours-tip').textContent).toBe('Woche 6 · 7,3 hGrundlagevorgemerkt'.replace('Grundlage', '23.11. · Grundlage'));
   expect(chart.querySelectorAll('tbody tr')).toHaveLength(12);
+});
+
+test('a week of the chart gets load or recovery and own hours; a scale changes all weeks', async () => {
+  const own = { ...full, volume: { scale: 1, baseHours: 6, peakHours: 9 }, weeks: full.weeks.map((w, i) => ({ ...w, kind: w.deload ? 'deload' : 'load',
+    defaultKind: w.deload ? 'deload' : 'load', suggestedHours: w.targetHours, athleteKind: null, athleteHours: i === 8 ? 8 : null, maxHours: 10 })) };
+  data = own;
+  await render();
+  const chart = container.querySelector('.plan-hours');
+  expect(chart.querySelectorAll('.plan-hours-bar.own')).toHaveLength(1);
+  const input = () => container.querySelector('.plan-week-editor input');
+  await act(async () => Simulate.click(chart.querySelectorAll('.plan-hours-hit')[5]));
+  const editor = container.querySelector('.plan-week-editor');
+  expect(editor.getAttribute('aria-label')).toBe('Woche 6 anpassen');
+  expect(editor.textContent).toContain('Vorschlag 7,3 h · höchstens 10 h verfügbar');
+  expect(button('Übernehmen').disabled).toBe(true);
+  await click(button('Erholung'));
+  await act(async () => Simulate.change(input(), { target: { value: '4.5' } }));
+  await click(button('Übernehmen'));
+  const put = requests.filter(r => r.path === '/api/coach/plan/volume');
+  expect(put[0].body).toEqual({ scale: 1, weeks: [{ week: '2026-W48', kind: 'deload', hours: 4.5 }, { week: '2026-W51', kind: null, hours: 8 }] });
+  // Own hours above the available time cannot be saved; an own week goes back to the suggestion.
+  await act(async () => Simulate.click(container.querySelectorAll('.plan-hours-hit')[8]));
+  await act(async () => Simulate.change(input(), { target: { value: '12' } }));
+  expect(button('Übernehmen').disabled).toBe(true);
+  await click(button('Auf Vorschlag zurücksetzen'));
+  expect(requests.filter(r => r.path === '/api/coach/plan/volume')[1].body).toEqual({ scale: 1, weeks: [] });
+  await click(container.querySelector('[aria-label="Mehr Umfang"]'));
+  expect(container.querySelector('.plan-hours-scale').textContent).toContain('105 %');
+  await click(button('Übernehmen'));
+  expect(requests.filter(r => r.path === '/api/coach/plan/volume')[2].body).toEqual({ scale: 1.05, weeks: [{ week: '2026-W51', kind: null, hours: 8 }] });
 });
 
 test('blocks change by hand with fixed rules: no room means a conflict, freed weeks must be filled', async () => {

@@ -139,3 +139,22 @@ export function body(state) {
   if (free || over) return null;
   return { phases: state.items.map(({ id, blockType, weeks }) => ({ id, blockType, weeks })), taperWeeks: state.taperWeeks };
 }
+
+// --- Weekly volume by hand ------------------------------------------------------------------------
+// The scale for all weeks and per week load or deload and own hours, for PUT /api/coach/plan/volume. Only weeks from
+// now on count; a kind equal to the rhythm's default and hours left empty are no own choice.
+export const SCALE_STEPS = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3];
+
+/** The own entry of one week from the editor: kind only when it differs from the rhythm, hours only when given. */
+export function weekChoice(week, kind, hours) {
+  const value = hours === '' || hours == null ? null : Number(hours);
+  return { week: week.week, kind: kind && kind !== week.defaultKind ? kind : null, hours: value };
+}
+
+/** The request body: the scale and the own weeks of the plan, change replacing the entry of its week. */
+export function volumeBody(overview, scale, change) {
+  const weeks = overview.weeks.filter(w => w.state !== 'past')
+    .map(w => change?.week === w.week ? change : { week: w.week, kind: w.athleteKind ?? null, hours: w.athleteHours ?? null })
+    .filter(w => w.kind != null || w.hours != null);
+  return { scale, weeks };
+}

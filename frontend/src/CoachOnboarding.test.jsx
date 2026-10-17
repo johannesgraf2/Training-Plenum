@@ -190,10 +190,14 @@ test('a new athlete with data goes from A1 to the created plan', async () => {
   await click(buttonIn('Tage für lange Einheiten', 'Sa'));
   await click(buttonIn('Tage für lange Einheiten', 'So'));
   expect(buttonIn('Tage für lange Einheiten', 'Keine Präferenz').getAttribute('aria-pressed')).toBe('false');
-  expect(container.textContent).toContain('mind. 10 hEmpfehlung für ein Ultra-Event');
+  // Without an answer of the server the minimum comes from the table.
+  expect(container.textContent).toContain('mind. 10 hMinimum für ein Ultra-Event');
   expect(container.textContent).toContain('7,8 hbisher im Durchschnitt pro Woche');
+  // No time on Sunday and Monday: two rest days in a row cannot be avoided, the availability comes first.
+  expect(buttonIn('Zwei Ruhetage hintereinander', 'Vermeiden').disabled).toBe(true);
+  expect(container.textContent).toContain('Nicht möglich: An So und Mo hast du keine Zeit.');
   await click(button('Weiter'));
-  expect(server.profile.availability).toMatchObject({ maxWeeklyHours: 10, restDays: ['mon', 'fri'], longDays: ['sat', 'sun'] });
+  expect(server.profile.availability).toMatchObject({ maxWeeklyHours: 10, restDays: ['mon', 'fri'], longDays: ['sat', 'sun'], noConsecutiveRestDays: false });
 
   // B6: the summary, with a jump back that returns here.
   expect(heading()).toBe('Bereit');
