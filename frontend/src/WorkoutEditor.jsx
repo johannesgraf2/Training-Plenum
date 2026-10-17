@@ -43,7 +43,7 @@ function Controls({ index, length, label, onMove, onRemove }) {
   </div>;
 }
 
-export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onClose, onSaved, onDeleted, onImport }) {
+export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, startInLibrary = false, onClose, onSaved, onDeleted, onImport }) {
   const [draft, setDraft] = useState(() => toDraft(initial || newWorkout(date)));
   const [recordId, setRecordId] = useState(initial?.id);
   const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(toDraft(initial || newWorkout(date))));
@@ -52,7 +52,7 @@ export default function WorkoutEditor({ apiBase, initial, date, ftp, maxHr, onCl
   const [status, setStatus] = useState('');
   const [confirm, setConfirm] = useState('');
   const [selectedPath, setSelectedPath] = useState(null);
-  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(startInLibrary);
   const libraryButtonRef = useRef(null);
   const libraryOpenRef = useRef(false);
   libraryOpenRef.current = libraryOpen;

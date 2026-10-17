@@ -89,6 +89,28 @@ test('a session opens its detail; moving it asks the coach, keeping it locks the
   expect(container.querySelector('[role="dialog"]')).toBeNull();
 });
 
+test('the detail separates changes through the coach from changes by hand', async () => {
+  const open = jest.fn();
+  data = { ...overview, weeks: overview.weeks.map((w, i) => i ? w : { ...w, plan: { ...w.plan, sessions: [{ ...sweetspot, manuallyEdited: true }] } }) };
+  await render({ onOpenWorkout: open });
+  expect(container.querySelector('.plan-session').textContent).toContain('von dir geändert');
+  await click(container.querySelector('.plan-session'));
+  const coach = container.querySelector('[aria-label="Mit dem Coach ändern"]');
+  const own = container.querySelector('[aria-label="Selbst ändern"]');
+  expect(coach.textContent).toContain('KI');
+  expect(own.textContent).toContain('ohne KI');
+  expect(container.querySelector('.plan-edited').textContent).toContain('„Behalten“');
+  expect(container.textContent).toContain('Warum der Coach sie geplant hat');
+  await click(button('Andere Einheit vorschlagen'));
+  expect(asked).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'w1' }), 'Bitte tausche diese Einheit gegen eine Alternative mit gleichem Ziel.');
+  await click(container.querySelector('.plan-session'));
+  await click(button('Einheit aus Vorlagen tauschen'));
+  expect(open).toHaveBeenCalledWith(workout, { library: true });
+  await click(container.querySelector('.plan-session'));
+  await click(button('Im Editor bearbeiten · Garmin-Export'));
+  expect(open).toHaveBeenLastCalledWith(workout);
+});
+
 test('the weekly review is sent and hands its replanning job on', async () => {
   const job = jest.fn();
   await render({ onJob: job });

@@ -67,6 +67,9 @@ export default function App() {
   const [whoopDays, setWhoopDays] = useState({});
   const whoopStamp = useRef(null);
   const [workoutEditor, setWorkoutEditor] = useState(null);
+  // The coach plan can open the editor straight in the template library to swap a session by hand.
+  const [editorLibrary, setEditorLibrary] = useState(false);
+  const openWorkout = (workout, options) => { setEditorLibrary(!!options?.library); setWorkoutEditor(workout); };
   const [plannedWorkouts, setPlannedWorkouts] = useState([]);
   const [workoutLoadError, setWorkoutLoadError] = useState('');
   const [draggedWorkout, setDraggedWorkout] = useState(null);
@@ -528,14 +531,14 @@ export default function App() {
         {coachOpened && <div hidden={!coachVisible}>
           <AICoach initialTab={coachTab.tab} initialSection={coachTab.section} tabVersion={coachTab.version} adjustVersion={coachAdjust} todayVersion={todayVersion}
             onboardingVersion={onboardingVersion}
-            apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
+            apiBase={API} workouts={plannedWorkouts} onOpenWorkout={openWorkout}
             onBusyChange={coachBusyChanged} onTodayChanged={setToday}
             onWorkoutsChanged={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })} />
         </div>}
       </main>
 
-      {workoutEditor && <WorkoutEditor apiBase={API} initial={workoutEditor.id ? workoutEditor : null} date={workoutEditor.date} ftp={user?.ftp} maxHr={user?.maxHr}
-        onClose={() => setWorkoutEditor(null)}
+      {workoutEditor && <WorkoutEditor apiBase={API} initial={workoutEditor.id ? workoutEditor : null} date={workoutEditor.date} ftp={user?.ftp} maxHr={user?.maxHr} startInLibrary={editorLibrary}
+        onClose={() => { setWorkoutEditor(null); setEditorLibrary(false); }}
         onSaved={workout => setPlannedWorkouts(current => [workout, ...current.filter(w => w.id !== workout.id)])}
         onDeleted={id => setPlannedWorkouts(current => current.filter(w => w.id !== id))}
         onImport={() => { setWorkoutEditor(null); openHub(); }} />}

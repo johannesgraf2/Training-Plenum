@@ -9,7 +9,7 @@ import './CoachPlan.css';
 
 // The plan area: phase bar up to the event (blocks changed by hand with "Ändern"), weekly hours up to the goal, how many
 // weeks get worked out, the worked-out weeks, outlined weeks and the history.
-// Session changes go through the coach chat (onAsk); "Behalten" (lock), the blocks and the horizon are direct.
+// Session changes go through the coach chat (onAsk) or by hand in the workout editor; "Behalten" (lock), the blocks and the horizon are direct.
 
 const timezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 const tzQuery = () => `timezone=${encodeURIComponent(timezone())}`;
@@ -111,7 +111,7 @@ function WeekCard({ week, today, workoutsById, onOpen, onAsk, onReview }) {
       return <li key={day} className={`plan-day${date < today ? ' past' : ''}${date === today ? ' today' : ''}`}><strong>{short}</strong><div>
         {events.map(e => <span key={e.id} className={`plan-event ${e.priority}`}>{e.priority}-Event · {e.title}</span>)}
         {sessions.map(s => <button key={s.id} type="button" className={`plan-session sport-${TEMPLATE_SPORT(s.template)}`} onClick={() => onOpen(s, week)}>
-          <span>{s.rendered.name}</span><small>{hm(s.rendered.durationMin)}{s.locked ? ' · behalten' : ''}</small></button>)}
+          <span>{s.rendered.name}</span><small>{hm(s.rendered.durationMin)}{s.manuallyEdited ? ' · von dir geändert' : ''}{s.locked ? ' · behalten' : ''}</small></button>)}
         {own.map(f => <span key={f.id} className="plan-session fixed"><span>{f.name}</span><small>{hm(f.durationMin)} · fest</small></span>)}
       </div></li>;
     })}</ol>
@@ -154,20 +154,36 @@ function SessionDetail({ session, week, workout, today, busy, onClose, onAsk, on
         <div className="chat-head-actions"><button type="button" aria-label="Schließen" onClick={onClose}>✕</button></div></header>
       <div className="plan-detail-body">
         <Structure workout={session.rendered.workout} />
-        <h3>Warum diese Einheit</h3><p>{PURPOSES[session.template] || 'Teil deines Wochenplans.'}{week.plan.focus ? ` Wochenfokus: ${week.plan.focus}.` : ''}</p>
+        {session.manuallyEdited && <p className="coach-message plan-edited">{session.locked ? 'Von dir geändert. „Behalten“ ist an: Der Coach lässt die Einheit so.'
+          : 'Von dir geändert. Damit der Coach sie bei der nächsten Anpassung nicht ersetzt, tippe unten auf „Behalten“.'}</p>}
+        <h3>{session.manuallyEdited ? 'Warum der Coach sie geplant hat' : 'Warum diese Einheit'}</h3><p>{PURPOSES[session.template] || 'Teil deines Wochenplans.'}{week.plan.focus ? ` Wochenfokus: ${week.plan.focus}.` : ''}</p>
         {session.rendered.notes && <><h3>Verpflegung</h3><p className="coach-session-note">{session.rendered.notes}</p></>}
-        {workout && onOpenWorkout && <button type="button" onClick={() => { onClose(); onOpenWorkout(workout); }}>Im Editor öffnen · Garmin-Export</button>}
-        <h3>Anpassen</h3>
-        {past ? <p className="coach-muted">Die Einheit liegt in der Vergangenheit.</p> : <div className="plan-detail-actions">
-          <div className="plan-move"><select aria-label="Neuer Tag" value={moveTo} onChange={e => setMoveTo(e.target.value)}><option value="">Tag wählen …</option>
-            {days.map(([day, long, value]) => <option key={day} value={day}>{long}, {shortDay(value).split(', ')[1]}</option>)}</select>
-            <button type="button" disabled={!moveTo || busy} onClick={() => ask(`Bitte verschiebe diese Einheit auf ${DAYS.find(([d]) => d === moveTo)[2]}.`)}>Verschieben</button></div>
-          <button type="button" disabled={busy} onClick={() => ask('Bitte tausche diese Einheit gegen eine Alternative mit gleichem Ziel.')}>Tauschen</button>
-          <button type="button" disabled={busy} onClick={() => ask('Ich lasse diese Einheit aus.')}>Auslassen</button>
-          {workout && <button type="button" disabled={busy} aria-pressed={!!session.locked} onClick={() => onLock(session.id, !session.locked)}>
-            <Icon name={session.locked ? 'lock' : 'unlock'} size={14} /> {session.locked ? 'Wird behalten' : 'Behalten'}</button>}
+        <div className="plan-change" aria-label="Mit dem Coach ändern" role="group">
+          <div className="plan-change-head"><h3>Mit dem Coach ändern</h3><span className="coach-badge recommendation">KI</span></div>
+          {past ? <p className="coach-muted">Die Einheit liegt in der Vergangenheit.</p> : <>
+            <div className="plan-detail-actions">
+              <button type="button" disabled={busy} onClick={() => ask('Bitte tausche diese Einheit gegen eine Alternative mit gleichem Ziel.')}>Andere Einheit vorschlagen</button>
+              <div className="plan-move"><select aria-label="Neuer Tag" value={moveTo} onChange={e => setMoveTo(e.target.value)}><option value="">Tag wählen …</option>
+                {days.map(([day, long, value]) => <option key={day} value={day}>{long}, {shortDay(value).split(', ')[1]}</option>)}</select>
+                <button type="button" disabled={!moveTo || busy} onClick={() => ask(`Bitte verschiebe diese Einheit auf ${DAYS.find(([d]) => d === moveTo)[2]}.`)}>Verschieben</button></div>
+              <button type="button" disabled={busy} onClick={() => ask('Ich lasse diese Einheit aus.')}>Auslassen</button>
+            </div>
+            <p className="coach-muted">Öffnet den Coach-Chat. Er prüft Verfügbarkeiten und Wochenbelastung und zeigt dir die Änderung, bevor sie gilt.</p></>}
+        </div>
+        {workout && onOpenWorkout && <div className="plan-change" aria-label="Selbst ändern" role="group">
+          <div className="plan-change-head"><h3>Selbst ändern</h3><span className="coach-badge athlete">ohne KI</span></div>
+          <div className="plan-detail-actions">
+            <button type="button" disabled={session.locked} onClick={() => { onClose(); onOpenWorkout(workout, { library: true }); }}>Einheit aus Vorlagen tauschen</button>
+            <button type="button" onClick={() => { onClose(); onOpenWorkout(workout); }}>Im Editor bearbeiten · Garmin-Export</button>
+          </div>
+          <p className="coach-muted">{session.locked ? 'Zum Bearbeiten zuerst „Behalten“ lösen. Exportieren geht auch so.'
+            : 'Ablauf, Werte und Datum änderst du direkt; gespeichert wird sofort, ohne Prüfung durch den Coach.'}</p>
         </div>}
-        <p className="coach-muted">Verschieben, Tauschen und Auslassen laufen über den Coach-Chat: Er prüft deine Verfügbarkeiten und zeigt dir die Änderung vorher. „Behalten“ heißt: Die Einheit bleibt bei Anpassungen unangetastet.</p>
+        {workout && <div className="plan-change" aria-label="Behalten" role="group">
+          <div className="plan-detail-actions"><button type="button" disabled={busy} aria-pressed={!!session.locked} onClick={() => onLock(session.id, !session.locked)}>
+            <Icon name={session.locked ? 'lock' : 'unlock'} size={14} /> {session.locked ? 'Wird behalten' : 'Behalten'}</button></div>
+          <p className="coach-muted">„Behalten“ heißt: Der Coach lässt die Einheit bei Anpassungen unangetastet, auch mit deinen eigenen Änderungen.</p>
+        </div>}
       </div>
     </section>
   </div>;

@@ -58,6 +58,11 @@
 .plan-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ai-coach .plan-detail-actions button { display: inline-flex; align-items: center; gap: 6px; }
 .plan-move { display: flex; gap: 6px; }
+.plan-change { margin-top: 14px; padding-top: 4px; border-top: 1px solid var(--bd-edf0f4); }
+.plan-change .coach-muted { margin: 8px 0 0; }
+.plan-change-head { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; }
+.plan-detail-body .plan-change-head h3 { margin: 0; }
+.plan-edited { margin: 12px 0 0; }
 .plan-move select { font: inherit; font-size: 12px; padding: 8px; border: 1px solid var(--bd-d4dce7); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-1e293b); }
 
 .today-quick { margin-top: 12px; }

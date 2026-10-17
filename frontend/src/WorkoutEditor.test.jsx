@@ -250,3 +250,8 @@ test('40/20 preset keeps three sets of seven repetitions and exactly two rests b
   expect(payload.steps.filter(s => s.kind === 'repeat')).toHaveLength(3);
   expect(payload.steps[1].steps[0].target).toEqual({ type: 'power', low: 340, high: 340 });
 });
+
+test('the editor can open straight in the template library to swap a session', () => {
+  render({ startInLibrary: true });
+  expect(container.querySelector('input[aria-label="Vorlagen durchsuchen"]')).not.toBeNull();
+});
