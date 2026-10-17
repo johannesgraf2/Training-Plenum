@@ -248,8 +248,11 @@ def check_options(decision, mode, choice=None):
             raise CoachError('Ein Trainingsblock muss alle Wochen lückenlos enthalten.')
 
 
-def check_block(identity, secondary, weeks, *, start, profile, max_streak=MAX_LOAD_STREAK):
-    """Outline rules: length, rhythm, taper and volume caps. Raises CoachError."""
+def check_block(identity, secondary, weeks, *, start, profile, max_streak=MAX_LOAD_STREAK, rhythm_rules=True):
+    """Outline rules: length, rhythm, taper and volume caps. Raises CoachError.
+
+    Without rhythm_rules the load/deload rhythm stays unchecked: the phases of a plan get it over block boundaries
+    from the server, and the athlete may choose their own."""
     spec = block_type(identity)
     if secondary is not None and secondary not in SECONDARY_FOCUS:
         raise CoachError('Unbekannter Nebenschwerpunkt.')
@@ -271,9 +274,9 @@ def check_block(identity, secondary, weeks, *, start, profile, max_streak=MAX_LO
     deloads = [w['phase'] in DELOAD_PHASES for w in weeks]
     if spec['deloadOnly'] and not all(deloads):
         raise CoachError(f'Im Block „{name}“ ist jede Woche eine Entlastungswoche.')
-    if spec['lastWeekDeload'] and not deloads[-1]:
+    if rhythm_rules and spec['lastWeekDeload'] and not deloads[-1]:
         raise CoachError(f'Ein Block „{name}“ endet mit einer Entlastungswoche.')
-    if spec['rhythm']:
+    if rhythm_rules and spec['rhythm']:
         streak = 0
         for deload in deloads:
             streak = 0 if deload else streak + 1

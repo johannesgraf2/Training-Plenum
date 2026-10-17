@@ -454,6 +454,7 @@ class CoachAPITests(unittest.TestCase):
                                           {**decision, 'targetHours': 2.5, 'sessions': [recovery, sessions[1]]})
         context = provider.generate.call_args.args[3]
         self.assertEqual(context['trainingRules'], {'source': 'athlete', 'trainingDaysPerWeek': 2, 'noConsecutiveRestDays': False,
+                                                    'neighbourDays': {'previousSunday': None, 'nextMonday': None},
                                                     'preferredRestDays': [], 'longSessionDays': [],
                                                     'sports': ['ride', 'run'], 'environment': 'outdoor', 'minRideMinutes': 90})
         self.assertIn('rideMinutesMedian', context['recentPattern'])
@@ -494,10 +495,34 @@ class CoachAPITests(unittest.TestCase):
                     'sessions': [self.session(day, day, 60) for day in days]}
         response, _ = self.propose({'kind': 'week', 'week': self.week}, decision, expected=400)
         self.assertIn('zwei Ruhetage', response['error'])
-        days = ['mon', 'wed', 'fri', 'sun']
-        _, provider = self.propose({'kind': 'week', 'week': self.week},
-                                   {**decision, 'sessions': [self.session(day, day, 60) for day in days]})
+        days = ['mon', 'wed', 'fri', 'sat']  # Sunday stays free
+        proposal, provider = self.propose({'kind': 'week', 'week': self.week},
+                                          {**decision, 'sessions': [self.session(day, day, 60) for day in days]})
         self.assertTrue(provider.generate.call_args.args[3]['trainingRules']['noConsecutiveRestDays'])
+        self.confirm(proposal)
+        # Over the week boundary: after a free Sunday the Monday has training.
+        second = iso_week(self.start + timedelta(weeks=1))
+        decision = {**decision, 'week': second}
+        response, provider = self.propose({'kind': 'week', 'week': second}, {**decision, 'sessions': [
+            self.session(day, day, 60) for day in ('tue', 'thu', 'sat', 'sun')]}, expected=400)
+        self.assertIn('Sonntag auf Montag', response['error'])
+        self.assertEqual(provider.generate.call_args.args[3]['trainingRules']['neighbourDays'],
+                         {'previousSunday': 'rest', 'nextMonday': None})
+        self.propose({'kind': 'week', 'week': second}, {**decision, 'sessions': [
+            self.session(day, day, 60) for day in ('mon', 'wed', 'fri', 'sun')]})
+
+    def test_no_two_rest_days_in_a_row_gives_way_to_days_without_time(self):
+        windows = [{'id': f'w-{day}', 'day': day, 'kind': 'available', 'allDay': False, 'from': '18:00', 'to': '20:00',
+                    'sports': {}, 'group': None} for day in ('wed', 'thu', 'fri', 'sat', 'sun')]  # No time on Mon and Tue
+        self.assertEqual(self.client.put('/api/athlete-profile', json={'availability': {'windows': windows}}).status_code, 200)
+        response = self.client.put('/api/athlete-profile', json={'availability': {'noConsecutiveRestDays': True}})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('An Mo und Di hast du keine Zeit', response.get_json()['error'])
+        # Set first, the days without time lift it later.
+        days = [{**w, 'day': day, 'id': f'w-{day}'} for w in windows[:1] for day in DAYS]
+        self.client.put('/api/athlete-profile', json={'availability': {'windows': days, 'noConsecutiveRestDays': True}})
+        response = self.client.put('/api/athlete-profile', json={'availability': {'windows': windows}})
+        self.assertFalse(response.get_json()['availability']['noConsecutiveRestDays'])
 
     def test_season_plan_is_proposed_adjusted_confirmed_and_guides_the_next_block(self):
         goal = (self.start + timedelta(weeks=17, days=6)).isoformat()  # Sunday of the 18th week
@@ -934,7 +959,8 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual([c['task'] for c in calls], ['frame', 'week', 'week', 'week', 'week'])
         self.assertEqual(calls[0]['periodization'], {'source': 'athlete', 'backwardsFromEvent': True, 'loadWeeks': 3,
                                                      'deloadWeeks': 1, 'taperWeeks': None, 'cycles': [],
-                                                     'maxRisePerCycle': 0.05})
+                                                     'startHours': 5, 'peakHours': 5.5, 'deloadShare': 0.6,
+                                                     'maxRisePerLoadWeek': 0.05})
         self.assertIn('trainingBase', calls[0])
         self.assertTrue(self.client.get('/api/coach/today').get_json()['onboarded'])
         overview = self.client.get('/api/coach/plan/weeks').get_json()
@@ -953,7 +979,8 @@ class CoachAPITests(unittest.TestCase):
         response = self.client.put('/api/coach/plan/phases', json=edit)
         self.assertEqual(response.status_code, 200, response.get_json())
         first = response.get_json()
-        self.assertEqual(first['staleWeeks'], sorted(first['weeks']))
+        # The rhythm runs on over the new block; only weeks whose outline changed need adapting (not the deload week 4).
+        self.assertEqual(first['staleWeeks'], sorted(first['weeks'])[:3])
         self.assertEqual(first['adapt']['changes'], ['phases'])
         self.assertEqual(first['frame']['source'], 'athlete')
         again = self.client.put('/api/coach/plan/phases', json=edit).get_json()
@@ -1321,6 +1348,73 @@ class CoachAPITests(unittest.TestCase):
         planned = [h for h in self.client.get('/api/coach/today').get_json()['hints'] if h['kind'] == 'planned']
         self.assertEqual(planned, [{'kind': 'planned', 'week': week, 'weekNumber': 3, 'hours': 1, 'focus': 'Locker', 'proposalId': None}])
 
+    def test_own_weekly_volume_changes_the_outline_and_binds_the_worked_out_weeks(self):
+        self.planned()
+        overview = self.client.get('/api/coach/plan/weeks').get_json()
+        weeks = overview['weeks']
+        self.assertEqual(overview['volume'], {'scale': 1, 'baseHours': 5, 'peakHours': 5.5})
+        self.assertEqual([w['kind'] for w in weeks[:5]], ['load', 'load', 'load', 'deload', 'load'])
+        self.assertEqual((weeks[4]['suggestedHours'], weeks[4]['athleteHours'], weeks[4]['maxHours']), (weeks[4]['targetHours'], None, 10))
+        # Week 4 becomes a load week with 7 h and week 5 the deload; all other weeks 10 % more.
+        body = {'scale': 1.1, 'weeks': [{'week': weeks[3]['week'], 'kind': 'load', 'hours': 7},
+                                        {'week': weeks[4]['week'], 'kind': 'deload', 'hours': None}]}
+        response = self.client.put('/api/coach/plan/volume', json=body)
+        self.assertEqual(response.status_code, 200, response.get_json())
+        result = response.get_json()
+        self.assertEqual(result['staleWeeks'], [w['week'] for w in weeks[:3]])  # Worked out and 10 % more now.
+        self.assertEqual(result['adapt']['changes'], ['phases'])
+        after = self.client.get('/api/coach/plan/weeks').get_json()['weeks']
+        self.assertEqual([w['kind'] for w in after[:6]], ['load', 'load', 'load', 'load', 'deload', 'load'])
+        self.assertEqual([w['deload'] for w in after[3:5]], [False, True])
+        self.assertEqual((after[3]['targetHours'], after[3]['athleteHours'], after[3]['athleteKind'], after[3]['defaultKind']),
+                         (7, 7, 'load', 'deload'))
+        self.assertEqual(after[0]['targetHours'], 5.5)
+        too_much = {'scale': 1, 'weeks': [{'week': weeks[5]['week'], 'kind': None, 'hours': 12}]}
+        response = self.client.put('/api/coach/plan/volume', json=too_much)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Woche 6: Du hast höchstens 10 h Zeit', response.get_json()['error'])
+        # The coach works out the week with the hours the athlete set; one more try when he misses them.
+        settings = self.client.get('/api/coach/plan/settings').get_json()['settings']
+        self.client.put('/api/coach/plan/settings', json={**{k: settings[k] for k in ('startDate', 'endDate', 'replanMode')},
+                                                          'horizonWeeks': 4})
+        provider, calls = self.planner()
+        with patch('coach_api.get_provider', return_value=provider):
+            job = self.run_job(self.client.post('/api/coach/plan/advance?timezone=Europe/Berlin', json={'trigger': 'manual'}))
+        self.assertTrue(calls[0]['blockWeek']['athleteHours'])
+        self.assertEqual(calls[-1]['systemNote']['rejectedChange'], 'Die Woche hat 1 h, du hast 7 h für sie festgelegt.')
+        self.assertEqual(job['status'], 'failed')
+        self.assertIn('festgelegten 7 h', job['error'])
+
+    def test_recommended_hours_from_rules_and_from_the_ai(self):
+        response = self.client.get('/api/coach/volume/recommendation').get_json()
+        self.assertEqual((response['event'], response['canAsk'], response['recommendation']['source']), (None, False, 'rules'))
+        self.assertEqual(self.client.post('/api/coach/volume/recommendation', json={}).status_code, 400)
+        self.client.put('/api/athlete-profile', json={'background': {'type': None, 'weeklyHours': 8, 'intervals': {}, 'source': 'athlete'}})
+        self.client.post('/api/coach/events', json={'title': 'Ötztaler', 'sport': 'ride', 'subtype': 'granFondo', 'priority': 'A',
+                                                    'startDate': (self.start + timedelta(weeks=30)).isoformat(),
+                                                    'distanceKm': 227, 'elevationM': 5500, 'targetSeconds': 36000})
+        response = self.client.get('/api/coach/volume/recommendation').get_json()
+        # Rules: a Gran Fondo needs 6 h, a target time 25 % more, never below the training so far (8 h).
+        self.assertEqual({k: response['recommendation'][k] for k in ('minHours', 'averageHours', 'peakHours', 'source')},
+                         {'minHours': 6, 'averageHours': 8, 'peakHours': 10, 'source': 'rules'})
+        self.assertEqual((response['event']['goal'], response['canAsk'], response['baseHours']), ('targetTime', True, 8))
+        provider, calls = self.coach({'minHours': 7, 'averageHours': 10, 'peakHours': 16, 'rationale': ' Lange Anstiege. '})
+        with patch('coach_api.get_provider', return_value=provider):
+            response = self.client.post('/api/coach/volume/recommendation', json={})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(calls[0]['event']['elevationM'], 5500)
+        # The peak stays within 60 % over the training so far.
+        self.assertEqual({k: response.get_json()['recommendation'][k] for k in ('minHours', 'averageHours', 'peakHours', 'rationale', 'source')},
+                         {'minHours': 7, 'averageHours': 10, 'peakHours': 12.5, 'rationale': 'Lange Anstiege.', 'source': 'aiRecommendation'})
+        again = self.client.get('/api/coach/volume/recommendation').get_json()
+        self.assertEqual((again['recommendation']['source'], again['canAsk']), ('aiRecommendation', False))
+        # A new target time asks again; until then the rules apply.
+        event = self.client.get('/api/coach/events').json['events'][0]
+        self.client.put(f"/api/coach/events/{event['id']}", json={**{k: event[k] for k in ('title', 'sport', 'subtype', 'priority',
+                                                                                            'startDate', 'distanceKm', 'elevationM')},
+                                                                  'targetSeconds': None})
+        self.assertEqual(self.client.get('/api/coach/volume/recommendation').get_json()['recommendation']['source'], 'rules')
+
     def test_plan_overview_has_worked_out_outlined_and_past_weeks(self):
         self.assertEqual(self.client.get('/api/coach/plan/weeks').get_json()['weeks'], [])
         self.planned()
@@ -1331,7 +1425,8 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual([w['plan'] is not None for w in weeks[:4]], [True, True, True, False])
         self.assertEqual((weeks[0]['number'], weeks[0]['phaseName'], weeks[0]['state'], weeks[0]['completedHours']), (1, 'Grundlage', 'future', None))
         self.assertEqual(weeks[3]['replanDate'], (self.start + timedelta(weeks=3, days=-15)).isoformat())
-        self.assertEqual((weeks[3]['targetHours'], weeks[8]['phaseName']), (1, 'Schwelle'))
+        # Outlined weeks follow the volume curve: week 4 is the first deload at 60 % of the base (5 h).
+        self.assertEqual((weeks[3]['targetHours'], weeks[3]['kind'], weeks[8]['phaseName']), (3, 'deload', 'Schwelle'))
         self.assertIsNone(overview['nextManualWeek'])  # The three weeks from the next Monday are ready.
         self.plan_settings(mode='manual')
         self.assertIsNone(self.client.get('/api/coach/plan/weeks').get_json()['weeks'][3]['replanDate'])

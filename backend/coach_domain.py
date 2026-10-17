@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from jsonschema import Draft202012Validator
 
 DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+DAY_NAMES = dict(zip(DAYS, ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']))
 
 
 class CoachError(ValueError):
@@ -249,6 +250,12 @@ def rest_day_pairs(training_days, limits, elapsed=()):
     return {(DAYS[i], DAYS[i + 1]) for i in range(6) if rest[i] and rest[i + 1] and (open_day[i] or open_day[i + 1])}
 
 
+def forced_rest_pairs(minutes):
+    """Neighbouring days of the usual week without any time, Sunday and Monday included: two rest days in a row there."""
+    return [(day, DAYS[(index + 1) % 7]) for index, day in enumerate(DAYS)
+            if minutes.get(day) == 0 and minutes.get(DAYS[(index + 1) % 7]) == 0]
+
+
 def update_profile(current, changes):
     if not isinstance(changes, dict) or set(changes) - set(PROFILE_SCHEMA['properties']):
         raise CoachError('Unbekannte Profilfelder. Overrides und Check-ins separat speichern.')
@@ -295,6 +302,13 @@ def update_profile(current, changes):
         raise CoachError('Der gewünschte Umfang darf das absolute Zeitmaximum nicht überschreiten.')
     if availability['noConsecutiveRestDays'] and (availability['trainingDaysPerWeek'] or 7) < 3:
         raise CoachError('Mit weniger als 3 Trainingstagen lassen sich zwei Ruhetage hintereinander nicht vermeiden.')
+    forced = forced_rest_pairs(availability['defaultAvailability'])
+    if availability['noConsecutiveRestDays'] and forced:
+        # Days without time come first: the rule cannot be set, and new days without time lift it.
+        if availability_changes.get('noConsecutiveRestDays'):
+            names = ' und '.join(DAY_NAMES[day] for day in forced[0])
+            raise CoachError(f'An {names} hast du keine Zeit, zwei Ruhetage hintereinander lassen sich nicht vermeiden.')
+        availability['noConsecutiveRestDays'] = False
     return result
 
 
