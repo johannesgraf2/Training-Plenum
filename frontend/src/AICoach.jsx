@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { localDate } from './workoutModel';
-import CoachOnboarding from './CoachOnboarding';
+import CoachOnboarding from './CoachOnboarding.jsx';
 import CoachChat from './CoachChat';
 import CoachPlan from './CoachPlan';
 import CoachSettings, { SECTIONS } from './CoachSettings';

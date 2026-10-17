@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Simulate } from 'react-dom/test-utils';
-import CoachOnboarding from './CoachOnboarding';
+import CoachOnboarding from './CoachOnboarding.jsx';
 
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const MERGED = ['goal', 'availability', 'preferences', 'metrics', 'thresholds', 'background', 'onboarding'];

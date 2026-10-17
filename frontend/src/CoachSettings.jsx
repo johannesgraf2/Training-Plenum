@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { SourceList } from './CoachOnboarding';
+import { SourceList } from './CoachOnboarding.jsx';
 import { KeyNotice, ProviderForm } from './CoachProvider';
 import { Field, ThresholdFields, Tiles, thresholdChanges, thresholdDraft, thresholdProblem } from './OnboardingUI';
 import { EventForm, EventList, WeekFields, WindowEditor, fittedWish, planSports, weekDraft, weekProblem } from './PlanSteps';
