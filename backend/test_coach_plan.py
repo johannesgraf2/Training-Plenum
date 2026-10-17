@@ -4,9 +4,9 @@ from datetime import date, datetime, timedelta
 
 from coach_blocks import new_block, suggested_rhythm
 from coach_domain import DAYS, CoachError, complete_profile, DEFAULT_PROFILE, complete_event, iso_week
-from coach_plan import (adopt_blocks, align_frame, check_frame, cycle_lengths, frame_cycles, check_tests, cut_frame, deviation, due_week, due_weeks, edit_phases, frame_blocks,
-                        frame_hint, group_sessions, horizon, outline_weeks, plan_span, plan_weeks, reference_monday, replan_date,
-                        required_tests)
+from coach_plan import (adopt_blocks, align_frame, check_frame, check_volume, cycle_lengths, frame_cycles, check_tests, cut_frame,
+                        deviation, due_week, due_weeks, edit_phases, frame_blocks, frame_hint, group_sessions, horizon, outline_weeks,
+                        plan_span, plan_weeks, reference_monday, replan_date, required_tests, shape_volume, week_kinds)
 
 
 def phase(block_type, weeks, hours=6.0, secondary=None):
@@ -100,11 +100,11 @@ class RhythmTests(unittest.TestCase):
         self.assertEqual(frame_cycles({**self.settings, 'taperWeeks': None}, self.profile)[0]['peakWeek'], 15)
 
     def test_phases_move_to_whole_cycles_so_the_rhythm_runs_over_block_boundaries(self):
-        self.profile['background']['weeklyHours'] = 5
         phases = [phase('grundlage', 7), phase('vo2max', 5), phase('wettkampfspezifisch', 4), phase('taper', 2, 3),
                   phase('uebergang', 2, 3)]
         check_frame(phases, self.settings, self.profile)
-        aligned = align_frame(phases, self.settings, self.profile, [10] * 20)
+        aligned = shape_volume(align_frame(phases, self.settings, self.profile), self.settings, self.profile, [10] * 20,
+                               [None] * 20, 5, 7)
         check_frame(aligned, self.settings, self.profile)
         self.assertEqual([(p['blockType'], len(p['weeks'])) for p in aligned],
                          [('grundlage', 8), ('vo2max', 4), ('wettkampfspezifisch', 4), ('taper', 2), ('uebergang', 2)])
@@ -112,27 +112,65 @@ class RhythmTests(unittest.TestCase):
         self.assertEqual(pattern, ['LLLDLLLD', 'LLLD', 'LLLD'])
         # Week 8 was a load week of the AI and becomes a deload; week 7 was a deload and becomes a load week.
         self.assertEqual([w['focus'] for w in aligned[0]['weeks'][6:]], ['', ''])
-        self.assertEqual(aligned[4:], phases[4:])
 
-    def test_hours_rise_from_the_base_at_most_5_percent_a_cycle_and_the_time_caps_the_peak(self):
-        self.profile['background']['weeklyHours'] = 5
+    def test_the_rhythm_runs_over_block_boundaries_that_are_off_the_cycles(self):
+        # A 6-week block no longer gets two 2:1 cycles: 3:1 runs on from the week before the taper backwards.
+        phases = [phase('grundlage', 6), phase('vo2max', 6), phase('wettkampfspezifisch', 4), phase('taper', 2, 3),
+                  phase('uebergang', 2, 3)]
+        shaped = shape_volume(phases, self.settings, self.profile, [10] * 20, [None] * 20, 5, 7)
+        self.assertEqual(''.join('D' if w['phase'] in ('recovery', 'taper') else 'L' for p in shaped[:3] for w in p['weeks']),
+                         'LLLDLLLDLLLDLLLD')
+
+    def test_hours_rise_evenly_up_to_the_recommended_peak_in_the_last_load_week(self):
         phases = [phase('grundlage', 8), phase('vo2max', 4), phase('wettkampfspezifisch', 4), phase('taper', 2, 3),
                   phase('uebergang', 2, 3)]
-        hours = lambda aligned: [w['targetHours'] for p in aligned[:4] for w in p['weeks']]
-        # Cycle levels 5, 5.25, 5.51, 5.79 h; load weeks at 100/105/110 %, deloads at 65 % of the cycle's top week.
-        self.assertEqual(hours(align_frame(phases, self.settings, self.profile, [10] * 20)),
-                         [5, 5.5, 5.5, 3.5, 5.5, 5.5, 6, 3.5, 5.5, 6, 6, 3.5, 6, 6, 6.5, 4, 3, 2.5])
-        # Little time: the peak week (15) stays within it and the rise flattens out; the base stays where it is.
-        self.profile['background']['weeklyHours'] = 6
-        capped = hours(align_frame(phases, self.settings, self.profile, [10] * 14 + [6.6] + [10] * 5))
-        self.assertEqual((capped[0], capped[14], max(capped)), (6, 6.5, 6.5))
-        check_frame(align_frame(phases, self.settings, self.profile, [10] * 20), self.settings, self.profile)
+        hours = lambda shaped: [w['targetHours'] for p in shaped for w in p['weeks']]
+        # Load weeks rise evenly from the base (5 h) to the peak (7 h) in week 15; a cycle starts at the level of the last
+        # load week, deloads take 60 % of it, the taper 80 % of the week before, the transition half of the base.
+        self.assertEqual(hours(shape_volume(phases, self.settings, self.profile, [10] * 20, [None] * 20, 5, 7)),
+                         [5, 5.25, 5.5, 3.25, 5.5, 5.75, 6, 3.5, 6, 6.25, 6.5, 3.75, 6.5, 6.75, 7, 4.25, 3.25, 2.75, 2.5, 2.5])
+        # A long plan rises slower, never more than 5 % a week: the peak is reached once, at the end.
+        steep = hours(shape_volume(phases, self.settings, self.profile, [10] * 20, [None] * 20, 5, 20))
+        self.assertEqual((steep[0], steep[1], max(steep), steep.index(max(steep))), (5, 5.25, 7.5, 14))
+        # The available time caps every week, the wished volume the taper; the curve goes on behind a short week.
+        capped = hours(shape_volume(phases, self.settings, self.profile, [10] * 9 + [4] + [10] * 10, [6] * 20, 5, 7))
+        self.assertEqual((capped[9], capped[10], capped[16]), (4, 6.5, 3.25))
+
+    def test_the_athletes_own_weeks_and_scale_change_the_curve_from_there_on(self):
+        phases = [phase('grundlage', 8), phase('vo2max', 4), phase('wettkampfspezifisch', 4), phase('taper', 2, 3),
+                  phase('uebergang', 2, 3)]
+        # Week 4 becomes a load week and week 5 the deload (a 4:1 cycle); week 8 gets own hours; all weeks 10 % more.
+        volume = {'scale': 1.1, 'weeks': {'2026-W46': {'kind': 'load', 'hours': None}, '2026-W47': {'kind': 'deload', 'hours': None},
+                                          '2026-W50': {'kind': None, 'hours': 9}}}
+        shaped = shape_volume(phases, self.settings, self.profile, [10] * 20, [None] * 20, 5, 7, volume)
+        weeks = [w for p in shaped for w in p['weeks']]
+        self.assertEqual(''.join('D' if w['phase'] in ('recovery', 'taper') else 'L' for w in weeks[:16]), 'LLLLDLLDLLLDLLLD')
+        self.assertEqual([w['targetHours'] for w in weeks[:9]], [5.5, 5.75, 6, 6.25, 3.75, 6.25, 6.5, 9, 6.5])
+        # Weeks that are over keep their outline and rhythm.
+        kept = shape_volume(phases, self.settings, self.profile, [10] * 20, [None] * 20, 5, 7, volume, keep=4)
+        self.assertEqual([w for p in kept for w in p['weeks']][:4], [w for p in phases for w in p['weeks']][:4])
 
     def test_a_stretch_with_more_phases_than_cycles_stays(self):
         settings = {**self.settings, 'endDate': '2027-02-21'}  # 18 weeks, the event in the last one.
         phases = [phase('wiedereinstieg', 2), phase('grundlage', 6), phase('vo2max', 3), phase('schwelle', 4),
                   phase('wettkampfspezifisch', 3)]
-        self.assertEqual(align_frame(phases, {**settings, 'taperWeeks': None}, self.profile, [10] * 18), phases)
+        self.assertEqual(align_frame(phases, {**settings, 'taperWeeks': None}, self.profile), phases)
+
+    def test_volume_edits_are_checked(self):
+        keys = plan_weeks(self.settings)
+        defaults = week_kinds(['grundlage'] * 16 + ['taper'] * 2 + ['uebergang'] * 2, self.settings, self.profile)
+        check = lambda *weeks: check_volume({'scale': 1, 'weeks': [{'week': w, 'kind': k, 'hours': h} for w, k, h in weeks]},
+                                            {'weeks': {keys[0]: {'kind': 'deload', 'hours': None}}}, self.settings, 2, defaults,
+                                            [10] * 20)
+        with self.assertRaisesRegex(CoachError, 'Woche 17: Taper'):
+            check((keys[16], 'load', None))
+        with self.assertRaisesRegex(CoachError, 'Woche 3: Du hast höchstens 10 h Zeit'):
+            check((keys[2], None, 10.5))
+        with self.assertRaisesRegex(CoachError, 'nicht zum Plan'):
+            check(('2030-W01', 'load', None))
+        # Weeks that are over keep what they had; empty entries go.
+        self.assertEqual(check((keys[0], 'load', None), (keys[2], 'deload', 4), (keys[3], None, None))['weeks'],
+                         {keys[0]: {'kind': 'deload', 'hours': None}, keys[2]: {'kind': 'deload', 'hours': 4}})
 
 
 class RollingTests(unittest.TestCase):
@@ -293,9 +331,23 @@ class PhaseEditTests(unittest.TestCase):
                      'frame': {'id': 'frame', 'status': 'active', 'blockIds': [b['id'] for b in blocks]}}
         self.ids = [b['id'] for b in blocks]
 
-    def edit(self, items, taper=None, today=date(2026, 10, 16)):
+    def edit(self, items, taper=None, today=date(2026, 10, 16), shape=None):
         data = {'phases': [{'id': i, 'blockType': t, 'weeks': w} for i, t, w in items], 'taperWeeks': taper}
-        return edit_phases(self.plan, self.profile, data, today, lambda monday: 10, 5.0)
+        return edit_phases(self.plan, self.profile, data, today, lambda monday: 10, 5.0, shape)
+
+    def test_an_added_block_keeps_the_rhythm_running_over_the_blocks(self):
+        # Regression: an added block used to restart the rhythm per block (2:1 in a 6-week block).
+        settings = self.plan['settings']
+        shape = lambda blocks, keep: shape_volume(blocks, settings, self.profile, [10] * 15, [None] * 15, 5, 7, None, keep)
+        items = self.items(grundlage=3, vo2max=3)
+        items.insert(1, (None, 'schwelle', 3))
+        blocks, _, changed = self.edit(items, shape=shape)
+        self.assertEqual([(b['blockType'], len(b['weeks'])) for b in blocks][:4],
+                         [('grundlage', 3), ('schwelle', 3), ('vo2max', 3), ('wettkampfspezifisch', 3)])
+        rhythm = ''.join('D' if w['phase'] in ('recovery', 'taper') else 'L' for b in blocks[:4] for w in b['weeks'])
+        self.assertEqual(rhythm, 'LLLDLLLDLLLD')
+        self.assertTrue(all(b['source'] == 'athlete' for b in blocks[:2]))
+        self.assertIn('2026-W43', changed)
 
     def items(self, **lengths):
         types = ['grundlage', 'vo2max', 'wettkampfspezifisch', 'taper', 'uebergang']
@@ -359,6 +411,6 @@ class PhaseEditTests(unittest.TestCase):
     def test_outline_follows_fixed_rules_within_the_time(self):
         weeks = outline_weeks('grundlage', 4, 8, [10, 10, 8.2, 10])
         self.assertEqual([(w['week'], w['phase'], w['targetHours']) for w in weeks],
-                         [(1, 'base', 8.0), (2, 'base', 8.0), (3, 'base', 8.0), (4, 'recovery', 5.0)])
+                         [(1, 'base', 8.0), (2, 'base', 8.0), (3, 'base', 8.0), (4, 'recovery', 4.5)])
         self.assertEqual([w['targetHours'] for w in outline_weeks('taper', 3, 10, [10] * 3)], [7.5, 6.0, 4.5])
         self.assertEqual([w['targetHours'] for w in outline_weeks('taper', 1, 10, [10], preferred=8)], [5.5])

@@ -7,7 +7,7 @@ athlete's confirmation applies it.
 """
 import copy
 
-from coach_domain import (DAYS, EVENT_SCHEMA, EXCEPTION_SCHEMA, MAX_EVENTS, CoachError, complete_event, day_date, obj, text,
+from coach_domain import (DAY_NAMES, DAYS, EVENT_SCHEMA, EXCEPTION_SCHEMA, MAX_EVENTS, CoachError, complete_event, day_date, obj, text,
                           update_profile, week_start)
 
 MAX_HISTORY = 20
@@ -57,7 +57,6 @@ def pace_label(seconds):
     return f'{int(seconds // 60)}:{round(seconds % 60):02} /km'
 
 
-DAY_NAMES = dict(zip(DAYS, ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']))
 SPORT_NAMES = {'ride': 'Rad', 'run': 'Laufen', 'strength': 'Kraft'}
 PRIORITY_NAMES = {'A': 'A-Event', 'B': 'B-Event', 'C': 'C-Event'}
 

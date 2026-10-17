@@ -12,7 +12,7 @@ import copy
 import uuid
 from datetime import timedelta
 
-from coach_blocks import (BLOCK_TYPES, DELOAD_PHASES, MAX_LOAD_STREAK, SECONDARY_FOCUS, SELECTABLE, check_block, new_block,
+from coach_blocks import (BLOCK_TYPES, DELOAD_PHASES, SECONDARY_FOCUS, SELECTABLE, check_block, new_block,
                           suggested_rhythm)
 from coach_domain import (BLOCK_WEEKS_SCHEMA, DAYS, HINWEISE_SCHEMA, CoachError, day_date, effective_availability, iso_week,
                           minutes_of, num, obj, preferred_hours, text, week_start)
@@ -105,9 +105,9 @@ def check_frame(phases, settings, profile):
         if PLAN_RANK[identity] < rank or (identity in seen and identity != previous):
             raise CoachError(f'Phase {index}: „{name}“ passt nicht in die Reihenfolge Erholung → Grundlage → '
                              'Aufbau/VO2max/Schwelle → Wettkampfspezifisch → Taper bis zum A-Event.')
-        # The first cycle before an event may have four load weeks (cycle_lengths).
+        # The rhythm comes from shape_volume over block boundaries.
         check_block(identity, phase['secondaryFocus'], phase['weeks'], start=start, profile=goal_profile(profile, goal),
-                    max_streak=MAX_LOAD_STREAK + 1)
+                    rhythm_rules=False)
         for item in phase['weeks']:
             monday = start + timedelta(weeks=item['week'] - 1)
             limits = [day['maxMinutes'] for day in effective_availability(profile, iso_week(monday)).values()]
@@ -259,17 +259,12 @@ def frame_cycles(settings, profile):
     return result
 
 
-def align_frame(phases, settings, profile, caps):
-    """The phases of an AI frame on the cycles of cycle_lengths, with target hours from fixed rules.
+def align_frame(phases, settings, profile):
+    """The phases of an AI frame on the cycles of cycle_lengths, so phase changes come after a deload week.
 
-    Before each A event the phases with a rhythm cover whole cycles counted backwards from the taper, so the 3:1 rhythm
-    runs on over block boundaries; phases without one (taper, transition) keep their place and length. The hours follow
-    the athlete's load, not their time: the first load week starts at the training base and each cycle rises at most
-    5 % up to the peak, the last load week before the final deload, which the available time caps. Load weeks rise
-    inside a cycle (LOAD_STEPS), deloads take 65 % of the cycle's highest week and each taper week 80 % of the week
-    before. A stretch with more phases than cycles stays as the AI laid it out. caps holds the available hours per plan
-    week."""
-    first, _ = plan_span(settings)
+    Before each A event the phases with a rhythm cover whole cycles counted backwards from the taper; phases without one
+    (taper, transition) keep their place and length. A stretch with more phases than cycles stays as the AI laid it out.
+    Rhythm and hours of the weeks come from shape_volume afterwards."""
     spans, start = [], 0
     for phase in phases:
         spans.append((start, start + len(phase['weeks'])))
@@ -287,37 +282,18 @@ def align_frame(phases, settings, profile, caps):
             indices.pop(0)
         while indices and not rhythmic(indices[-1]):
             indices.pop()
-        hours = _align_stretch(result, [phases[i] for i in indices], indices, spans, entries, caps,
-                               profile['background'].get('weeklyHours')) \
-            if indices and all(rhythmic(i) for i in indices) else None
-        for index in range(indices[-1] + 1 if indices else last + 1, last + 1):
-            if hours is None or phases[index]['blockType'] != 'taper':
-                continue
-            for number, week in enumerate(result[index]['weeks']):
-                monday = first + timedelta(weeks=spans[index][0] + number)
-                preferred = preferred_hours(profile, monday)
-                hours = min(_rounded(hours * TAPER_STEP), caps[spans[index][0] + number],
-                            *([preferred * BLOCK_TYPES['taper']['maxPreferredShare']] if preferred else []))
-                week['targetHours'] = hours
+        if indices and all(rhythmic(i) for i in indices):
+            _align_stretch(result, [phases[i] for i in indices], indices, spans, entries)
         begin = spans[last][1]
     return result
 
 
-# Most a cycle's volume rises over the one before, and each taper week relative to the week before it.
-MAX_RISE = 1.05
-TAPER_STEP = .8
-
-
-def _rounded(hours):
-    return int(hours * 2 + .5) / 2
-
-
-def _align_stretch(result, stretch, indices, spans, entries, caps, base):
-    """Puts the phases of one stretch on whole cycles with the hours of the cycle curve; returns the last week's hours."""
+def _align_stretch(result, stretch, indices, spans, entries):
+    """Puts the phases of one stretch on whole cycles; a moved week keeps its outline only inside its own phase."""
     low, high = spans[indices[0]][0], spans[indices[-1]][1]
     sizes = cycle_lengths(high - low)
     if len(stretch) > len(sizes):
-        return None
+        return
     ends = [low + sum(sizes[:n + 1]) for n in range(len(sizes))]
     # Each boundary moves to the nearest cycle end that keeps the block length allowed, with a cycle left per later phase.
     chosen = []
@@ -327,36 +303,188 @@ def _align_stretch(result, stretch, indices, spans, entries, caps, base):
         chosen.append(min(options, key=lambda c: (not spec['minWeeks'] <= ends[c] - first <= spec['maxWeeks'],
                                                   abs(ends[c] - spans[indices[n]][1]))))
     chosen.append(len(ends) - 1)
-    # Cycle levels: from the training base (without one, the AI's first load week) up to the peak, at most 5 % a cycle.
-    base = base or next((e['targetHours'] for _, e in entries[low:high] if e['phase'] not in DELOAD_PHASES),
-                        entries[low][1]['targetHours'])
-    peak = ends[-1] - (2 if sizes[-1] > 1 else 1)
-    top = min(caps[peak] / LOAD_STEPS[-1], base * MAX_RISE ** (len(sizes) - 1))
-    rise = (top / base) ** (1 / (len(sizes) - 1)) if len(sizes) > 1 and top > base else 1
-    levels = [min(base * rise ** n, top) for n in range(len(sizes))]
-    deloads = [position == size - 1 for size in sizes for position in range(size)]
-    cycles = [n for n, size in enumerate(sizes) for _ in range(size)]
-    position, cycle_load, start, hours = 0, 0, low, None
+    start = low
     for n, phase in enumerate(stretch):
         identity, weeks = phase['blockType'], []
         for week in range(start, ends[chosen[n]]):
             source, entry = entries[week]
-            was_deload = entry['phase'] in DELOAD_PHASES
-            if deloads[week - low]:
-                hours = min(_half_hours(cycle_load * DELOAD_SHARE), caps[week])
-                item = {'phase': 'recovery', 'focus': entry['focus'] if was_deload else ''}
-                position, cycle_load = 0, 0
-            else:
-                step = LOAD_STEPS[min(position, len(LOAD_STEPS) - 1)]
-                hours = min(_rounded(levels[cycles[week - low]] * step), caps[week])
-                same = source == identity and not was_deload
-                item = {'phase': entry['phase'] if same else LOAD_PHASES.get(identity, 'build'),
-                        'focus': entry['focus'] if same else ''}
-                position, cycle_load = position + 1, max(cycle_load, hours)
-            weeks.append({'week': len(weeks) + 1, 'phase': item['phase'], 'targetHours': hours, 'focus': item['focus']})
+            same = source == identity
+            weeks.append({'week': len(weeks) + 1, 'phase': entry['phase'] if same else LOAD_PHASES.get(identity, 'build'),
+                          'targetHours': entry['targetHours'], 'focus': entry['focus'] if same else ''})
         result[indices[n]]['weeks'] = weeks
         start = ends[chosen[n]]
-    return hours
+
+
+# --- Weekly volume: rhythm and hours up to each A event ----------------------------------------------
+
+# Load weeks rise at most this much over the load week before; a cycle starts again at the level of the last one.
+MAX_WEEKLY_RISE = 1.05
+DELOAD_SHARE = .6
+TAPER_STEP = .8
+TRANSITION_SHARE = .5
+VOLUME_SCALE = (.7, 1.3)
+VOLUME_KINDS = ('load', 'deload')
+# How far a worked-out week may miss the hours the athlete set for it.
+ATHLETE_HOURS_TOLERANCE = .5
+
+
+VOLUME_SCHEMA = obj({'scale': num(*VOLUME_SCALE), 'weeks': {'type': 'array', 'maxItems': 520, 'items': obj({
+    'week': text(8), 'kind': {'enum': [None, *VOLUME_KINDS]}, 'hours': num(0, 80, True)})}})
+
+
+def _hours_text(value):
+    return f'{_below(value):g}'.replace('.', ',')
+
+
+def check_volume(data, stored, settings, keep, defaults, caps):
+    """The athlete's scale and own weeks, checked. Weeks that are over keep what they had; load or deload only where the
+    rhythm runs (not in taper or transition weeks); own hours within the time of the week."""
+    keys = plan_weeks(settings)
+    weeks = {key: value for key, value in ((stored or {}).get('weeks') or {}).items() if key in keys[:keep]}
+    for item in data['weeks']:
+        if item['week'] not in keys:
+            raise CoachError('Diese Woche gehört nicht zum Plan.')
+        index = keys.index(item['week'])
+        if index < keep or (item['kind'] is None and item['hours'] is None):
+            continue
+        if item['kind'] and defaults[index] not in VOLUME_KINDS:
+            raise CoachError(f'Woche {index + 1}: Taper- und Übergangswochen bleiben, wie sie sind. Belastung oder Erholung '
+                             'wählst du in den übrigen Phasen.')
+        if item['hours'] is not None and item['hours'] > caps[index] + 1e-9:
+            raise CoachError(f'Woche {index + 1}: Du hast höchstens {_hours_text(caps[index])} h Zeit.')
+        weeks[item['week']] = {'kind': item['kind'], 'hours': item['hours']}
+    return {**(stored or {}), 'scale': data['scale'], 'weeks': weeks}
+
+
+def _quarter_hours(value):
+    return max(0.0, int(value * 4 + .5) / 4)
+
+
+def _below(value):
+    """The quarter hour at or below value."""
+    return max(0.0, int(value * 4 + 1e-9) / 4)
+
+
+def week_kinds(types, settings, profile, chosen=None):
+    """The kind of every plan week from its block type: load or deload in blocks with a rhythm, taper, transition
+    (Übergang) or keep (own blocks from earlier plans keep their weeks).
+
+    The default rhythm is 3:1, counted back from the end of each stretch of rhythm weeks (the week before the taper, the
+    event week, the plan end) and running over block boundaries. chosen holds the athlete's own load or deload per week
+    index; it wins and leaves the other weeks as they are."""
+    events = {week for _, week in anchored_events(settings, profile)}
+    kinds, runs, run = [None] * len(types), [], []
+    for index, identity in enumerate(types):
+        spec = BLOCK_TYPES[identity]
+        if spec['rhythm']:
+            run.append(index)
+        else:
+            kinds[index] = 'taper' if spec['deloadOnly'] else 'transition' if identity == 'uebergang' else 'keep'
+        if run and (not spec['rhythm'] or index in events):
+            runs.append(run)
+            run = []
+    if run:
+        runs.append(run)
+    for run in runs:
+        position = 0
+        for size in cycle_lengths(len(run)):
+            for offset in range(size):
+                kinds[run[position + offset]] = 'deload' if offset == size - 1 else 'load'
+            position += size
+    for index, kind in (chosen or {}).items():
+        if kinds[index] in VOLUME_KINDS:
+            kinds[index] = kind
+    return kinds
+
+
+def volume_curve(kinds, settings, profile, base, peak, caps):
+    """Hours per plan week before the athlete's scale and own hours.
+
+    Per stretch up to an A event (and after the last one up to the plan end) the first load week starts at the training
+    base and the load weeks rise evenly, at most 5 % over the load week before, so the peak (the recommended peak week,
+    within the time of that week) comes only with the last load week of the stretch. A load week after a deload starts
+    again at the level of the last load week. Deloads take 60 % of the last load week, each taper week 80 % of the week
+    before and a transition week half of the last level."""
+    ends = sorted(week for _, week in anchored_events(settings, profile))
+    stretches, low = [], 0
+    for end in ends + [len(kinds) - 1]:
+        if end >= low:
+            stretches.append((low, end))
+            low = end + 1
+    result = [None] * len(kinds)
+    for low, high in stretches:
+        loads = [i for i in range(low, high + 1) if kinds[i] == 'load']
+        rises = sum(1 for i in loads[1:] if kinds[i - 1] == 'load')
+        target = min(peak, max(caps[i] for i in loads)) if loads and peak else base
+        start = min(base, target)
+        rate = min(MAX_WEEKLY_RISE, (target / start) ** (1 / rises)) if rises and start and target > start else 1
+        level, previous = None, None
+        for index in range(low, high + 1):
+            kind = kinds[index]
+            if kind == 'load':
+                level = start if level is None else level * rate if kinds[index - 1] == 'load' else level
+                hours = level
+            elif kind == 'deload':
+                hours = (level or start) * DELOAD_SHARE
+            elif kind == 'taper':
+                hours = (previous if previous is not None else level or start) * TAPER_STEP
+            elif kind == 'transition':
+                hours = (level or start) * TRANSITION_SHARE
+            else:
+                hours = None
+            result[index] = previous = hours
+    return result
+
+
+def plan_volume(types, entries, settings, profile, caps, preferred, base, peak, volume=None, keep=0):
+    """Kind, default kind, hours and suggested hours (without the athlete's own hours) of every plan week.
+
+    volume holds the athlete's scale and own weeks ({week: {kind, hours}}); the first keep weeks are over and stay as
+    they were, also for the rhythm the later weeks follow."""
+    volume = volume or {}
+    keys = plan_weeks(settings)
+    own = {index: (volume.get('weeks') or {}).get(key) or {} for index, key in enumerate(keys)}
+    defaults = week_kinds(types, settings, profile)
+    past = {index: 'deload' if entries[index]['phase'] in DELOAD_PHASES else 'load' for index in range(min(keep, len(types)))}
+    chosen = {**{index: item['kind'] for index, item in own.items() if item.get('kind')}, **past}
+    kinds = week_kinds(types, settings, profile, chosen)
+    curve = volume_curve(kinds, settings, profile, base, peak, caps)
+    scale = volume.get('scale') or 1
+    suggested, hours = [], []
+    for index, kind in enumerate(kinds):
+        if curve[index] is None:
+            value = entries[index]['targetHours']
+        else:
+            value = _quarter_hours(curve[index] * scale)
+            share = BLOCK_TYPES[types[index]]['maxPreferredShare']
+            if share and preferred[index]:
+                value = min(value, _below(preferred[index] * share))
+        value = min(value, _below(caps[index]))
+        suggested.append(value)
+        athlete = own[index].get('hours')
+        hours.append(entries[index]['targetHours'] if index < keep else
+                     min(athlete, caps[index]) if athlete is not None else value)
+    return {'kinds': kinds, 'defaults': defaults, 'hours': hours, 'suggested': suggested}
+
+
+def shape_volume(phases, settings, profile, caps, preferred, base, peak, volume=None, keep=0):
+    """Copies of the consecutive phases from the plan start (frame phases or blocks) with the kind and target hours of
+    plan_volume in every week from index keep on. A week whose kind changes keeps no focus of its former kind."""
+    types = [phase['blockType'] for phase in phases for _ in phase['weeks']]
+    entries = [week for phase in phases for week in phase['weeks']]
+    shape = plan_volume(types, entries, settings, profile, caps, preferred, base, peak, volume, keep)
+    result, index = copy.deepcopy(phases), 0
+    for phase in result:
+        for week in phase['weeks']:
+            kind = shape['kinds'][index]
+            if index >= keep and kind != 'keep':
+                was_deload = week['phase'] in DELOAD_PHASES
+                name = 'taper' if kind == 'taper' else 'recovery' if kind in ('deload', 'transition') else \
+                    week['phase'] if not was_deload else LOAD_PHASES.get(phase['blockType'], 'build')
+                week.update(phase=name, targetHours=shape['hours'][index],
+                            focus=week['focus'] if was_deload == (name in DELOAD_PHASES) else '')
+            index += 1
+    return result
 
 
 def horizon_weeks(settings):
@@ -466,9 +594,7 @@ PHASE_EDIT_SCHEMA = obj({
     'taperWeeks': num(1, 3, True, True)})
 # Volume of the load weeks in a cycle relative to the block's level, the deload week and the taper weeks before the event.
 LOAD_STEPS = (1, 1.05, 1.1)
-DELOAD_SHARE = .65
 TAPER_SHARES = {1: [.55], 2: [.7, .5], 3: [.75, .6, .45]}
-TRANSITION_SHARE = .5
 
 
 def _half_hours(value):
@@ -512,13 +638,14 @@ def anchored_events(settings, profile):
             if 0 <= (day_date(event['startDate']) - first).days // 7 < total]
 
 
-def edit_phases(plan, profile, data, today, caps, base_hours):
+def edit_phases(plan, profile, data, today, caps, base_hours, shape=None):
     """Applies the athlete's own phase list, deterministic and without AI.
 
-    Every plan week needs exactly one phase; weeks before the running week stay as they were. Unchanged phases keep
-    their weeks (also when moved), new or resized ones get an outline from fixed rules. The phase that ends in an A-event
-    week stays fixed to the event and, with taperWeeks, is a taper of that length. caps(monday) gives the available hours
-    of a week, base_hours the volume for a new phase without neighbours. Returns (blocks, frame block ids, changed weeks)."""
+    Every plan week needs exactly one phase; weeks before the running week stay as they were. New or resized phases get
+    an outline from fixed rules; shape(blocks, keep) then puts the rhythm and hours of the whole plan on them (see
+    shape_volume), so the 3:1 rhythm runs over the new block boundaries. The phase that ends in an A-event week stays
+    fixed to the event and, with taperWeeks, is a taper of that length. caps(monday) gives the available hours of a week,
+    base_hours the volume for a new phase without neighbours. Returns (blocks, frame block ids, changed weeks)."""
     settings, frame = plan['settings'], plan['frame']
     first, total = plan_span(settings)
     phases = data['phases']
@@ -589,16 +716,27 @@ def edit_phases(plan, profile, data, today, caps, base_hours):
             levels.setdefault(index, _level({'weeks': weeks_out}))
         identity = phase['id'] or str(uuid.uuid5(uuid.NAMESPACE_URL, f"trainhub-phase:{frame['id']}:{monday.isoformat()}:"
                                                                      f"{phase['blockType']}:{phase['weeks']}"))
-        kept = same and previous['weeks'] == weeks_out and previous['startDate'] == monday.isoformat()
         block = new_block(phase['blockType'], previous.get('secondaryFocus') if same else None, monday.isoformat(), weeks_out,
-                          source=previous['source'] if kept else 'athlete', key=identity,
-                          formats=previous.get('formats', ()) if same else ())
+                          source='athlete', key=identity, formats=previous.get('formats', ()) if same else ())
         block.update(purpose=previous.get('purpose', '') if same else '', review=previous.get('review') if same else None)
         blocks.append(block)
-    changed = [iso_week(first + timedelta(weeks=n)) for n in range(total)
-               if _outline_at(old.values(), first + timedelta(weeks=n)) != _outline_at(blocks, first + timedelta(weeks=n))]
+    shaped = shape(blocks, current) if shape else blocks
+    for block, phase in zip(shaped, phases):
+        previous = old.get(phase['id'])
+        if previous and previous['blockType'] == block['blockType'] and previous['weeks'] == block['weeks'] \
+                and previous['startDate'] == block['startDate']:
+            block['source'] = previous['source']
+    blocks = shaped
+    changed = outline_changes(old.values(), blocks, settings)
     others = [b for b in plan['blocks'] if b['id'] not in frame['blockIds']]
     return others + blocks, [b['id'] for b in blocks], changed
+
+
+def outline_changes(before, after, settings):
+    """The plan weeks whose phase, kind or target hours differ between two lists of blocks."""
+    first, total = plan_span(settings)
+    return [iso_week(first + timedelta(weeks=n)) for n in range(total)
+            if _outline_at(before, first + timedelta(weeks=n)) != _outline_at(after, first + timedelta(weeks=n))]
 
 
 def _outline_at(blocks, monday):

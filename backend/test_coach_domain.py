@@ -7,7 +7,7 @@ from coach_domain import (CHECK_IN_SCHEMA, DAILY_SCHEMA, DEFAULT_PROFILE, DAYS, 
                           ten_k_pace, threshold_pace,
                           week_events,
                           complete_profile, effective_availability, iso_week, min_ride_minutes, preferred_hours,
-                          response_schemas, rest_day_pairs, update_profile, week_season,
+                          response_schemas, rest_day_pairs, update_profile, week_season, forced_rest_pairs,
                           validate, week_start)
 from coach_templates import PARAM_NAMES, SESSION_SCHEMA
 
@@ -65,6 +65,13 @@ class ProfileTests(unittest.TestCase):
             update_profile(value, {'goal': {'sports': []}})
         with self.assertRaises(CoachError):
             update_profile(value, {'goal': {'sports': ['ride', 'rowing']}})
+
+    def test_forced_rest_pairs_include_sunday_and_monday(self):
+        minutes = dict.fromkeys(DAYS, 60)
+        self.assertEqual(forced_rest_pairs(minutes), [])
+        self.assertEqual(forced_rest_pairs({**minutes, 'mon': 0, 'tue': 0}), [('mon', 'tue')])
+        self.assertEqual(forced_rest_pairs({**minutes, 'sun': 0, 'mon': 0}), [('sun', 'mon')])
+        self.assertEqual(forced_rest_pairs(dict.fromkeys(DAYS)), [])  # Days without a stored time are no free days.
 
     def test_rest_day_pairs_skip_days_without_time_and_elapsed_days(self):
         limits = {day: {'maxMinutes': 0 if day in ('thu', 'fri') else 60} for day in DAYS}
