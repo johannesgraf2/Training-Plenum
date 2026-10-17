@@ -226,9 +226,11 @@ export function WeekHoursChart({ overview, today, apiBase, disabled, onSaved }) 
 }
 
 /** How many weeks ahead get worked out with sessions: three by default, more if the athlete wants. */
-export function HorizonSetting({ apiBase, overview, disabled, onSaved }) {
+export function HorizonSetting({ apiBase, overview, disabled, onSaved, onRebuild }) {
   const stored = overview.horizonWeeks || 3;
   const [value, setValue] = useState(stored);
+  const [rebuilding, setRebuilding] = useState(false);
+  const worked = overview.weeks.filter(w => w.plan && w.state !== 'past').length;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const maximum = Math.max(stored, overview.weeks.filter(w => w.state !== 'past').length);
@@ -254,5 +256,15 @@ export function HorizonSetting({ apiBase, overview, disabled, onSaved }) {
     </div>
     {value !== stored && <p className="coach-muted">Standard sind 3 Wochen. Nach dem Übernehmen arbeitet der Coach fehlende Wochen aus.</p>}
     {error && <div role="alert" className="coach-message error">{error}</div>}
+    {onRebuild && worked > 0 && <div className="plan-rebuild">
+      {rebuilding ? <div className="coach-message" role="group" aria-label="Neu ausarbeiten bestätigen">
+        <span>Alle {worked === 1 ? 'ausgearbeitete Woche' : `${worked} ausgearbeiteten Wochen`} neu ausarbeiten? Der Coach plant jede Woche komplett neu nach
+          ihrer Phase und den aktuellen Leitlinien. Einheiten mit „Behalten“ und vergangene Tage bleiben. Du bekommst einen Vorschlag; in den Kalender
+          kommt er erst mit „Übernehmen“.</span>
+        <button type="button" className="coach-primary" disabled={disabled} onClick={() => { setRebuilding(false); onRebuild(); }}>Neu ausarbeiten</button>
+        <button type="button" onClick={() => setRebuilding(false)}>Abbrechen</button></div>
+        : <><button type="button" disabled={disabled} onClick={() => setRebuilding(true)}>Alle Wochen neu ausarbeiten</button>
+          <small className="coach-muted">Alle Einheiten der ausgearbeiteten Wochen neu generieren lassen, z. B. nach geänderten Werten oder Leitlinien.</small></>}
+    </div>}
   </section>;
 }

@@ -1159,7 +1159,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'level of the last load week, deloads at periodization.deloadShare of it, never above weeklyLimits.maxHours; write '
         'rationale and focus to fit that curve. '
         'Adapt task with changes.areas phases: the athlete changed the phases by hand; adapt each worked-out week to the '
-        'phase, target hours and rules of its week now. A week with rebuild true is worked out anew for its phase: one '
+        'phase, target hours and rules of its week now. A week with rebuild true (after a phase change by hand, or every '
+        'week when changes.rebuildAll asks to work all weeks out anew) is worked out anew for its phase: one '
         'patch that replaces, adds or removes sessions so the week looks like a freshly planned week of that phase following '
         'block.guidance and blockRules (key sessions embedded with durationMin where the template allows, easy and long '
         'sessions balanced again), never a swap of single sessions that keeps their old durations; locked sessions and '
@@ -2114,17 +2115,19 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         save_plan(plan)
         db.session.commit()
 
-    def adapt_weeks(changes):
-        """Checks the worked-out weeks against the changed settings in one AI call; changed weeks become a proposal."""
+    def adapt_weeks(changes, rebuild_all=False):
+        """Checks the worked-out weeks against the changed settings in one AI call; changed weeks become a proposal.
+        rebuild_all works every one of them out anew."""
         plan, current_profile = current_plan(), profile()
         today = datetime.now(zone()).date()
         keys = worked_out_weeks(plan, today)
         # Weeks whose phase changed by hand are worked out anew; an older note without its weeks rebuilds them all.
-        rebuild = set((plan.get('adapt') or {}).get('weeks') or (keys if 'phases' in changes else []))
+        rebuild = set(keys if rebuild_all else (plan.get('adapt') or {}).get('weeks') or (keys if 'phases' in changes else []))
         decision, afters, befores, hinweise, rejected = None, {}, {}, [], []
         if keys:
             first_day = plan_start_day(plan, today)
-            context = {'task': 'adapt', 'today': today.isoformat(), 'changes': {'source': 'athlete', 'areas': changes},
+            context = {'task': 'adapt', 'today': today.isoformat(),
+                       'changes': {'source': 'athlete', 'areas': changes, **({'rebuildAll': True} if rebuild_all else {})},
                        **plan_context(plan, current_profile, today), 'wellness': wellness_context(current_profile, today),
                        'workedOutWeeks': [
                            worked_week(plan, current_profile, key, first_day, key in rebuild) for key in keys]}
@@ -2151,31 +2154,36 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         proposal = None
         if afters:
             proposal, _ = stage('weeks', befores, afters, hinweise, decision['adjustments'], fingerprint(),
-                                timezone_name=g.get('coach_timezone'), reason='settings')
+                                timezone_name=g.get('coach_timezone'), reason='rebuild' if rebuild_all else 'settings')
         return {'proposalId': proposal.id if proposal else None, 'weeks': len(keys), 'changedWeeks': sorted(afters),
                 'hinweise': hinweise, 'rejectedAdjustments': rejected}
 
     @app.route('/api/coach/plan/adapt', methods=['POST'])
     def adapt_plan():
         """"Soll ich deinen Plan anpassen?" after plan-relevant settings: later only notes it for the plan; otherwise new
-        phases after the worked-out weeks for events and the plan end, and a proposal for the worked-out weeks."""
+        phases after the worked-out weeks for events and the plan end, and a proposal for the worked-out weeks.
+        rebuildAll („Alle Wochen neu ausarbeiten“) works every worked-out week out anew, also without a changed setting."""
         data = validate(request.get_json(silent=True), ADAPT_SCHEMA)
         plan = current_plan()
         if not active_frame(plan):
             raise CoachError('Es gibt noch keinen Plan, den der Coach anpassen könnte.')
+        rebuild_all = bool(data.get('rebuildAll')) and not data.get('later')
+        if not data['changes'] and not rebuild_all:
+            raise CoachError('Bitte angeben, was sich geändert hat.')
         noted = (plan.get('adapt') or {}).get('changes', [])
         changes = [area for area in ADAPT_SCHEMA['properties']['changes']['items']['enum'] if area in {*noted, *data['changes']}]
-        # Noted first, so a failed run leaves the hint in the plan.
-        plan['adapt'] = {**(plan.get('adapt') or {}), 'changes': changes,
-                         'since': (plan.get('adapt') or {}).get('since') or datetime.now(zone()).date().isoformat()}
-        save_plan(plan)
-        db.session.commit()
+        # Noted first, so a failed run leaves the hint in the plan; working all weeks out anew needs no note.
+        if changes:
+            plan['adapt'] = {**(plan.get('adapt') or {}), 'changes': changes,
+                             'since': (plan.get('adapt') or {}).get('since') or datetime.now(zone()).date().isoformat()}
+            save_plan(plan)
+            db.session.commit()
         if data.get('later'):
             return jsonify({'adapt': plan['adapt'], 'job': None})
         configured_provider()
         reframe = bool(REFRAME_AREAS & set(changes))
         steps = ([{'id': 'frame', 'label': 'Phasen neu festlegen', 'status': 'pending'}] if reframe else []) + \
-            [{'id': 'weeks', 'label': 'Ausgearbeitete Wochen prüfen', 'status': 'pending'}]
+            [{'id': 'weeks', 'label': 'Alle Wochen neu ausarbeiten' if rebuild_all else 'Ausgearbeitete Wochen prüfen', 'status': 'pending'}]
 
         def work(identity):
             if reframe:
@@ -2183,9 +2191,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                 rebuild_frame(changes)
                 update_job(identity, 'frame', 'done')
             update_job(identity, 'weeks', 'running')
-            result = adapt_weeks(changes)
+            result = adapt_weeks(changes, rebuild_all)
             update_job(identity, 'weeks', 'done')
-            return {'changes': changes, 'frameChanged': reframe, **result}
+            return {'changes': changes, 'frameChanged': reframe, 'rebuildAll': rebuild_all, **result}
 
         return start_job('adapt', steps, work)
 

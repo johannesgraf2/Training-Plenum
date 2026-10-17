@@ -133,8 +133,8 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
     } else if (state.status === 'done') {
       const result = data.result || {};
       if (kind === 'adapt') {
-        setNotice(result.proposalId ? `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}Prüfe unten die Anpassung deiner ausgearbeiteten Wochen. In den Kalender kommt sie erst mit „Übernehmen“.`
-          : `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}Die ausgearbeiteten Wochen passen weiter zu deinen Einstellungen.`);
+        setNotice(result.proposalId ? `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}Prüfe unten ${result.rebuildAll ? 'die neu ausgearbeiteten Wochen' : 'die Anpassung deiner ausgearbeiteten Wochen'}. In den Kalender kommt sie erst mit „Übernehmen“.`
+          : `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}${result.rebuildAll ? 'Der Coach hat keine Woche anders ausgearbeitet.' : 'Die ausgearbeiteten Wochen passen weiter zu deinen Einstellungen.'}`);
       } else if (result.weeks?.length === 0) setNotice('Die Wochen sind bereits ausgearbeitet.');
       else setNotice(`${result.weeks?.length > 1 ? `${result.weeks.length} Wochen geplant, zuletzt ` : ''}Woche ${result.weekNumber} geplant – ${fmt(result.calculatedHours)} h${result.focus ? `, Fokus ${result.focus}` : ''}.`);
       if (result.proposalId) setPlanProposal(result.proposalId);
@@ -164,9 +164,10 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
       .then(data => followJob({ ...data.job, kind: job.kind }), e => setError(e.message)).finally(() => setStopping(false));
   }
   const startAdvance = trigger => startJob('/api/coach/plan/advance', { trigger }, trigger === 'auto');
-  function startAdapt(changes) {
+  // options.rebuildAll: the coach works every worked-out week out anew.
+  function startAdapt(changes, options = {}) {
     setTab('plan'); setError(''); setNotice(''); setAdaptPending([]);
-    startJob('/api/coach/plan/adapt', { changes: [...new Set([...changes, ...adaptPending])] });
+    startJob('/api/coach/plan/adapt', { changes: [...new Set([...changes, ...adaptPending])], ...options });
   }
   function openChat(ref = null, message = null) { setChat({ ref, message, key: Date.now() }); }
 

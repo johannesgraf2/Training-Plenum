@@ -64,6 +64,9 @@
 .plan-detail-body .plan-change-head h3 { margin: 0; }
 .plan-edited { margin: 12px 0 0; }
 .plan-skip { flex-wrap: wrap; }
+.plan-rebuild { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--bd-edf0f4); }
+.plan-rebuild .coach-message { flex-wrap: wrap; margin: 0; }
+.plan-horizon .plan-rebuild { flex-basis: 100%; }
 .plan-move select { font: inherit; font-size: 12px; padding: 8px; border: 1px solid var(--bd-d4dce7); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-1e293b); }
 
 .today-quick { margin-top: 12px; }

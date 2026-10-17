@@ -1588,6 +1588,24 @@ class CoachAPITests(unittest.TestCase):
         provider, calls = self.adapter(phases)
         job = self.adapt(provider, ['thresholds'])
         self.assertEqual(([s['id'] for s in job['steps']], job['result']['proposalId'], [c['task'] for c in calls]), (['weeks'], None, ['adapt']))
+        # „Alle Wochen neu ausarbeiten“: every worked-out week is worked out anew, without a changed setting.
+        with patch('coach_api.get_provider', return_value=provider):
+            self.assertEqual(self.client.post('/api/coach/plan/adapt', json={'changes': []}).status_code, 400)
+        def rebuild(context):
+            target = context['workedOutWeeks'][0]
+            session = {key: target['sessions'][0][key] for key in ('id', 'day', 'template', 'params')}
+            session['params'] = {**dict.fromkeys(PARAM_NAMES), **session['params'], 'durationMin': 40}
+            return [{'week': target['week'], 'targetHours': round(40 / 60, 2), 'focus': 'Neu', 'hinweise': [],
+                     'operations': [{'op': 'replace', 'sessionId': session['id'], 'session': session}]}]
+        provider, calls = self.adapter(phases, rebuild)
+        with patch('coach_api.get_provider', return_value=provider):
+            job = self.run_job(self.client.post('/api/coach/plan/adapt?timezone=Europe/Berlin', json={'changes': [], 'rebuildAll': True}), 202)
+        self.assertEqual((job['status'], [s['label'] for s in job['steps']]), ('done', ['Alle Wochen neu ausarbeiten']))
+        self.assertEqual((calls[0]['changes'], [w.get('rebuild') for w in calls[0]['workedOutWeeks']]),
+                         ({'source': 'athlete', 'areas': [], 'rebuildAll': True}, [True] * 3))
+        self.assertTrue(job['result']['rebuildAll'])
+        self.assertEqual(self.client.get(f"/api/coach/proposals/{job['result']['proposalId']}").get_json()['reason'], 'rebuild')
+        self.assertIsNone(self.client.get('/api/coach/plan/weeks').get_json()['adapt'])  # Nothing to note for later.
 
     def test_a_running_plan_keeps_its_start_and_a_later_end_gets_phases(self):
         self.planned()

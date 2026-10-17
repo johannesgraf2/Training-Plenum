@@ -136,6 +136,16 @@ test('skipping a session takes it out without the coach, after a confirmation', 
   expect(container.querySelector('[role="dialog"]')).toBeNull();
 });
 
+test('all worked-out weeks can be worked out anew after a confirmation', async () => {
+  const adapt = jest.fn();
+  await render({ onAdapt: adapt });
+  await click(button('Alle Wochen neu ausarbeiten'));
+  expect(container.querySelector('[aria-label="Neu ausarbeiten bestätigen"]').textContent).toContain('Alle 2 ausgearbeiteten Wochen neu ausarbeiten?');
+  expect(adapt).not.toHaveBeenCalled();
+  await click(button('Neu ausarbeiten'));
+  expect(adapt).toHaveBeenCalledWith([], { rebuildAll: true });
+});
+
 test('the weekly review is sent and hands its replanning job on', async () => {
   const job = jest.fn();
   await render({ onJob: job });

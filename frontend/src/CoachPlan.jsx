@@ -319,6 +319,7 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
   const past = weeks.filter(w => w.state === 'past');
   const proposalWeeks = proposal ? Object.keys(proposal.after || {}).sort().map(key => ({ week: key, before: proposal.before[key], after: proposal.after[key] })) : [];
   const settingsChange = proposal?.reason === 'settings';
+  const rebuilt = proposal?.reason === 'rebuild';
   const reviewed = review && weeks.find(w => w.week === review.week);
   const onlyPhases = !pendingChanges.length && (overview.adapt?.changes || []).every(change => change === 'phases');
   return <div className="coach-plan">
@@ -338,17 +339,18 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
         disabled={editing || advance?.status === 'running'} onSaved={result => { setReloads(n => n + 1); onChanged?.(result); }} />
     </section>
     <HorizonSetting key={`horizon-${overview.horizonWeeks}`} apiBase={apiBase} overview={overview} disabled={advance?.status === 'running'}
-      onSaved={() => { setReloads(n => n + 1); onHorizon?.(); }} />
+      onSaved={() => { setReloads(n => n + 1); onHorizon?.(); }} onRebuild={onAdapt && (() => onAdapt([], { rebuildAll: true }))} />
     {error && <div role="alert" className="coach-message error">{error}</div>}
     {advance?.status === 'running' && <JobProgress job={advance} stopping={stopping} onStop={onStop} />}
     {(overview.adapt || pendingChanges.length > 0) && advance?.status !== 'running' && <div className="coach-message plan-adapt"><span>{onlyPhases
       ? <><strong>Deine Blöcke oder Wochenstunden haben sich geändert.</strong> Die ausgearbeiteten Wochen passen nicht mehr dazu. Soll ich sie neu ausarbeiten?</>
       : <><strong>Deine Einstellungen haben sich geändert.</strong> Soll ich deinen Plan daran anpassen?</>}</span>
       <button type="button" onClick={() => onAdapt?.(overview.adapt?.changes || [])}>Plan anpassen</button></div>}
-    {proposal && <section className="coach-card" aria-label={settingsChange ? 'Anpassung an deine Einstellungen' : 'Anpassung nach deiner Woche'}>
-      <span className="coach-eyebrow">{settingsChange ? 'Nach deinen Einstellungen' : 'Nach deiner letzten Woche'}</span>
-      <h2>Soll ich die ausgearbeiteten Wochen anpassen?</h2>
-      <ChangeCard change={{ summary: settingsChange ? 'Passend zu deinen geänderten Einstellungen' : 'Leichter nach einer schwierigen Woche', status: proposal.status, hinweise: proposal.hinweise, weeks: proposalWeeks }} busy={busy}
+    {proposal && <section className="coach-card" aria-label={rebuilt ? 'Neu ausgearbeitete Wochen' : settingsChange ? 'Anpassung an deine Einstellungen' : 'Anpassung nach deiner Woche'}>
+      <span className="coach-eyebrow">{rebuilt ? 'Neu ausgearbeitet' : settingsChange ? 'Nach deinen Einstellungen' : 'Nach deiner letzten Woche'}</span>
+      <h2>{rebuilt ? 'Sollen die neu ausgearbeiteten Wochen gelten?' : 'Soll ich die ausgearbeiteten Wochen anpassen?'}</h2>
+      <ChangeCard change={{ summary: rebuilt ? 'Alle Wochen nach ihrer Phase und den aktuellen Leitlinien neu ausgearbeitet'
+        : settingsChange ? 'Passend zu deinen geänderten Einstellungen' : 'Leichter nach einer schwierigen Woche', status: proposal.status, hinweise: proposal.hinweise, weeks: proposalWeeks }} busy={busy}
         onConfirm={() => decide('confirm')} onDiscard={() => decide('discard')} /></section>}
     {reviewed && <WeekReview key={reviewed.week} apiBase={apiBase} week={reviewed} completedHours={reviewed.completedHours} onClose={() => setReview(null)}
       onSaved={result => { setReview(null); setReloads(n => n + 1); onChanged?.(result); if (result.job) onJob?.(result.job); }} />}

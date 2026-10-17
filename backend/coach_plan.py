@@ -46,8 +46,9 @@ REVIEW_SCHEMA['required'] = ['missedSessions']
 # 'phases' follows a manual edit of the phases: only the worked-out weeks are checked, the phases stay as edited.
 ADAPT_AREAS = ['availability', 'events', 'thresholds', 'sports', 'period', 'phases']
 REFRAME_AREAS = {'events', 'period'}
-ADAPT_SCHEMA = obj({'changes': {'type': 'array', 'minItems': 1, 'uniqueItems': True, 'items': {'enum': ADAPT_AREAS}},
-                    'later': {'type': 'boolean'}})
+# rebuildAll works every worked-out week out anew, also without a changed setting.
+ADAPT_SCHEMA = obj({'changes': {'type': 'array', 'uniqueItems': True, 'items': {'enum': ADAPT_AREAS}},
+                    'later': {'type': 'boolean'}, 'rebuildAll': {'type': 'boolean'}})
 ADAPT_SCHEMA['required'] = ['changes']
 
 
