@@ -390,7 +390,9 @@ def apply_patch(before, patch):
             if not item or item['id'] != identity or (operation == 'add' and identity in sessions):
                 raise CoachError('Ungültige Einheit-ID im Patch.')
             sessions[identity] = item
-    result.update(targetHours=patch['targetHours'], focus=patch['focus'], sessions=list(sessions.values()))
+    # The patch's notes replace the week's, so no note speaks of a session that is gone.
+    result.update(targetHours=patch['targetHours'], focus=patch['focus'], sessions=list(sessions.values()),
+                  hinweise=[h.strip() for h in patch.get('hinweise', []) if h.strip()])
     return result
 
 

@@ -1287,6 +1287,7 @@ class CoachAPITests(unittest.TestCase):
         confirmed = self.client.post(f"/api/coach/proposals/{newer['proposalId']}/confirm", json={'confirm': True})
         self.assertEqual(confirmed.status_code, 200, confirmed.get_json())
         self.assertEqual(confirmed.get_json()['weeks'][self.week]['calculatedHours'], round(50 / 60, 2))
+        self.assertEqual(confirmed.get_json()['weeks'][self.week]['hinweise'], ['Kürzer heute.'])  # The old notes of the week go.
         self.assertEqual(sum(s['duration']['value'] for s in workouts()[workout]['steps'] if s['kind'] == 'step'), 3000)
         self.assertEqual([m['change']['status'] for m in self.client.get('/api/coach/chat').get_json()['messages'] if m['change']],
                          ['discarded', 'confirmed'])

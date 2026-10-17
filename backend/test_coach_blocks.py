@@ -2,7 +2,7 @@ import copy
 import unittest
 from datetime import date
 
-from coach_blocks import (BLOCK_TYPES, block_for_week, block_status, catalog, check_block, check_event_rules, check_week_rules,
+from coach_blocks import (BLOCK_TYPES, block_guidance, rule_texts, block_for_week, block_status, catalog, check_block, check_event_rules, check_week_rules,
                           migrate_plan, place_block, suggested_rhythm)
 from coach_domain import DEFAULT_PROFILE, CoachError, complete_event
 
@@ -102,6 +102,16 @@ class WeekRuleTests(unittest.TestCase):
         check_week_rules(block, {'phase': 'recovery'}, [session('bike_z2')])
         # A runner meets the rule with running VO2 sessions; before there were none, so a run plan could never pass.
         check_week_rules(block, {'phase': 'build'}, [session('run_vo2'), session('run_vo2_short'), session('run_easy'), session('run_long')])
+        # A running plan builds around one key session per week; with the bike among the sports two stay the rule.
+        week = [session('run_vo2'), session('run_easy'), session('run_strides'), session('run_long')]
+        check_week_rules(block, {'phase': 'build'}, week, sports=['run', 'strength'])
+        with self.assertRaisesRegex(CoachError, 'mindestens 2× VO2max'):
+            check_week_rules(block, {'phase': 'build'}, week, sports=['run', 'ride'])
+        with self.assertRaisesRegex(CoachError, 'mindestens 1× VO2max'):
+            check_week_rules(block, {'phase': 'build'}, week[1:], sports=['run'])
+        self.assertIn('Mindestens 1× VO2max-Einheit pro Belastungswoche', rule_texts('vo2max', ['run']))
+        self.assertIn('run_long_mp', block_guidance('wettkampfspezifisch', ['run']))
+        self.assertEqual(block_guidance('vo2max', ['ride']), BLOCK_TYPES['vo2max']['guidance'])
         with self.assertRaisesRegex(CoachError, 'höchstens 1×'):
             check_week_rules(block, {'phase': 'build'}, [session('bike_vo2'), session('bike_vo2'),
                                                          session('bike_sweetspot'), session('bike_threshold')])

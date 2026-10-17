@@ -18,6 +18,7 @@ class TemplateError(ValueError):
 
 # Ultra rides such as NorthCape 4000 need training rides of up to 15 h.
 MAX_RIDE_MINUTES = 900
+MAX_RUN_MINUTES = 240
 # Running intensity stays a fraction of maximum heart rate; with a threshold pace it is converted linearly to a
 # fraction of threshold speed, where 89 % of maximum heart rate is threshold pace.
 THRESHOLD_HR_FRACTION = .89
@@ -32,9 +33,11 @@ def _steady(name, sport, duration, bounds, intensity, intensity_range, fuel='eas
 
 def _intervals(name, sport, intervals, work, recovery, intensity, intensity_range, fuel='intense'):
     params = {'intervals': [2, 12], 'workMin': [1, 30], 'recoveryMin': [1, 15], 'intensity': intensity_range}
+    # Optional total duration: the intervals sit inside a longer easy ride or run (e.g. „12 km, darin 3 × 6 min“).
     if sport == 'ride':
-        # Optional total duration: the intervals sit inside a longer easy ride.
         params.update(durationMin=[30, MAX_RIDE_MINUTES], cadence=[60, 120])
+    else:
+        params.update(durationMin=[20, MAX_RUN_MINUTES])
     return {'name': name, 'sport': sport, 'kind': 'intervals', 'fuel': fuel,
             'defaults': {'intervals': intervals, 'workMin': work, 'recoveryMin': recovery, 'intensity': intensity},
             'params': params}
@@ -45,8 +48,9 @@ def _micro(name, sets, reps, work, rest, intensity, intensity_range, *, sets_ran
     """Short work/rest repeats in sets, e.g. 3×13×30/15; each set is one repeat block on the device."""
     params = {'sets': sets_range, 'reps': reps_range, 'workSec': work_range, 'restSec': rest_range, 'setRestMin': [2, 10],
               'intensity': intensity_range}
+    params['durationMin'] = [30, MAX_RIDE_MINUTES] if sport == 'ride' else [20, MAX_RUN_MINUTES]
     if sport == 'ride':
-        params.update(cadence=[60, 120], durationMin=[30, MAX_RIDE_MINUTES])
+        params['cadence'] = [60, 120]
     return {'name': name, 'sport': sport, 'kind': 'micro', 'fuel': 'hit', 'margin': margin, 'hint': hint,
             'defaults': {'sets': sets, 'reps': reps, 'workSec': work, 'restSec': rest, 'setRestMin': set_rest, 'intensity': intensity},
             'params': params}
@@ -74,12 +78,34 @@ TEMPLATES = {
                        hint='Sprint interval training: near-maximal efforts with long easy recovery (e.g. 4x30 s -> 6x30 s -> 8x30 s).'),
     'bike_long': _steady('Lange Ausfahrt', 'ride', 240, [90, MAX_RIDE_MINUTES], .65, [.56, .75]),
     'run_easy': _steady('Lockerer Lauf', 'run', 45, [15, 120], .70, [.60, .78]),
-    'run_threshold': _intervals('Schwellenlauf', 'run', 3, 8, 3, .88, [.83, .92]),
-    'run_long': _steady('Langer Lauf', 'run', 90, [45, 240], .72, [.60, .80]),
+    # Cruise intervals with short jogging breaks (90 s-2 min); one interval is a continuous tempo run.
+    'run_threshold': {**_intervals('Schwellenlauf', 'run', 3, 8, 2, .88, [.83, .92]),
+                      'hint': 'Threshold reps with 1-2 min jogging recovery, e.g. 3x6 -> 3x8 -> 3x10 min, 2-3 km reps (about 8-14 min), '
+                              'or intervals 1 for a continuous tempo run of 15-30 min; set durationMin for the whole run.'},
+    'run_long': _steady('Langer Lauf', 'run', 90, [45, MAX_RUN_MINUTES], .72, [.60, .80]),
+    # A long run with marathon-pace blocks near its end, e.g. „30 km: 20 L + 8 MP + 2 L“; the easy running comes first.
+    'run_long_mp': {'name': 'Langer Lauf mit Marathontempo', 'sport': 'run', 'kind': 'intervals', 'fuel': 'intense', 'embed': 'before',
+                    'hint': 'Long run with marathon-pace (MP) blocks late in the run: intervals blocks of workMin at MP with '
+                            'recoveryMin easy between, the rest easy before; progress MP time, e.g. 40 -> 50 -> 2x30 -> 80 min, '
+                            'last big one about 3 weeks before the race.',
+                    'defaults': {'durationMin': 150, 'intervals': 1, 'workMin': 40, 'recoveryMin': 10, 'intensity': .84},
+                    'params': {'durationMin': [60, MAX_RUN_MINUTES], 'intervals': [1, 4], 'workMin': [10, 120], 'recoveryMin': [2, 20],
+                               'intensity': [.80, .88]}},
+    # Easy runs with short fast touches; they count as easy.
+    'run_strides': {'name': 'Lockerer Lauf mit Steigerungen', 'sport': 'run', 'kind': 'sprints', 'fuel': 'easy', 'pick': 'Steigerung',
+                    'hint': 'Easy run with 4-10 strides of 15-30 s (fast but relaxed, not a sprint), full easy jogging between.',
+                    'defaults': {'durationMin': 50, 'intensity': .70, 'reps': 6, 'workSec': 20},
+                    'params': {'durationMin': [30, 120], 'intensity': [.60, .78], 'reps': [4, 10], 'workSec': [10, 30]}},
+    'run_hill_sprints': {'name': 'Lockerer Lauf mit Bergsprints', 'sport': 'run', 'kind': 'sprints', 'fuel': 'easy', 'pick': 'Bergsprint',
+                         'hint': 'Easy run with 4-10 short controlled-fast hill sprints of 8-15 s, walk or jog down about 90 s; '
+                                 'builds strength and running economy in base phases.',
+                         'defaults': {'durationMin': 50, 'intensity': .70, 'reps': 6, 'workSec': 10},
+                         'params': {'durationMin': [30, 120], 'intensity': [.60, .78], 'reps': [4, 10], 'workSec': [8, 15]}},
     # Running VO2max work: intensity .95 of max HR is about 7 % faster than threshold pace (3-5 km race pace).
-    'run_vo2': {**_intervals('VO2-Intervalle Lauf', 'run', 5, 3, 3, .95, [.92, 1.0], fuel='hit'),
-                'hint': 'Running VO2max intervals of 2-5 min with jogging recovery about as long as the work; progress time at '
-                        'pace, e.g. 5x3 -> 6x3 -> 5x4 -> 6x4 min.'},
+    'run_vo2': {**_intervals('VO2-Intervalle Lauf', 'run', 5, 3, 2, .95, [.92, 1.0], fuel='hit'),
+                'hint': 'Running VO2max intervals of 2-5 min (800-1000 m reps, about 3-4 min) with 2-3 min jogging recovery; '
+                        'progress the number of reps, e.g. 5x3 -> 5x4 -> 6x4 min; 6x1 min with 2 min easy is a gentle fartlek. '
+                        'Set durationMin for the whole run.'},
     'run_vo2_short': _micro('Kurze VO2-Intervalle Lauf', 2, 8, 30, 30, 1.0, [.95, 1.05],
                             sets_range=[1, 4], reps_range=[4, 15], work_range=[15, 90], rest_range=[15, 90], margin=.03,
                             sport='run', set_rest=3,
@@ -104,6 +130,8 @@ TEMPLATES = {
                             'Einstellungen eintragen.'},
 }
 
+TEMPLATES['run_threshold']['params']['intervals'] = [1, 12]  # One interval is a continuous tempo run.
+
 PARAM_NAMES = ('durationMin', 'intervals', 'workMin', 'recoveryMin', 'intensity',
                'sets', 'reps', 'workSec', 'restSec', 'setRestMin', 'cadence')
 SESSION_SCHEMA = {
@@ -123,6 +151,7 @@ DURATION_RULES = {
     ('micro', 'ride'): '10 min warmup + sets x reps x (workSec + restSec) + setRestMin between sets + 10 min cooldown',
     ('micro', 'run'): '10 min warmup + sets x reps x (workSec + restSec) + setRestMin between sets + 5 min cooldown',
     ('sprints', 'ride'): 'durationMin includes warmup and cooldown; reps sprints of workSec spread evenly through the easy part',
+    ('sprints', 'run'): 'durationMin includes warmup and cooldown; reps of workSec spread evenly through the easy part',
     ('test', 'ride'): 'fixed 55 min protocol including warmup and cooldown; all params null',
     ('test', 'run'): 'fixed 55 min protocol including warmup and cooldown; all params null',
 }
@@ -154,7 +183,8 @@ def fueling(spec, minutes):
     return FUELING.get(kind)
 
 
-EMBED_RULE = '; optional durationMin is the total and adds easy riding (65 % FTP), split before and after the hard part'
+EMBED_RULE = {'ride': '; optional durationMin is the total and adds easy riding (65 % FTP), split before and after the hard part',
+              'run': '; optional durationMin is the total run and adds easy running, split before and after the hard part'}
 CADENCE_RULE = '; optional cadence (rpm) is shown with every hard part'
 
 
@@ -162,8 +192,11 @@ def template_catalog():
     result = []
     for key, value in TEMPLATES.items():
         rule = DURATION_RULES.get((value['kind'], value['sport']), 'durationMin includes warmup and cooldown')
-        if value['kind'] in ('intervals', 'micro') and 'durationMin' in value['params']:
-            rule += EMBED_RULE + CADENCE_RULE
+        if value.get('embed') == 'before':
+            rule = 'durationMin is the whole run: easy running first, then intervals blocks of workMin with recoveryMin easy ' \
+                   'between, then 10 min easy'
+        elif value['kind'] in ('intervals', 'micro') and 'durationMin' in value['params']:
+            rule += EMBED_RULE[value['sport']] + (CADENCE_RULE if value['sport'] == 'ride' else '')
         item = dict(id=key, name=value['name'], sport=value['sport'],
                     defaults=copy.deepcopy(value['defaults']), params=copy.deepcopy(value['params']),
                     intensityReference='ftp' if value['sport'] == 'ride' else 'maxHr' if value['sport'] == 'run' else None,
@@ -194,7 +227,7 @@ def _seconds(steps):
 def _label(template, spec, e):
     """Name with the structure, e.g. „VO2-Mikrointervalle Rad 3×13×30/15“."""
     if spec['kind'] == 'intervals':
-        return f"{spec['name']} {e['intervals']}×{e['workMin']} min"
+        return f"{spec['name']} {e['workMin']} min" if e['intervals'] == 1 else f"{spec['name']} {e['intervals']}×{e['workMin']} min"
     if spec['kind'] == 'sprints':
         return f"{spec['name']} {e['reps']}×{e['workSec']} s"
     if spec['kind'] == 'micro':
@@ -273,9 +306,12 @@ def render_session(template, params, date, ftp=None, max_hr=None, threshold_pace
                 'intensity': intensity, 'target': target}
 
     easy_fraction = .50 if spec['sport'] == 'ride' else .60
+    # Easy riding or running around the hard part of a longer session.
+    easy_name, easy_steady = ('Grundlage', .65) if spec['sport'] == 'ride' else ('Locker', .70)
+    long_mp = spec.get('embed') == 'before'
     hard = spec['kind'] in ('intervals', 'micro')
     warmup = 10 if hard or spec['sport'] == 'ride' else 5
-    cooldown = 10 if hard and spec['sport'] == 'ride' else 5
+    cooldown = 10 if hard and (spec['sport'] == 'ride' or long_mp) else 5
     cadence = f" · {effective['cadence']} U/min" if effective.get('cadence') else ''
     if spec['kind'] == 'test':
         steps = [step(label, minutes * 60, intensity, fraction) for label, minutes, intensity, fraction in spec['protocol']]
@@ -291,10 +327,13 @@ def render_session(template, params, date, ftp=None, max_hr=None, threshold_pace
         steps.append(step('Hauptteil', (effective['durationMin'] - warmup - cooldown) * 60,
                           'active', effective['intensity']))
     elif spec['kind'] == 'intervals':
+        work_name = 'Marathontempo' if long_mp else 'Tempo' if effective['intervals'] == 1 else 'Intervall'
         for interval in range(effective['intervals']):
-            steps.append(step(f'Intervall {interval + 1}{cadence}', effective['workMin'] * 60, 'interval', effective['intensity']))
+            number = f' {interval + 1}' if effective['intervals'] > 1 else ''
+            steps.append(step(f'{work_name}{number}{cadence}', effective['workMin'] * 60, 'interval', effective['intensity']))
             if interval < effective['intervals'] - 1:
-                steps.append(step('Erholung', effective['recoveryMin'] * 60, 'recovery', easy_fraction))
+                steps.append(step(easy_name if long_mp else 'Erholung', effective['recoveryMin'] * 60,
+                                  'active' if long_mp else 'recovery', easy_steady if long_mp else easy_fraction))
     elif spec['kind'] == 'micro':
         for number in range(effective['sets']):
             prefix = f'Satz {number + 1} · ' if effective['sets'] > 1 else ''
@@ -307,20 +346,22 @@ def render_session(template, params, date, ftp=None, max_hr=None, threshold_pace
         # Parameter bounds leave at least 90 s of easy riding between sprints.
         main = (effective['durationMin'] - warmup - cooldown) * 60 - effective['reps'] * effective['workSec']
         chunk = main // (effective['reps'] + 1)
+        # Strides and hill sprints go by feel: a pace or heart rate target means nothing over 10-30 s.
+        fast = (spec.get('pick', 'Sprint'), 2.0 if spec['sport'] == 'ride' else None)
         steps.append({'kind': 'repeat', 'count': effective['reps'], 'steps': [
-            step('Grundlage', chunk, 'active', effective['intensity']),
-            step('Sprint', effective['workSec'], 'interval', 2.0, .5)]})
-        steps.append(step('Grundlage', main - chunk * effective['reps'], 'active', effective['intensity']))
+            step(easy_name, chunk, 'active', effective['intensity']),
+            step(fast[0], effective['workSec'], 'interval', fast[1], .5)]})
+        steps.append(step(easy_name, main - chunk * effective['reps'], 'active', effective['intensity']))
     steps.append(step('Abwärmen', cooldown * 60, 'cooldown', easy_fraction))
     if hard and 'durationMin' in effective:
         extra = effective['durationMin'] * 60 - _seconds(steps)
         if extra < 0:
             raise TemplateError('Die Gesamtdauer ist kürzer als Aufwärmen, Belastung und Abwärmen.')
-        before = extra // 120 * 60
+        before = extra if long_mp else extra // 120 * 60
         if extra - before:
-            steps.insert(-1, step('Grundlage', extra - before, 'active', .65))
+            steps.insert(-1, step(easy_name, extra - before, 'active', easy_steady))
         if before:
-            steps.insert(1, step('Grundlage', before, 'active', .65))
+            steps.insert(1, step(easy_name, before, 'active', easy_steady))
     result['durationMin'] = _seconds(steps) / 60
     if result['durationMin'] > MAX_RIDE_MINUTES:
         raise TemplateError(f'Die Einheit darf einschließlich Pausen maximal {MAX_RIDE_MINUTES} Minuten dauern.')

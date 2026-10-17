@@ -18,7 +18,7 @@ from ai_provider import (DEFAULT_MODEL, REASONING_EFFORTS, ProviderError, decryp
                          get_provider, key_file, usage_cost, validate_model, validate_reasoning_effort)
 from athlete_context import build_snapshot, run_threshold_pace, session_pattern, summarize_period, training_background
 from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, DELOAD_PHASES, GROUPS, SECONDARY_FOCUS, SITUATIONS, block_for_week,
-                          block_status, block_type, catalog as block_catalog, check_block, check_choice, check_event_rules, check_formats,
+                          block_guidance, block_status, block_type, catalog as block_catalog, check_block, check_choice, check_event_rules, check_formats,
                           check_options, check_week_rules,
                           interval_formats, migrate_plan, new_block, place_block, public_blocks, rule_texts)
 from coach_domain import (CoachError, DAYS, DAY_NAMES, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
@@ -842,7 +842,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         replaced = sum(e['handling'] == 'replaceHard' and monday <= day_date(e['startDate']) for e in events)
         block, number = block_for_week(blocks, week_start(value['week']))
         if block and not removal:
-            check_week_rules(block, block['weeks'][number - 1], value['sessions'], replaced)
+            check_week_rules(block, block['weeks'][number - 1], value['sessions'], replaced, current_profile['goal']['sports'])
         value.update(source='aiRecommendation', calculatedHours=round(total, 2), fixedSessions=fixed, events=events)
         return value
 
@@ -1039,6 +1039,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'Choose only supplied templates and supported params; use null for unused params. Follow exact duration rules including warmup/cooldown. '
         'targetHours must equal total duration including fixed sessions, within 15 minutes. Never change fixed or locked sessions. '
         'Use unique short session ids. A patch contains only changed sessions, with matching sessionId/id; remove uses session:null. '
+        'The hinweise of a patch replace the notes of its week: keep the notes that still hold and drop those about removed '
+        'or replaced sessions. '
         'All human-facing focus text should be German. For week output use requested ISO week; block weeks are consecutive from 1. '
         'Plan each week within its training block and follow the block rules. '
         'Week task: available days and minutes are limits, not a request to train every day. Use at most '
@@ -1053,7 +1055,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'stays within 30 minutes of it unless the availability does not allow it (systemNote.rejectedChange: your previous '
         'week missed the athlete\'s hours); blockWeek.phase recovery is a deload week. In a week task systemNote.rejectedChange '
         'is why the server rejected your previous answer for this week: fix exactly that and keep every other rule. '
-        'Interval rides may set durationMin to embed the intervals in a longer easy ride. '
+        'Interval rides and runs may set durationMin to embed the intervals in a longer easy ride or run. '
         'Block task: recommend mode returns 2-3 distinct options (blockType, optional secondaryFocus, length within the type limits), '
         'exactly one recommended; choose mode returns exactly one option with the chosen blockType, secondaryFocus and length and only '
         'decides volume, distribution, deload and focus. Follow each block type rules and suggested rhythm. rationale is one or two '
@@ -1185,8 +1187,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         spec = BLOCK_TYPES[block['blockType']]
         today = datetime.now(zone()).date()
         context = dict(week=week, block={'type': block['blockType'], 'name': spec['name'], 'secondaryFocus': block.get('secondaryFocus'),
-                                         'weekNumber': number, 'totalWeeks': len(block['weeks']), 'guidance': spec['guidance'],
-                                         'rules': rule_texts(block['blockType']),
+                                         'weekNumber': number, 'totalWeeks': len(block['weeks']),
+                                         'guidance': block_guidance(block['blockType'], current_profile['goal']['sports']),
+                                         'rules': rule_texts(block['blockType'], current_profile['goal']['sports']),
                                          'intervalFormats': interval_formats(block.get('formats', []))},
                        blockWeek={**block_week, 'athleteHours': athlete_hours(plan, week) is not None},
                        currentPlan=compact_week(before),
@@ -2402,7 +2405,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         if block:
             item['block'] = {'type': block['blockType'], 'name': BLOCK_TYPES[block['blockType']]['name'], 'weekNumber': number,
                              'phase': block['weeks'][number - 1]['phase'] if number <= len(block['weeks']) else None}
-            item['blockRules'] = rule_texts(block['blockType'])
+            item['blockRules'] = rule_texts(block['blockType'], current_profile['goal']['sports'])
         if monday <= first_day <= monday + timedelta(days=6):
             item['elapsedDays'] = DAYS[:first_day.weekday()]
         return item

@@ -52,7 +52,7 @@ class TemplateTests(unittest.TestCase):
         with self.assertRaisesRegex(TemplateError, 'kürzer'):
             render_session('bike_vo2', {**params, 'durationMin': 50}, DAY)
         with self.assertRaises(TemplateError):
-            render_session('run_threshold', {'durationMin': 90}, DAY)
+            render_session('run_threshold', {'cadence': 90}, DAY)  # Cadence is for the bike.
 
     def test_micro_intervals_are_sets_of_repeat_blocks_with_set_rests(self):
         session = render_session('bike_vo2_micro', {'sets': 3, 'reps': 13, 'workSec': 30, 'restSec': 15, 'setRestMin': 5,
@@ -198,7 +198,7 @@ class UltraAndPaceTests(unittest.TestCase):
 
     def test_running_vo2_sessions_run_faster_than_threshold_pace(self):
         long = render_session('run_vo2', {}, DAY, max_hr=190, threshold_pace=270)
-        self.assertEqual((long['name'], long['durationMin']), ('VO2-Intervalle Lauf 5×3 min', 42))
+        self.assertEqual((long['name'], long['durationMin']), ('VO2-Intervalle Lauf 5×3 min', 38))  # 2 min jogging recovery
         work = [s for s in long['workout']['steps'] if s['intensity'] == 'interval']
         # 95 % of max HR: about 7 % faster than a 4:30 threshold pace, roughly 5 km race pace.
         self.assertEqual(work[0]['target'], {'type': 'pace', 'low': 246, 'high': 258})
@@ -209,6 +209,33 @@ class UltraAndPaceTests(unittest.TestCase):
             render_session('run_vo2_short', {'cadence': 90}, DAY)  # Cadence and an embedding easy ride are for the bike.
         catalog = {t['id']: t for t in template_catalog()}
         self.assertIn('5 min cooldown', catalog['run_vo2_short']['durationRule'])
+
+    def test_running_key_sessions_sit_inside_a_longer_run_like_a_marathon_plan(self):
+        names = lambda session: [s['name'] for s in session['workout']['steps']]
+        # „12 km: 3 × 6 min S, jeweils 2 min TP“: the threshold reps inside an easy run.
+        threshold = render_session('run_threshold', {'intervals': 3, 'workMin': 6, 'recoveryMin': 2, 'durationMin': 65}, DAY,
+                                   max_hr=190, threshold_pace=270)
+        self.assertEqual((threshold['name'], threshold['durationMin']), ('Schwellenlauf 3×6 min', 65))
+        self.assertEqual(names(threshold)[:2] + names(threshold)[-2:], ['Aufwärmen', 'Locker', 'Locker', 'Abwärmen'])
+        # „20 min zusammenhängend S, Rest L“: one interval is a continuous tempo run.
+        tempo = render_session('run_threshold', {'intervals': 1, 'workMin': 20, 'durationMin': 60}, DAY)
+        self.assertEqual((tempo['name'], [n for n in names(tempo) if n.startswith('Tempo')]), ('Schwellenlauf 20 min', ['Tempo']))
+        # „32 km: 16 L + 6 MP + 2 L + 6 MP + 2 L“: the easy running comes first, the marathon-pace blocks late.
+        long = render_session('run_long_mp', {'durationMin': 180, 'intervals': 2, 'workMin': 30, 'recoveryMin': 10}, DAY,
+                              max_hr=190, threshold_pace=270)
+        self.assertEqual(long['name'], 'Langer Lauf mit Marathontempo 2×30 min')
+        self.assertEqual(names(long), ['Aufwärmen', 'Locker', 'Marathontempo 1', 'Locker', 'Marathontempo 2', 'Abwärmen'])
+        self.assertEqual([s['duration']['value'] // 60 for s in long['workout']['steps']], [10, 90, 30, 10, 30, 10])
+        mp = long['workout']['steps'][2]['target']
+        self.assertTrue(270 < mp['low'] < mp['high'] < 300)  # Marathon pace sits a little slower than threshold pace.
+        # Strides and hill sprints are easy runs with short fast touches, steered by feel.
+        strides = render_session('run_strides', {}, DAY, max_hr=190, threshold_pace=270)
+        repeat = next(s for s in strides['workout']['steps'] if s['kind'] == 'repeat')
+        self.assertEqual((strides['name'], repeat['count'], repeat['steps'][1]['name'], repeat['steps'][1]['target']),
+                         ('Lockerer Lauf mit Steigerungen 6×20 s', 6, 'Steigerung', {'type': 'none'}))
+        self.assertEqual(render_session('run_hill_sprints', {}, DAY)['name'], 'Lockerer Lauf mit Bergsprints 6×10 s')
+        with self.assertRaises(TemplateError):
+            render_session('bike_vo2', {'intervals': 1}, DAY)  # A single interval stays a running tempo run.
 
     def test_pace_targets_export_as_speed_ranges(self):
         workout = render_session('run_threshold', {}, DAY, max_hr=190, threshold_pace=270)['workout']

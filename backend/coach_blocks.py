@@ -22,11 +22,13 @@ EASY_DAYS_AFTER = {'miniTaper': 2, 'trainThrough': 2, 'replaceHard': 1, 'easy': 
 SHORT_QUALITY_MINUTES = 75
 
 _SPORT = {sport: {key for key, spec in TEMPLATES.items() if spec['sport'] == sport} for sport in ('ride', 'run')}
-_TEMPO = {'bike_tempo', 'bike_sweetspot'}
+# A long run with marathon-pace blocks is tempo work: it counts toward the quality and threshold-work limits.
+_TEMPO = {'bike_tempo', 'bike_sweetspot', 'run_long_mp'}
 _THRESHOLD = {'bike_threshold', 'bike_threshold_intervals', 'run_threshold'}
 _VO2 = {'bike_vo2', 'bike_vo2_micro', 'run_vo2', 'run_vo2_short'}
 GROUPS = {
-    'easy': {'bike_recovery', 'bike_z2', 'bike_z2_short', 'bike_z2_long', 'bike_z2_sprints', 'bike_long', 'run_easy', 'run_long'},
+    'easy': {'bike_recovery', 'bike_z2', 'bike_z2_short', 'bike_z2_long', 'bike_z2_sprints', 'bike_long', 'run_easy', 'run_long',
+             'run_strides', 'run_hill_sprints'},
     'tempo': _TEMPO,
     'threshold': _THRESHOLD,
     'thresholdWork': _TEMPO | _THRESHOLD,
@@ -113,6 +115,50 @@ BLOCK_TYPES = {
     'custom': _block('Eigener Block', 'Aus einem früheren Makroplan übernommen.', None, 1, 52,
                      last_week_deload=False, rhythm=False, selectable=False),
 }
+# Running plans (run without ride among the goal sports) build around one key session per week inside a longer run; the
+# block minimums made for two hard rides per week then ask for one.
+RUN_GUIDANCE = {
+    'general': 'Running plan: one key session per week (for example Tuesday) inside a longer run (set durationMin, for example '
+               '60-75 min with 3x8 min threshold); every other run is easy; one long run at the weekend, about a quarter to a '
+               'third of the weekly running time, growing by about 10 min per load week. Vary easy runs (short 30-45 min '
+               'recovery runs, one medium-long run midweek); no easy run is longer than the long run. Deload weeks have about '
+               '20-25 % less volume, a shorter long run and an easier key session. Jogging recoveries: threshold 1-2 min, VO2 '
+               '2-3 min. Strides (run_strides) and hill sprints (run_hill_sprints) are easy runs, not quality.',
+    'wiedereinstieg': 'Easy runs only, strides from the second week; lengthen the long run gradually.',
+    'grundlage': 'Key session alternates run_strides (6x20 s) and run_hill_sprints (6x10 s, walk or jog down); late in the block '
+                 'at most one short threshold run (3x6 min, 2 min jog). The long run grows week by week.',
+    'aufbau': 'One key session per load week, alternating threshold (3x8 -> 3x10 min) and VO2 (5x3 -> 5x4 min).',
+    'vo2max': 'One VO2 session per load week: run_vo2 with 800-1000 m reps (about 3-4 min) and 2-3 min jog, progressing '
+              '5x3 -> 5x4 -> 6x4 min, or a gentle fartlek 6x1 min at 10 km pace with 2 min easy; run_vo2_short (30/30) as a '
+              'variation. Deload weeks keep strides or one short threshold run.',
+    'schwelle': 'One threshold session per load week: 3x8 -> 3x10 min, 2-3 km reps (8-14 min) with 90 s-2 min jog, or a '
+                'continuous tempo run of 20-30 min (intervals 1); progress time at threshold toward about 30 min, not pace.',
+    'wettkampfspezifisch': 'Marathon: one threshold session per week (1.5-3 km reps with 90 s jog) and every other week a long '
+                           'run with marathon-pace blocks (run_long_mp), progressing about 40 -> 50 -> 2x30 -> 80 min MP; an '
+                           'occasional VO2 touch (5x1000 m); a half marathon 6-8 weeks out fits as a B event; the last big '
+                           'specific long run about 3 weeks before the race.',
+    'taper': 'Volume falls clearly; key sessions become short marathon-pace work (2x3 km MP, in race week 3x1 km MP, as '
+             'run_threshold at MP intensity) plus strides; the long run shortens.',
+    'uebergang': 'Easy runs, cross-training or rest only.',
+}
+
+
+def run_focus(sports):
+    """Whether the plan is a running plan: run without ride among the goal sports."""
+    return 'run' in sports and 'ride' not in sports
+
+
+def block_guidance(identity, sports):
+    spec = block_type(identity)
+    if not run_focus(sports):
+        return spec['guidance']
+    return f"{RUN_GUIDANCE['general']} {RUN_GUIDANCE.get(identity, '')}".strip()
+
+
+def minimum_per_load_week(spec, sports):
+    return {group: min(n, 1) for group, n in spec['minPerLoadWeek'].items()} if run_focus(sports) else spec['minPerLoadWeek']
+
+
 SECONDARY_FOCUS = {
     'kraft': {'name': 'Kraft', 'group': 'strength'},
     'laufen': {'name': 'Laufen', 'group': 'run'},
@@ -169,13 +215,13 @@ def block_type(identity):
     return BLOCK_TYPES[identity]
 
 
-def rule_texts(identity):
+def rule_texts(identity, sports=()):
     """German, human-readable rules; also shown to the AI as block guidance."""
     spec = block_type(identity)
     texts = [f"{spec['minWeeks']}–{spec['maxWeeks']} Wochen"]
     texts += [f"Keine {GROUP_NAMES[group]}" for group in spec['forbidden']]
     texts += [f"Höchstens {n}× {GROUP_NAMES[group]} pro Woche" for group, n in spec['maxPerWeek'].items()]
-    texts += [f"Mindestens {n}× {GROUP_NAMES[group]} pro Belastungswoche" for group, n in spec['minPerLoadWeek'].items()]
+    texts += [f"Mindestens {n}× {GROUP_NAMES[group]} pro Belastungswoche" for group, n in minimum_per_load_week(spec, sports).items()]
     if spec['easyShare']:
         texts.append(f"Mindestens {round(spec['easyShare'] * 100)} % der Rad-/Laufzeit locker (Z1–2)")
     if spec['rhythm']:
@@ -294,8 +340,9 @@ def check_block(identity, secondary, weeks, *, start, profile, max_streak=MAX_LO
             raise CoachError(f"Ein Block „{name}“ bleibt unter {round(spec['maxPreferredShare'] * 100)} % des Wunschumfangs.")
 
 
-def check_week_rules(block, block_week, sessions, replaced=0):
-    """Template rules for one planned week of a block; replaced counts C races that replace a hard session. Raises CoachError."""
+def check_week_rules(block, block_week, sessions, replaced=0, sports=()):
+    """Template rules for one planned week of a block; replaced counts C races that replace a hard session, sports are the
+    goal sports (a running plan needs one key session per week). Raises CoachError."""
     spec = block_type(block['blockType'])
     name = spec['name']
     templates = [s['template'] for s in sessions]
@@ -312,7 +359,7 @@ def check_week_rules(block, block_week, sessions, replaced=0):
         if count(group) > maximum:
             raise CoachError(f'Im Block „{name}“ höchstens {maximum}× {GROUP_NAMES[group]} pro Woche.')
     if not deload:
-        for group, minimum in spec['minPerLoadWeek'].items():
+        for group, minimum in minimum_per_load_week(spec, sports).items():
             if count(group) < minimum - replaced:
                 raise CoachError(f'Im Block „{name}“ mindestens {minimum}× {GROUP_NAMES[group]} pro Belastungswoche.')
         focus = SECONDARY_FOCUS.get(block.get('secondaryFocus'))
