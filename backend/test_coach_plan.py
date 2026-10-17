@@ -114,14 +114,14 @@ class RhythmTests(unittest.TestCase):
         self.assertEqual([w['focus'] for w in aligned[0]['weeks'][6:]], ['', ''])
         self.assertEqual(aligned[4:], phases[4:])
 
-    def test_hours_rise_from_the_base_at_most_10_percent_a_cycle_and_the_time_caps_the_peak(self):
+    def test_hours_rise_from_the_base_at_most_5_percent_a_cycle_and_the_time_caps_the_peak(self):
         self.profile['background']['weeklyHours'] = 5
         phases = [phase('grundlage', 8), phase('vo2max', 4), phase('wettkampfspezifisch', 4), phase('taper', 2, 3),
                   phase('uebergang', 2, 3)]
         hours = lambda aligned: [w['targetHours'] for p in aligned[:4] for w in p['weeks']]
-        # Cycle levels 5, 5.5, 6.05, 6.66 h; load weeks at 100/105/110 %, deloads at 65 % of the cycle's top week.
+        # Cycle levels 5, 5.25, 5.51, 5.79 h; load weeks at 100/105/110 %, deloads at 65 % of the cycle's top week.
         self.assertEqual(hours(align_frame(phases, self.settings, self.profile, [10] * 20)),
-                         [5, 5.5, 5.5, 3.5, 5.5, 6, 6, 3.5, 6, 6.5, 6.5, 4, 6.5, 7, 7.5, 4.5, 3.5, 3])
+                         [5, 5.5, 5.5, 3.5, 5.5, 5.5, 6, 3.5, 5.5, 6, 6, 3.5, 6, 6, 6.5, 4, 3, 2.5])
         # Little time: the peak week (15) stays within it and the rise flattens out; the base stays where it is.
         self.profile['background']['weeklyHours'] = 6
         capped = hours(align_frame(phases, self.settings, self.profile, [10] * 14 + [6.6] + [10] * 5))
