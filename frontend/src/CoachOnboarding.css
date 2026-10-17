@@ -79,7 +79,59 @@
 .onboarding-timeline-event em { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-style: normal; font-size: 11px; font-weight: 600; }
 .onboarding-timeline-event.end em { left: auto; right: -2px; transform: none; }
 .onboarding-timeline-event.start em { left: -2px; transform: none; }
+.onboarding-timeline-event.second-row em { bottom: 36px; }
+.onboarding-timeline:has(.priority-a.second-row) .onboarding-timeline-track { height: 52px; }
+/* B and C events carry their name below the line. */
+.onboarding-timeline-event:not(.priority-a) em { bottom: auto; top: 14px; font-weight: 500; color: var(--fg-475569); }
+.onboarding-timeline-event:not(.priority-a).second-row em { top: 30px; }
+.onboarding-timeline-event em b { margin-right: 4px; padding: 0 4px; border-radius: 3px; background: var(--accent-bg); color: var(--accent-text); font-size: 10px; }
 .onboarding-timeline-ends { display: flex; justify-content: space-between; margin-top: 12px; font-size: 11px; color: var(--fg-64748b); }
+.onboarding-timeline.with-below .onboarding-timeline-ends { margin-top: 34px; }
+.onboarding-timeline.with-below:has(.second-row:not(.priority-a)) .onboarding-timeline-ends { margin-top: 50px; }
+
+/* Date field with its own calendar: today has a blue ring, the chosen day is filled, hover is light blue. */
+.date-field { position: relative; min-width: 0; }
+.coach-form-grid .date-field .coach-field { margin-bottom: 0; }
+.date-input { position: relative; display: block; }
+.date-input input { padding-right: 40px !important; }
+.ai-coach button.date-toggle { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); padding: 6px 8px; min-height: 0; border: 0; background: transparent; color: var(--fg-475569); }
+.date-popover { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; width: 288px; max-width: calc(100vw - 32px); padding: 12px; background: var(--card); border: 1px solid var(--card-line); border-radius: 8px; box-shadow: var(--card-shadow); }
+.date-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+.ai-coach .date-head button { padding: 4px 10px; min-height: 0; }
+.date-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.date-weekday { text-align: center; font-size: 10px; font-weight: 600; color: var(--fg-64748b); padding: 2px 0 4px; }
+.ai-coach button.date-day { padding: 0; min-height: 34px; border: 2px solid transparent; border-radius: 50%; background: transparent; color: var(--fg-1e293b); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.ai-coach button.date-day.outside { color: var(--fg-94a3b8, var(--muted-2)); }
+/* Stronger than the general button hover of the coach, which would turn the day gray. */
+.ai-coach .date-grid button.date-day:hover:not(:disabled) { background: var(--date-hover); border-color: transparent; }
+.ai-coach .date-grid button.date-day.today, .ai-coach .date-grid button.date-day.today:hover:not(:disabled) { border-color: var(--date-today); color: var(--date-today); font-weight: 700; }
+.ai-coach .date-grid button.date-day.selected, .ai-coach .date-grid button.date-day.selected:hover:not(:disabled) { background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); }
+.ai-coach button.date-day.selected.today { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--date-today); }
+.ai-coach button.date-day:disabled { opacity: .35; }
+.date-legend { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--fg-64748b); }
+.date-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.ai-coach .date-legend button { margin-left: auto; padding: 4px 10px; min-height: 0; font-size: 11px; }
+.date-mark { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+.date-mark.today { border: 2px solid var(--date-today); }
+.date-mark.selected { background: var(--btn-bg); }
+:root { --date-today: #2563eb; --date-hover: #dbeafe; }
+:root[data-theme="dark"] { --date-today: #7aa7ff; --date-hover: #1e3a5f; }
+
+/* Settings for the whole week, above the days. */
+.onboarding-week-panel { border: 1px solid var(--bd-e2e8f0); border-radius: 6px; padding: 14px 16px 4px; margin: 4px 0 18px; background: var(--surface); }
+.onboarding-week-panel h3 { margin-top: 0; }
+.onboarding-day-picker { margin-bottom: 14px; }
+.onboarding-day-picker > span { display: block; font-size: 11px; font-weight: 600; margin-bottom: 7px; }
+.onboarding-day-picker small { display: block; font-size: 11px; color: var(--fg-64748b); margin-top: 6px; line-height: 1.5; }
+.onboarding-hours { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 2px 0 14px; }
+.onboarding-hours div { border-left: 3px solid var(--line-strong); padding: 2px 0 2px 10px; font-size: 11px; color: var(--fg-64748b); }
+.onboarding-hours div.recommended { border-left-color: var(--success); }
+.onboarding-hours div.budget { border-left-color: var(--accent); }
+.onboarding-hours strong { display: block; font-size: 15px; color: var(--fg-1e293b); font-variant-numeric: tabular-nums; }
+.onboarding-info { margin: 0 0 14px; }
+.ai-coach button.onboarding-info-button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font-size: 12px; }
+.onboarding-info p { margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: var(--fg-475569); background: var(--surface-sunk); border-radius: 6px; padding: 10px 12px; }
+.onboarding-copy-note { font-size: 12px; color: var(--fg-475569); margin: 6px 0 10px; }
 
 .onboarding-create li { display: flex; align-items: center; gap: 10px; padding: 10px 0; font-size: 13px; border-top: 1px solid var(--bd-e2e8f0); color: var(--fg-64748b); }
 .onboarding-create li > span:first-child { width: 18px; text-align: center; }

@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Field, PlanTimeline, StepFooter, ThresholdFields, Tiles, YesNo, thresholdChanges, thresholdDraft, thresholdProblem } from './OnboardingUI';
+import { DateField, Field, PlanTimeline, StepFooter, ThresholdFields, Tiles, YesNo, thresholdChanges, thresholdDraft, thresholdProblem } from './OnboardingUI';
+import { Icon } from './icons';
 import {
   BACKGROUND_TYPES, DAYS, EQUIPMENT, EVENT_SPORTS, GOALS, HANDLING, INTENSITIES, METRICS, METRIC_NAMES, OPTIONS, PRIORITIES, REPLAN_DEFAULT,
-  SPORT_NAMES, SUBTYPES, clockLabel, dateLabel, defaultEnd, defaultStart, eventDates, eventHints, eventSummary, hoursHint, hoursLabel, jobState,
-  joinDuration, lastAEvent, newId, splitDuration, splitEvents, weeksLabel, windowHours, windowLabel, windowMinutes,
+  SPORT_NAMES, SUBTYPES, clockLabel, dateLabel, defaultEnd, defaultStart, eventDates, eventHints, eventSummary, hoursHint, hoursLabel, jobState, recommendedHours,
+  dayNames, joinDuration, lastAEvent, newId, splitDuration, splitEvents, weeksLabel, windowHours, windowLabel, windowMinutes,
 } from './coachOnboarding';
 import { localDate } from './workoutModel';
 
@@ -44,10 +45,11 @@ export function BackgroundStep({ ctx }) {
     {editing && <>
       <h3>Was hast du zuletzt gemacht?</h3>
       <Tiles label="Was hast du zuletzt gemacht?" single items={BACKGROUND_TYPES} isOn={key => value.type === key} onToggle={type => set({ type })} />
-      <h3>Wie viele Stunden pro Woche?</h3>
+      <h3>Wie viele Stunden trainierst du durchschnittlich pro Woche?</h3>
+      <p className="coach-muted">Gemeint ist eine typische Trainingswoche der letzten Zeit, nicht die Zeit, die du künftig hast. Die fragt der Coach bei den Verfügbarkeiten.</p>
       <div className="onboarding-slider">
         <button type="button" aria-label="Eine halbe Stunde weniger" onClick={() => set({ weeklyHours: Math.max(0, hours - 0.5) })}>−</button>
-        <input type="range" min="0" max="30" step="0.5" aria-label="Stunden pro Woche" value={hours} onChange={e => set({ weeklyHours: Number(e.target.value) })} />
+        <input type="range" min="0" max="30" step="0.5" aria-label="Durchschnittliche Stunden pro Woche" value={hours} onChange={e => set({ weeklyHours: Number(e.target.value) })} />
         <button type="button" aria-label="Eine halbe Stunde mehr" onClick={() => set({ weeklyHours: Math.min(30, hours + 0.5) })}>+</button>
         <strong>{hoursLabel(hours)}</strong>
       </div>
@@ -84,21 +86,25 @@ function eventProblem(draft) {
   return null;
 }
 
-export function EventForm({ initial, busy, onSave, onCancel }) {
-  const [draft, setDraft] = useState(() => initial ? draftOf(initial) : blankEvent());
+/** draft and onDraft keep the unsaved input outside the form, so a step change or closing the wizard loses nothing. */
+export function EventForm({ initial, draft: kept, onDraft, busy, onSave, onCancel }) {
+  const [draft, setDraft] = useState(() => kept || (initial ? draftOf(initial) : blankEvent()));
+  // Every field patch keeps the others, the title included.
   const set = patch => setDraft(d => ({ ...d, ...patch }));
+  useEffect(() => { onDraft?.(draft); }, [draft]);
   const problem = eventProblem(draft);
   const hints = problem ? [] : eventHints(eventBody(draft));
   const subtypes = SUBTYPES[draft.sport] || [];
   return <section className="onboarding-card onboarding-event-form" aria-label={initial ? 'Event bearbeiten' : 'Event hinzufügen'}>
     <h3>{initial ? 'Event bearbeiten' : 'Event hinzufügen'}</h3>
-    <Field label="Titel"><input maxLength={200} value={draft.title} placeholder="z. B. NorthCape 4000" onChange={e => set({ title: e.target.value })} /></Field>
+    <Field label="Titel"><input maxLength={200} value={draft.title} placeholder="z. B. Frankfurt Marathon oder Ötztaler Radmarathon" onChange={e => set({ title: e.target.value })} /></Field>
     <h4>Sportart</h4>
-    <Tiles label="Sportart des Events" single items={EVENT_SPORTS} isOn={key => draft.sport === key} onToggle={sport => set({ sport, subtype: null })} />
+    <Tiles label="Sportart des Events" single items={EVENT_SPORTS} isOn={key => draft.sport === key} onToggle={sport => set({ sport, subtype: draft.sport === sport ? draft.subtype : null })} />
+    {subtypes.length > 1 && <div className="coach-form-grid"><Field label="Ziel (Untertyp)"><select value={draft.subtype || ''} onChange={e => set({ subtype: e.target.value || null })}><option value="">Bitte wählen</option>{subtypes.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></Field></div>}
     <label className="coach-checkbox"><input type="checkbox" checked={draft.multiDay} onChange={e => set({ multiDay: e.target.checked })} />Mehrtägig</label>
     <div className="coach-form-grid">
-      <Field label={draft.multiDay ? 'Start' : 'Datum'}><input type="date" value={draft.startDate} onChange={e => set({ startDate: e.target.value })} /></Field>
-      {draft.multiDay && <Field label="Ende"><input type="date" min={draft.startDate || undefined} value={draft.endDate} onChange={e => set({ endDate: e.target.value })} /></Field>}
+      <DateField label={draft.multiDay ? 'Start' : 'Datum'} value={draft.startDate} onChange={startDate => set({ startDate })} />
+      {draft.multiDay && <DateField label="Ende" min={draft.startDate || undefined} value={draft.endDate} onChange={endDate => set({ endDate })} />}
     </div>
     <label className="coach-checkbox"><input type="checkbox" checked={draft.allDay} onChange={e => set({ allDay: e.target.checked })} />Ganzer Tag</label>
     <div className="coach-form-grid">
@@ -112,7 +118,6 @@ export function EventForm({ initial, busy, onSave, onCancel }) {
       <div className="onboarding-priorities" role="radiogroup" aria-label="Wie soll der Coach damit umgehen?">{HANDLING[draft.priority].map(([key, name, text], index) =>
         <button key={key} type="button" role="radio" aria-checked={(draft.handling || HANDLING[draft.priority][0][0]) === key} onClick={() => set({ handling: key })}><strong>{name}{index === 0 ? ' (Standard)' : ''}</strong><small>{text}</small></button>)}</div></>}
     <div className="coach-form-grid">
-      {subtypes.length > 1 && <Field label="Ziel (Untertyp)"><select value={draft.subtype || ''} onChange={e => set({ subtype: e.target.value || null })}><option value="">Bitte wählen</option>{subtypes.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></Field>}
       <Field label="Distanz (km)" hint="Bis 10.000 km"><input type="number" min="0" max="10000" step="0.1" inputMode="decimal" value={draft.distanceKm} onChange={e => set({ distanceKm: e.target.value })} /></Field>
       <Field label="Höhenmeter" hint="Bis 100.000 m"><input type="number" min="0" max="100000" step="1" inputMode="numeric" value={draft.elevationM} onChange={e => set({ elevationM: e.target.value })} /></Field>
     </div>
@@ -141,7 +146,9 @@ export function EventList({ title, events, busy, onEdit, onDelete }) {
 
 export function GoalStep({ ctx }) {
   const { profile, events } = ctx.data;
-  const [form, setForm] = useState(null);  // 'new' or the edited event
+  // The open form ('new' or the edited event) and its unsaved input stay in the wizard across steps.
+  const { form, draft } = ctx.eventForm || { form: null, draft: null };
+  const setForm = next => ctx.setEventForm(next ? { form: next, draft: null } : null);
   const [goal, setGoal] = useState(ctx.done('goal') && GOALS.some(([key]) => key === profile.goal.type) ? profile.goal.type : null);
   const { upcoming, recent } = splitEvents(events);
   const main = lastAEvent(upcoming);
@@ -158,7 +165,8 @@ export function GoalStep({ ctx }) {
   return <>
     <h2>Dein Ziel</h2>
     <p>Überprüfe deine kommenden Events und füge fehlende Rennen oder Ziele hinzu.</p>
-    {form ? <EventForm key={form === 'new' ? 'new' : form.id} initial={form === 'new' ? null : form} busy={!!ctx.busy} onSave={saveEvent} onCancel={() => setForm(null)} />
+    {form ? <EventForm key={form === 'new' ? 'new' : form.id} initial={form === 'new' ? null : form} draft={draft} busy={!!ctx.busy} onSave={saveEvent} onCancel={() => setForm(null)}
+      onDraft={next => ctx.setEventForm(current => current && { ...current, draft: next })} />
       : <button type="button" className="onboarding-add" onClick={() => setForm('new')}>+ Event hinzufügen</button>}
     {!form && <>
       {main ? <p className="onboarding-hint">Dein Hauptziel: <strong>{main.title}</strong> am {dateLabel(main.startDate, true)}. Der Plan läuft darauf hin.</p> : <>
@@ -226,8 +234,8 @@ export function PeriodStep({ ctx }) {
     <h2>Zeitraum</h2>
     <p>Wähle Start- und Enddatum deines Plans.</p>
     <div className="coach-form-grid">
-      <Field label="Plan startet" hint="Vorgabe: der nächste Montag oder nach der Erholung von einem kürzlichen Event."><input type="date" min={today} value={start} onChange={e => setStart(e.target.value)} /></Field>
-      <Field label="Plan endet" hint={main ? `Vorgabe: Ende von ${main.title}.` : 'Vorgabe: 12 Wochen nach dem Start. Eine feste Obergrenze gibt es nicht.'}><input type="date" min={start || today} value={end} onChange={e => setEnd(e.target.value)} /></Field>
+      <DateField label="Plan startet" hint="Vorgabe: der nächste Montag oder nach der Erholung von einem kürzlichen Event." min={today} value={start} onChange={setStart} />
+      <DateField label="Plan endet" hint={main ? `Vorgabe: Ende von ${main.title}.` : 'Vorgabe: 12 Wochen nach dem Start. Eine feste Obergrenze gibt es nicht.'} min={start || today} value={end} onChange={setEnd} />
     </div>
     {!problem && <p className="onboarding-hint">{weeksLabel(start, end)} Plan</p>}
     <PlanTimeline start={start} end={end} events={events} />
@@ -263,8 +271,10 @@ export function AvailabilityForm({ day, initial, sports, busy, onSave, onCancel 
     onSave([{ ...window, id: initial?.id || newId('window'), day }, ...copyDays.map(other => ({ ...window, id: newId('window'), day: other }))]);
   };
   const dayName = DAYS.find(([key]) => key === day)[2];
-  return <section className="onboarding-card" aria-label="Neue Verfügbarkeit">
-    <span className="coach-eyebrow">{dayName} · Schritt {page} von {available ? 2 : 1}</span>
+  const copies = dayNames(copyDays);
+  const copyNote = copies.length > 0 && <p className="onboarding-copy-note" role="status">Beim Speichern gilt diese Verfügbarkeit mit Zeitfenster und Sportarten auch für {copies.join(', ')}.</p>;
+  return <section className="onboarding-card" aria-label={initial ? 'Verfügbarkeit ändern' : 'Neue Verfügbarkeit'}>
+    <span className="coach-eyebrow">{dayName}{copies.length ? ` + ${dayNames(copyDays, 1).join(', ')}` : ''} · Schritt {page} von {available ? 2 : 1}</span>
     {page === 1 ? <>
       <h3>Wann trainierst du?</h3>
       <div className="onboarding-segments" role="radiogroup" aria-label="Art">{[['available', 'Verfügbar'], ['unavailable', 'Nicht verfügbar']].map(([key, text]) =>
@@ -282,9 +292,10 @@ export function AvailabilityForm({ day, initial, sports, busy, onSave, onCancel 
           <Field label="Notiz (optional)"><input maxLength={300} value={value.group.note} placeholder="z. B. Vereinsausfahrt" onChange={e => set({ group: { ...value.group, note: e.target.value } })} /></Field>
         </div>}
       </>}
-      {!initial && <><h4>Auch für andere Tage übernehmen</h4>
-        <div className="coach-toggles" role="group" aria-label="Auch für andere Tage übernehmen">{DAYS.filter(([key]) => key !== day).map(([key, short]) =>
-          <button key={key} type="button" className="coach-toggle" aria-pressed={copyDays.includes(key)} onClick={() => setCopyDays(list => list.includes(key) ? list.filter(d => d !== key) : [...list, key])}>{short}</button>)}</div></>}
+      <h4>Auch für andere Tage übernehmen</h4>
+      <div className="coach-toggles" role="group" aria-label="Auch für andere Tage übernehmen">{DAYS.filter(([key]) => key !== day).map(([key, short]) =>
+        <button key={key} type="button" className="coach-toggle" aria-pressed={copyDays.includes(key)} onClick={() => setCopyDays(list => list.includes(key) ? list.filter(d => d !== key) : [...list, key])}>{copyDays.includes(key) ? '✓ ' : ''}{short}</button>)}</div>
+      {copyNote}
       {(timeProblem || groupProblem) && <p className="coach-muted" role="note">{timeProblem || groupProblem}</p>}
       <div className="coach-actions">
         {available ? <button type="button" className="coach-primary" disabled={!!timeProblem || !!groupProblem} onClick={() => { if (groupSport && !chosen.includes(groupSport)) toggleSport(groupSport); setPage(2); }}>Weiter</button>
@@ -303,6 +314,7 @@ export function AvailabilityForm({ day, initial, sports, busy, onSave, onCancel 
         })}</div>}
       </div>)}
       {!chosen.length && <p className="coach-muted" role="note">Wähle mindestens eine Sportart.</p>}
+      {copyNote}
       <div className="coach-actions"><button type="button" className="coach-primary" disabled={!chosen.length || busy} onClick={finish}>Speichern</button><button type="button" onClick={() => setPage(1)}>Zurück</button></div>
     </>}
   </section>;
@@ -314,32 +326,84 @@ export function fittedWish(availability, windows, maxWeeklyHours) {
   return Object.fromEntries(['preferredWeeklyHours', 'indoorWeeklyHours'].filter(key => availability[key] != null && availability[key] > cap).map(key => [key, cap]));
 }
 
-/** The windows per weekday; form ({day, window}) opens the editor, onSave(list) stores the whole list. */
+/** The windows per weekday; form ({day, window}) opens the editor, onSave(list, saved) stores the whole list. After a save
+ * the days it reached are marked and named, so copying to other days is visible. */
 export function WindowEditor({ windows, sports, busy, form, onForm, onSave }) {
   const minutes = windowMinutes(windows);
+  const [saved, setSaved] = useState(null);  // { ids, days } of the last save
   if (form) return <AvailabilityForm day={form.day} initial={form.window} sports={sports} busy={busy}
-    onSave={list => onSave(form.window ? windows.map(w => w.id === form.window.id ? list[0] : w) : [...windows, ...list])} onCancel={() => onForm(null)} />;
-  return <ul className="onboarding-days">{DAYS.map(([day, , name]) => <li key={day}>
+    onSave={list => {
+      const next = form.window ? [...windows.map(w => w.id === form.window.id ? list[0] : w), ...list.slice(1)] : [...windows, ...list];
+      setSaved({ ids: list.map(w => w.id), days: list.map(w => w.day) });
+      onSave(next);
+    }} onCancel={() => onForm(null)} />;
+  return <>{saved && <p className="onboarding-hint" role="status">Gespeichert für {dayNames(saved.days).join(', ')}.</p>}
+  <ul className="onboarding-days">{DAYS.map(([day, , name]) => <li key={day} className={saved?.days.includes(day) ? 'saved' : undefined}>
     <div className="onboarding-day-head"><strong>{name}</strong>{minutes[day] > 0 && <small>{clockLabel(minutes[day])} h</small>}
       <button type="button" onClick={() => onForm({ day, window: null })}>+ Neue Verfügbarkeit</button></div>
-    {windows.filter(w => w.day === day).map(window => <div key={window.id} className={`onboarding-window ${window.kind}`}>
+    {windows.filter(w => w.day === day).map(window => <div key={window.id} className={`onboarding-window ${window.kind}${saved?.ids.includes(window.id) ? ' new' : ''}`}>
       <span>{windowLabel(window)}</span>
       <button type="button" onClick={() => onForm({ day, window })}>Ändern</button>
-      <button type="button" className="coach-danger" disabled={busy} onClick={() => onSave(windows.filter(w => w.id !== window.id))}>Löschen</button>
+      <button type="button" className="coach-danger" disabled={busy} onClick={() => { setSaved(null); onSave(windows.filter(w => w.id !== window.id)); }}>Löschen</button>
     </div>)}
-  </li>)}</ul>;
+  </li>)}</ul></>;
 }
 
-/** Maximum hours, rest day and long day for the whole week, as strings while editing. */
+/** Several weekdays at once; "Keine Präferenz" clears them. */
+function DayPicker({ label, days, hint, onChange }) {
+  const toggle = day => onChange(days.includes(day) ? days.filter(d => d !== day) : DAYS.map(([key]) => key).filter(key => key === day || days.includes(key)));
+  return <div className="onboarding-day-picker"><span>{label}</span>
+    <div className="coach-toggles" role="group" aria-label={label}>
+      <button type="button" className="coach-toggle" aria-pressed={!days.length} onClick={() => onChange([])}>Keine Präferenz</button>
+      {DAYS.map(([day, short, name]) => <button key={day} type="button" className="coach-toggle" aria-pressed={days.includes(day)} aria-label={name} onClick={() => toggle(day)}>{short}</button>)}
+    </div>{hint && <small>{hint}</small>}</div>;
+}
+
+/** The time budget, rest days and long days for the whole week, as strings and lists while editing. */
 export function WeekFields({ week, total, onChange }) {
   const set = patch => onChange({ ...week, ...patch });
-  return <div className="coach-form-grid">
-    <Field label="Maximale Stunden pro Woche" hint={`Leer = Summe der Zeitfenster (${hoursLabel(total)}).`}><input type="number" min="0" max="80" step="0.5" placeholder={String(Math.round(total * 10) / 10)} value={week.maxWeeklyHours} onChange={e => set({ maxWeeklyHours: e.target.value })} /></Field>
-    <Field label="Bevorzugter Ruhetag"><select value={week.restDay} onChange={e => set({ restDay: e.target.value })}><option value="">Keine Präferenz</option>{DAYS.map(([day, , name]) => <option key={day} value={day}>{name}</option>)}</select></Field>
-    <Field label="Tag für die lange Einheit"><select value={week.longDay} onChange={e => set({ longDay: e.target.value })}><option value="">Keine Präferenz</option>{DAYS.map(([day, , name]) => <option key={day} value={day}>{name}</option>)}</select></Field>
-  </div>;
+  return <>
+    <div className="coach-form-grid">
+      <Field label="Maximal verfügbare Trainingszeit pro Woche (h)" hint={`Zeitliche Obergrenze: So viel Zeit kannst du höchstens aufbringen. Das ist keine Empfehlung, so viel zu trainieren. Leer = Summe der Zeitfenster (${hoursLabel(total)}).`}>
+        <input type="number" min="0" max="80" step="0.5" placeholder={String(Math.round(total * 10) / 10)} value={week.maxWeeklyHours} onChange={e => set({ maxWeeklyHours: e.target.value })} /></Field>
+    </div>
+    <DayPicker label="Bevorzugte Ruhetage" days={week.restDays} onChange={restDays => set({ restDays })}
+      hint="Mehrere möglich. Der Coach legt Ruhetage bevorzugt auf diese Tage. Anders als „nicht verfügbar“ bleibt der Tag offen, wenn es passt." />
+    <DayPicker label="Tage für lange Einheiten" days={week.longDays} onChange={longDays => set({ longDays })}
+      hint="Mehrere Tage möglich. Der Coach plant die lange Einheit an einem davon, nicht an jedem." />
+  </>;
 }
-export const weekDraft = availability => ({ maxWeeklyHours: availability.maxWeeklyHours ?? '', restDay: availability.restDay || '', longDay: availability.longDay || '' });
+const dayList = (list, single) => list?.length ? list : single ? [single] : [];
+export const weekDraft = availability => ({ maxWeeklyHours: availability.maxWeeklyHours ?? '', restDays: dayList(availability.restDays, availability.restDay),
+  longDays: dayList(availability.longDays, availability.longDay) });
+export const weekValues = (week, maximum) => ({ maxWeeklyHours: maximum, restDays: week.restDays, longDays: week.longDays });
+
+/** "Für die ganze Woche": time budget and preferred days with the recommendation, the budget and the average so far kept
+ * apart, and what can still change later in the week plan. */
+export function WeekPanel({ week, windows, events, background, onChange, children }) {
+  const [info, setInfo] = useState(false);
+  const total = windowHours(windows);
+  const maximum = number(week.maxWeeklyHours);
+  const effective = maximum == null ? total : Math.min(total, maximum);
+  const recommended = recommendedHours(events);
+  const hint = windows.length ? hoursHint(events, effective) : null;
+  return <section className="onboarding-week-panel" aria-label="Für die ganze Woche">
+    <h3>Für die ganze Woche</h3>
+    <div className="onboarding-info">
+      <button type="button" className="onboarding-info-button" aria-expanded={info} onClick={() => setInfo(i => !i)}><Icon name="info" size={15} />Kann ich das später anpassen?</button>
+      {info && <p>Hier trägst du deine üblichen Zeiten ein, die Grundlage für jede Woche. Im Wochenplan kannst du später jederzeit einzelne Einheiten spontan verschieben, tauschen oder auslassen, etwa wenn ein Termin dazwischenkommt („Woche anpassen“ oder direkt an der Einheit). Einmalige Ausnahmen wie Urlaub trägst du in den Einstellungen ein. Deine Grundverfügbarkeit hier bleibt davon unberührt.</p>}
+    </div>
+    <WeekFields week={week} total={total} onChange={onChange} />
+    <div className="onboarding-hours" aria-label="Wochenstunden">
+      {recommended && <div className="recommended"><strong>mind. {hoursLabel(recommended.hours)}</strong>Empfehlung für {recommended.label}</div>}
+      <div className="budget"><strong>{windows.length ? hoursLabel(effective) : '–'}</strong>maximal verfügbare Zeit pro Woche</div>
+      {background?.weeklyHours != null && <div><strong>{hoursLabel(background.weeklyHours)}</strong>bisher im Durchschnitt pro Woche</div>}
+    </div>
+    {recommended && <p className="coach-muted">Die Empfehlung ist eine Orientierung, kein Zeitbudget. Wie viel du davon trainierst, plant der Coach aus deinem bisherigen Training und der verfügbaren Zeit.</p>}
+    {hint && <p className="onboarding-hint warning" role="note">{hint}</p>}
+    {children}
+  </section>;
+}
 export const weekProblem = (windows, maximum) => !windows.some(w => w.kind === 'available') ? 'Trage mindestens ein Zeitfenster ein, in dem du trainieren kannst.'
   : maximum != null && !(maximum > 0 && maximum <= 80) ? 'Die maximalen Stunden liegen zwischen 0 und 80.' : null;
 
@@ -350,11 +414,8 @@ export function AvailabilityStep({ ctx }) {
   const sports = planSports(profile);
   const [form, setForm] = useState(null);  // { day, window }
   const [week, setWeek] = useState(() => weekDraft(availability));
-  const total = windowHours(windows);
   const maximum = number(week.maxWeeklyHours);
-  const effective = maximum == null ? total : Math.min(total, maximum);
-  const hint = windows.length ? hoursHint(events, effective) : null;
-  const weekPatch = list => ({ maxWeeklyHours: maximum, restDay: week.restDay || null, longDay: week.longDay || null, ...fittedWish(availability, list, maximum) });
+  const weekPatch = list => ({ ...weekValues(week, maximum), ...fittedWish(availability, list, maximum) });
   const saveWindows = list => ctx.run('Verfügbarkeit wird gespeichert …', async () => {
     await ctx.saveProfile({ availability: { windows: list, ...fittedWish(availability, list, number(availability.maxWeeklyHours)) } });
     setForm(null);
@@ -363,14 +424,10 @@ export function AvailabilityStep({ ctx }) {
   return <>
     <h2>Verfügbarkeiten</h2>
     <p>Sag mir, wann du trainieren kannst. Einmalige Ausnahmen wie Urlaub trägst du später ein.</p>
+    {!form && <WeekPanel week={week} windows={windows} events={events} background={profile.background} onChange={setWeek} />}
+    {!form && <h3>Deine Tage</h3>}
     <WindowEditor windows={windows} sports={sports} busy={!!ctx.busy} form={form} onForm={setForm} onSave={saveWindows} />
-    {!form && <>
-      <h3>Für die ganze Woche</h3>
-      <WeekFields week={week} total={total} onChange={setWeek} />
-      <p className="onboarding-hint">{hoursLabel(effective)} pro Woche verfügbar</p>
-      {hint && <p className="onboarding-hint warning" role="note">{hint}</p>}
-      {problem && <p className="coach-muted" role="note">{problem}</p>}
-    </>}
+    {!form && problem && <p className="coach-muted" role="note">{problem}</p>}
     <StepFooter onBack={ctx.back} onNext={form ? null : () => ctx.complete('availability', { availability: weekPatch(windows) })} disabled={!!problem} busy={ctx.busy} />
   </>;
 }
@@ -388,18 +445,20 @@ export function ReadyStep({ ctx }) {
   const windows = profile.availability.windows || [];
   const minutes = windowMinutes(windows);
   const maximum = profile.availability.maxWeeklyHours;
+  const { restDays, longDays } = weekDraft(profile.availability);
   const inPlan = settings ? events.filter(e => (e.endDate || e.startDate) >= settings.startDate && e.startDate <= settings.endDate) : [];
   const intervals = Object.entries(background.intervals || {}).map(([sport, yes]) => `${SPORT_NAMES[sport]} ${yes ? 'ja' : 'nein'}`).join(', ');
   const start = () => ctx.run('Wird gespeichert …', async () => { await ctx.saveProfile({}, 'ready'); ctx.go('creating'); });
   return <>
     <h2>Bereit</h2>
     <p>Überprüfe deine Einstellungen und ich lege los.</p>
-    <Summary title="Bisherige Aktivität" step="background" ctx={ctx}><p>{[typeName(background.type), background.weeklyHours != null && `${hoursLabel(background.weeklyHours)} pro Woche`, intervals && `Intervalle: ${intervals}`].filter(Boolean).join(' · ') || 'Noch offen'}</p></Summary>
+    <Summary title="Bisherige Aktivität" step="background" ctx={ctx}><p>{[typeName(background.type), background.weeklyHours != null && `Ø ${hoursLabel(background.weeklyHours)} pro Woche`, intervals && `Intervalle: ${intervals}`].filter(Boolean).join(' · ') || 'Noch offen'}</p></Summary>
     <Summary title="Enthaltene Sportarten" step="planSports" ctx={ctx}><div className="onboarding-chips">{sports.map(sport =>
       <span key={sport} className="onboarding-chip">{SPORT_NAMES[sport]}{profile.metrics[sport] && sport !== 'strength' ? ` · ${METRIC_NAMES[profile.metrics[sport]]}` : ''}</span>)}</div></Summary>
     <Summary title="Verfügbarkeiten" step="availability" ctx={ctx}>
       <div className="onboarding-week">{DAYS.map(([day, short]) => <div key={day}><span>{short}</span><strong>{minutes[day] ? clockLabel(minutes[day]) : '–'}</strong></div>)}</div>
-      <p>{hoursLabel(windowHours(windows))} pro Woche{maximum != null ? ` · höchstens ${hoursLabel(maximum)}` : ''}</p>
+      <p>{hoursLabel(windowHours(windows))} in deinen Zeitfenstern{maximum != null ? ` · höchstens ${hoursLabel(maximum)} verfügbar` : ''}</p>
+      {(restDays.length > 0 || longDays.length > 0) && <p>{[restDays.length && `Ruhetage: ${dayNames(restDays).join(', ')}`, longDays.length && `Lange Einheiten: ${dayNames(longDays).join(', ')}`].filter(Boolean).join(' · ')}</p>}
     </Summary>
     <Summary title="Zeitplan" step="period" ctx={ctx}>
       {settings ? <><PlanTimeline start={settings.startDate} end={settings.endDate} events={events} />

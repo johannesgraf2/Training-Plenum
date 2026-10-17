@@ -163,8 +163,8 @@ test('a new athlete with data goes from A1 to the created plan', async () => {
   expect(server.profile.preferences.gymAvailability).toBe(true);
 
   // B4: next Monday until the end of the A event.
-  expect(inputFor('Plan startet').value).toBe('2026-10-19');
-  expect(inputFor('Plan endet').value).toBe('2027-08-12');
+  expect(inputFor('Plan startet').value).toBe('19.10.2026');
+  expect(inputFor('Plan endet').value).toBe('12.08.2027');
   expect(container.querySelector('.onboarding-timeline-event.priority-a').textContent).toBe('NorthCape 4000');
   await click(button('Weiter'));
   expect(server.settings).toMatchObject({ startDate: '2026-10-19', endDate: '2027-08-12', replanMode: 'afterReview' });
@@ -183,15 +183,22 @@ test('a new athlete with data goes from A1 to the created plan', async () => {
   await addWindow('Samstag', { allDay: true });
   await addWindow('Montag', { unavailable: true, allDay: true });
   expect(container.textContent).toContain('Ganzer Tag · nicht verfügbar');
-  await change(inputFor('Maximale Stunden pro Woche'), '10');
-  await change(inputFor('Bevorzugter Ruhetag'), 'mon');
-  await change(inputFor('Tag für die lange Einheit'), 'sat');
+  // The time budget is a limit, not a recommendation; rest and long days allow several days.
+  await change(inputFor('Maximal verfügbare Trainingszeit pro Woche (h)'), '10');
+  await click(buttonIn('Bevorzugte Ruhetage', 'Mo'));
+  await click(buttonIn('Bevorzugte Ruhetage', 'Fr'));
+  await click(buttonIn('Tage für lange Einheiten', 'Sa'));
+  await click(buttonIn('Tage für lange Einheiten', 'So'));
+  expect(buttonIn('Tage für lange Einheiten', 'Keine Präferenz').getAttribute('aria-pressed')).toBe('false');
+  expect(container.textContent).toContain('mind. 10 hEmpfehlung für ein Ultra-Event');
+  expect(container.textContent).toContain('7,8 hbisher im Durchschnitt pro Woche');
   await click(button('Weiter'));
-  expect(server.profile.availability).toMatchObject({ maxWeeklyHours: 10, restDay: 'mon', longDay: 'sat' });
+  expect(server.profile.availability).toMatchObject({ maxWeeklyHours: 10, restDays: ['mon', 'fri'], longDays: ['sat', 'sun'] });
 
   // B6: the summary, with a jump back that returns here.
   expect(heading()).toBe('Bereit');
-  expect(container.textContent).toContain('Radfahrer · 7,8 h pro Woche · Intervalle: Rad ja');
+  expect(container.textContent).toContain('Radfahrer · Ø 7,8 h pro Woche · Intervalle: Rad ja');
+  expect(container.textContent).toContain('Ruhetage: Montag, Freitag · Lange Einheiten: Samstag, Sonntag');
   expect(container.textContent).toContain('Rad · Leistung');
   await click(container.querySelector('[class="onboarding-summary"] button'));
   expect(heading()).toBe('Dein Hintergrund');
@@ -226,7 +233,7 @@ test('without data part B asks instead of prefilling and thresholds can be teste
   expect(button('Weiter').disabled).toBe(true);
   await change(inputFor('Schwellenpace (min/km)'), '4:35');
   await click(button('Weiter'));
-  expect(server.profile.thresholds).toEqual({ ride: { source: 'test' }, run: { source: 'athlete', paceSecPerKm: 275, basis: null } });
+  expect(server.profile.thresholds).toEqual({ ride: { source: 'test' }, run: { source: 'athlete', paceSecPerKm: 275, basis: null, tenKPaceSecPerKm: null } });
   expect(writes('/api/user')[0].body.ftp).toBeUndefined();
   // A4 skipped without provider.
   await click(button('Überspringen'));
@@ -248,7 +255,7 @@ test('without data part B asks instead of prefilling and thresholds can be teste
   // B3 and B4: 12 weeks without event.
   await click(button('Weiter'));
   expect(server.profile.goal.sports).toEqual(['ride', 'run']);
-  expect(inputFor('Plan endet').value).toBe('2027-01-10');
+  expect(inputFor('Plan endet').value).toBe('10.01.2027');
   await click(button('Weiter'));
   await addWindow('Samstag', { allDay: true });
   await click(button('Weiter'));
@@ -330,4 +337,87 @@ test('events can be edited and deleted, plausibility only warns, closing keeps t
   expect(server.events).toEqual([]);
   await click(button('Schließen, später weitermachen'));
   expect(closed).toHaveBeenCalled();
+});
+
+test('a known 10 km pace is stored as such, not as threshold pace', async () => {
+  server.background = noData; server.snapshot = {};
+  server.profile.sports = ['run'];
+  await render();
+  await click(button('Weiter'));
+  await click(button('Überspringen'));
+  await click(buttonIn('Welchen Wert kennst du?', '10-km-Pace'));
+  expect(inputFor('10-km-Pace (min/km)')).toBeDefined();
+  await change(inputFor('10-km-Pace (min/km)'), '4:50');
+  await click(button('Weiter'));
+  expect(server.profile.thresholds.run).toEqual({ source: 'athlete', paceSecPerKm: null, basis: null, tenKPaceSecPerKm: 290 });
+});
+
+test('the event title stays while other fields change and across steps; the example fits', async () => {
+  server.profile.onboarding.completed = ['sports', 'sources', 'thresholds', 'provider', 'background'];
+  server.provider.configured = true;
+  await render();
+  await click(button('+ Event hinzufügen'));
+  expect(inputFor('Titel').getAttribute('placeholder')).toBe('z. B. Frankfurt Marathon oder Ötztaler Radmarathon');
+  await change(inputFor('Titel'), 'Frankfurt Marathon');
+  await click(buttonIn('Sportart des Events', 'Laufen'));
+  // The subtype follows the sport directly.
+  const labels = [...container.querySelectorAll('.onboarding-event-form label > span:first-child, .onboarding-event-form h4')].map(l => l.textContent);
+  expect(labels.indexOf('Ziel (Untertyp)')).toBe(labels.indexOf('Sportart') + 1);
+  await change(inputFor('Ziel (Untertyp)'), 'marathon');
+  await change(inputFor('Datum'), '26.10.2027');
+  await click(buttonIn('Priorität', 'B'));
+  await change(inputFor('Distanz (km)'), '42.2');
+  expect(inputFor('Titel').value).toBe('Frankfurt Marathon');
+  // Back to the background and forward again: the open form keeps its input.
+  await click(button('Zurück'));
+  expect(heading()).toBe('Dein Hintergrund');
+  await click(button('Stimmt so'));
+  expect(heading()).toBe('Dein Ziel');
+  expect(inputFor('Titel').value).toBe('Frankfurt Marathon');
+  expect(inputFor('Datum').value).toBe('26.10.2027');
+  await click(button('Event speichern'));
+  expect(writes('/api/coach/events')[0].body).toMatchObject({ title: 'Frankfurt Marathon', sport: 'run', subtype: 'marathon', startDate: '2027-10-26', priority: 'B' });
+});
+
+test('the calendar marks only the real today, not the same day in other months', async () => {
+  server.profile.onboarding.completed = ['sports', 'sources', 'thresholds', 'provider', 'background'];
+  await render();
+  await click(button('+ Event hinzufügen'));
+  await click(button('Datum: Kalender öffnen'));
+  const today = () => container.querySelector('.date-day.today');
+  expect(today().getAttribute('aria-current')).toBe('date');
+  expect(today().getAttribute('aria-label')).toBe('16.10.2026, heute');
+  for (let i = 0; i < 9; i += 1) await click(button('Nächster Monat'));
+  expect(container.querySelector('.date-grid').getAttribute('aria-label')).toBe('Juli 2027');
+  expect(today()).toBeNull();
+  const day16 = [...container.querySelectorAll('.date-day')].find(b => b.getAttribute('aria-label') === '16.07.2027');
+  await click(day16);
+  expect(inputFor('Datum').value).toBe('16.07.2027');
+  await click(button('Datum: Kalender öffnen'));
+  const chosen = container.querySelector('.date-day.selected');
+  expect(chosen.getAttribute('aria-label')).toBe('16.07.2027');
+  expect(chosen.classList.contains('today')).toBe(false);
+});
+
+test('copying a window to other days says so and shows the days', async () => {
+  server.profile.onboarding.completed = ['sports', 'sources', 'thresholds', 'provider', 'background', 'goal', 'planSports', 'period'];
+  await render();
+  expect(heading()).toBe('Verfügbarkeiten');
+  // The week settings and the info come before the days.
+  const panel = container.querySelector('.onboarding-week-panel');
+  expect(panel.compareDocumentPosition(container.querySelector('.onboarding-days')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await click(button('Kann ich das später anpassen?'));
+  expect(panel.textContent).toContain('spontan verschieben');
+  const row = [...container.querySelectorAll('.onboarding-days li')].find(li => li.querySelector('strong').textContent === 'Dienstag');
+  await click([...row.querySelectorAll('button')].find(b => b.textContent === '+ Neue Verfügbarkeit'));
+  await click(buttonIn('Auch für andere Tage übernehmen', 'Do'));
+  await click(buttonIn('Auch für andere Tage übernehmen', 'Sa'));
+  expect(buttonIn('Auch für andere Tage übernehmen', '✓ Do').getAttribute('aria-pressed')).toBe('true');
+  expect(container.textContent).toContain('auch für Donnerstag, Samstag');
+  await click(button('Weiter'));
+  await click(checkbox('Rad'));
+  await click(button('Speichern'));
+  expect(server.profile.availability.windows.map(w => w.day)).toEqual(['tue', 'thu', 'sat']);
+  expect(container.textContent).toContain('Gespeichert für Dienstag, Donnerstag, Samstag.');
+  expect(container.querySelectorAll('.onboarding-window.new')).toHaveLength(3);
 });

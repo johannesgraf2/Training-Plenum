@@ -60,7 +60,7 @@ function OnboardingStart({ profile, onStart }) {
   </section>;
 }
 
-export default function AICoach({ initialTab = 'today', initialSection, tabVersion = 0, adjustVersion = 0, todayVersion = 0, apiBase = '', workouts = EMPTY_WORKOUTS,
+export default function AICoach({ initialTab = 'today', initialSection, tabVersion = 0, adjustVersion = 0, todayVersion = 0, onboardingVersion = 0, apiBase = '', workouts = EMPTY_WORKOUTS,
   onWorkoutsChanged, onOpenWorkout, onBusyChange, onTodayChanged }) {
   const [view, setView] = useState(() => place(initialTab, initialSection));
   // The app keeps the coach mounted between pages; a new tabVersion asks it to show initialTab again.
@@ -90,6 +90,9 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
   const [adaptPending, setAdaptPending] = useState([]);  // Changed settings the athlete has not answered "Plan anpassen?" for.
   const jobTimer = useRef(null);
   const pending = useRef(false);
+  // The app opens the onboarding for a new athlete; a new onboardingVersion asks for it.
+  const shownOnboarding = useRef(0);
+  useEffect(() => { if (onboardingVersion && onboardingVersion !== shownOnboarding.current) { shownOnboarding.current = onboardingVersion; setOnboarding(true); } }, [onboardingVersion]);
 
   async function request(path, method = 'GET', body) {
     const response = await fetch(`${apiBase}${path}`, { method, headers: { 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -126,7 +129,8 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
       if (kind === 'adapt') {
         setNotice(result.proposalId ? `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}Prüfe unten die Anpassung deiner ausgearbeiteten Wochen.`
           : `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}Die ausgearbeiteten Wochen passen weiter zu deinen Einstellungen.`);
-      } else setNotice(`Woche ${result.weekNumber} geplant – ${fmt(result.calculatedHours)} h${result.focus ? `, Fokus ${result.focus}` : ''}.`);
+      } else if (result.weeks?.length === 0) setNotice('Die Wochen sind bereits ausgearbeitet.');
+      else setNotice(`${result.weeks?.length > 1 ? `${result.weeks.length} Wochen geplant, zuletzt ` : ''}Woche ${result.weekNumber} geplant – ${fmt(result.calculatedHours)} h${result.focus ? `, Fokus ${result.focus}` : ''}.`);
       if (result.proposalId) setPlanProposal(result.proposalId);
       afterPlanChange().catch(() => {});
     } else if (state.status === 'failed') {
@@ -228,7 +232,7 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
 
   return <div className="ai-coach">
     <header className="coach-heading"><div><span className="coach-eyebrow">Training Plēnum / Dein Training, mit Kontext</span><h1>AI Coach <span className="coach-beta">BYOK</span></h1><p>Deine Trainingsdaten. Deine Ziele. Ein Plan, den du freigibst.</p></div><button type="button" className={`coach-connection ${provider?.configured ? 'ready' : ''}`} title="AI Provider und Modell einstellen" onClick={() => setTab('settings', 'provider')}><i />{provider?.configured ? `Provider verbunden · ${provider.model}` : 'Provider einrichten'}</button></header>
-    <nav className="coach-tabs" aria-label="AI Coach Bereiche">{TABS.map(([key, label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}>{label}{key === 'today' && dayView && !dayView.checkIn && dayView.dailyCheckIn && <span className="coach-tab-dot" aria-label="Check-in offen" />}</button>)}</nav>
+    <nav className="coach-tabs" aria-label="AI Coach Bereiche">{TABS.map(([key, label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}>{label}{key === 'today' && dayView && dayView.onboarded !== false && !dayView.checkIn && dayView.dailyCheckIn && <span className="coach-tab-dot" aria-label="Check-in offen" />}</button>)}</nav>
     {messages}
     {loading && <p role="status" className="coach-muted">Athletenkontext wird geladen …</p>}
 
@@ -239,7 +243,7 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
         {dayView.checkIn ? <ReadinessCard readiness={dayView.readiness} time="heute">
           <div className="coach-actions"><button type="button" disabled={!!busy} onClick={() => setCheckInOpen(true)}>Check-in ändern</button></div>
           {planToday && <QuickActions level={dayView.readiness.level} disabled={!!busy} onAsk={message => openChat(todayRef, message)} />}
-        </ReadinessCard> : <div className="coach-message coach-checkin-open"><span><strong>Dein Morgen-Check-in fehlt noch.</strong> Mit ihm weiß der Coach, wie es dir heute geht.</span><button type="button" disabled={!!busy} onClick={() => setCheckInOpen(true)}>Check-in ausfüllen</button></div>}
+        </ReadinessCard> : dayView.onboarded === false ? null : <div className="coach-message coach-checkin-open"><span><strong>Dein Morgen-Check-in fehlt noch.</strong> Mit ihm weiß der Coach, wie es dir heute geht.</span><button type="button" disabled={!!busy} onClick={() => setCheckInOpen(true)}>Check-in ausfüllen</button></div>}
         {planToday && <HintCards hints={dayView.hints} onReview={key => { setReviewWeek({ week: key, key: Date.now() }); setTab('plan'); }} onPlan={() => setTab('plan')} />}
         <section className="coach-card"><span className="coach-eyebrow">Heute</span><TodaySessions sessions={dayView.sessions} />
           <div className="coach-actions"><button type="button" onClick={() => setTab('plan')}>Zum Plan</button></div></section>
@@ -250,7 +254,8 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
 
     {!loading && profile && tab === 'plan' && <CoachPlan apiBase={apiBase} version={`${plan?.revision ?? ''}-${planVersion}`} workoutsById={workoutsById} advance={job}
       proposalId={planProposal} reviewWeek={reviewWeek} pendingChanges={adaptPending} onAsk={openChat} onStart={() => setOnboarding(true)} onAdvance={() => startAdvance('manual')}
-      onAdapt={startAdapt} onJob={followJob} onChanged={() => afterPlanChange().catch(e => setError(e.message))} onOpenWorkout={onOpenWorkout} />}
+      onAdapt={startAdapt} onJob={followJob} onChanged={() => afterPlanChange().catch(e => setError(e.message))} onOpenWorkout={onOpenWorkout}
+      onHorizon={() => { afterPlanChange().catch(() => {}); if (plan?.settings?.replanMode !== 'manual') startAdvance('auto'); }} />}
 
     {!loading && profile && tab === 'settings' && <CoachSettings apiBase={apiBase} section={section} onSection={part => setTab('settings', part)} planActive={planActive}
       provider={provider} pending={adaptPending} onPending={setAdaptPending} onProvider={setProvider} onChanged={settingsChanged} onAdapt={startAdapt} onEndPlan={endPlan} onNewPlan={newPlan} />}

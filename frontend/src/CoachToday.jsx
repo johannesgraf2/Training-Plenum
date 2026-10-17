@@ -58,7 +58,8 @@ export const healInjury = (apiBase, identity) => send(apiBase, `/api/coach/injur
 const DISMISSED = 'trainingPlenum.checkInDismissed';
 export const checkInDismissed = date => { try { return window.localStorage.getItem(DISMISSED) === date; } catch (_) { return false; } };
 export const dismissCheckIn = date => { try { window.localStorage.setItem(DISMISSED, date); } catch (_) { /* private mode */ } };
-export const shouldAskCheckIn = today => !!today && !today.checkIn && today.dailyCheckIn !== false && !checkInDismissed(today.date);
+// The check-in asks only after the onboarding (sports, goals, background); before it the onboarding comes first.
+export const shouldAskCheckIn = today => !!today && today.onboarded !== false && !today.checkIn && today.dailyCheckIn !== false && !checkInDismissed(today.date);
 
 function SeasonBar({ segments, date }) {
   if (!segments?.length) return null;
@@ -300,8 +301,10 @@ export function HintCards({ hints, onReview, onPlan }) {
 }
 
 /** Compact line for the start page: open check-in or the traffic light of the day. */
-export function CheckInStrip({ today, onOpen, onOpenCoach }) {
+export function CheckInStrip({ today, onOpen, onOpenCoach, onStartOnboarding }) {
   if (!today || today.dailyCheckIn === false && !today.checkIn) return null;
+  if (today.onboarded === false) return <div className="today-strip open"><span><strong>Erst dein Profil einrichten.</strong> Sportarten, Ziele und dein bisheriges Training; danach fragt der Coach jeden Morgen, wie es dir geht.</span>
+    <button type="button" onClick={onStartOnboarding || onOpenCoach}>Jetzt einrichten</button></div>;
   if (!today.checkIn) return <div className="today-strip open"><span><strong>Morgen-Check-in offen.</strong> Wie geht es dir heute?</span><button type="button" onClick={onOpen}>Jetzt ausfüllen</button></div>;
   const level = today.readiness.level;
   return <div className={`today-strip ${level}`}><span className={`today-dot ${level}`} aria-hidden="true" /><span><strong>{LEVELS[level]}</strong>{today.readiness.reasons.length ? ` · ${today.readiness.reasons[0]}` : ''}</span>
