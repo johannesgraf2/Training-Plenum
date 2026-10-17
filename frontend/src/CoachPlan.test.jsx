@@ -36,6 +36,8 @@ beforeEach(() => {
     const method = options.method || 'GET';
     requests.push({ path, method, body: options.body ? JSON.parse(options.body) : undefined });
     if (path === '/api/coach/plan/weeks') return { ok: true, json: async () => data };
+    if (path === '/api/coach/plan/phases') return { ok: true, json: async () => ({ revision: 4 }) };
+    if (path === '/api/coach/plan/settings') return { ok: true, json: async () => ({ settings: {} }) };
     if (path.endsWith('/review')) return { ok: true, json: async () => ({ revision: 3, job: { id: 'j1', status: 'running', steps: [] } }) };
     if (path.endsWith('/lock')) return { ok: true, json: async () => ({}) };
     if (path === '/api/coach/check-ins') return { ok: true, json: async () => ({ checkIns: [], injuries: [] }) };
@@ -104,4 +106,60 @@ test('the replanning moment follows the replan mode', () => {
   expect(replanText(outlined, 'afterReview', '2026-10-20')).toBe('wird nach deinem Wochenrückblick am So., 01.11. ausgearbeitet');
   expect(replanText({ replanDate: null }, 'manual')).toBe('wird auf Knopfdruck ausgearbeitet');
   expect(replanText(outlined, 'sunday', '2026-11-02')).toBe('ist zum Ausarbeiten fällig');
+});
+
+const full = { ...overview, horizonWeeks: 3, taperWeeks: null, blockTypes: [{ id: 'grundlage', name: 'Grundlage', defaultWeeks: 8 }, { id: 'vo2max', name: 'VO2max', defaultWeeks: 4 },
+  { id: 'schwelle', name: 'Schwelle', defaultWeeks: 6 }, { id: 'taper', name: 'Taper', defaultWeeks: 1, endsByGoal: true }],
+  weeks: Array.from({ length: 12 }, (_, i) => week(i + 1, new Date(Date.UTC(2026, 9, 19 + 7 * i)).toISOString().slice(0, 10), {
+    state: i === 0 ? 'current' : 'future', blockId: i < 8 ? 'b1' : 'b2', phaseName: i < 8 ? 'Grundlage' : 'Schwelle', deload: i % 4 === 3, targetHours: i % 4 === 3 ? 4 : 6 + i * 0.25,
+    plan: i < 3 ? { targetHours: 6, calculatedHours: 6, focus: 'Basis', sessions: [], fixedSessions: [], hinweise: [] } : null })) };
+
+test('the weekly hours chart shows every week up to the goal with phases below the axis', async () => {
+  data = full;
+  await render();
+  const chart = container.querySelector('.plan-hours');
+  expect(chart.querySelectorAll('.plan-hours-bar')).toHaveLength(12);
+  expect(chart.querySelectorAll('.plan-hours-bar.deload')).toHaveLength(3);
+  expect([...chart.querySelectorAll('.plan-hours-phase text')].map(t => t.firstChild.textContent)).toEqual(['Grundlage', 'Schwelle']);
+  await act(async () => Simulate.mouseEnter(chart.querySelectorAll('.plan-hours-hit')[5]));
+  expect(chart.querySelector('.plan-hours-tip').textContent).toBe('Woche 6 · 7,3 hGrundlagevorgemerkt'.replace('Grundlage', '23.11. · Grundlage'));
+  expect(chart.querySelectorAll('tbody tr')).toHaveLength(12);
+});
+
+test('blocks change by hand with fixed rules: no room means a conflict, freed weeks must be filled', async () => {
+  data = full;
+  const changed = jest.fn();
+  await render({ onChanged: changed });
+  await click(button('Ändern'));
+  const press = label => click(container.querySelector(`[aria-label="${label}"]`));
+  await press('Grundlage länger');
+  expect(container.querySelector('.plan-editor [role="alert"]').textContent).toContain('Kein Platz bis zum Planende');
+  await press('Grundlage kürzer');
+  await press('Grundlage kürzer');
+  expect(container.textContent).toContain('2 Wochen ohne Block');
+  expect(button('Blöcke speichern').disabled).toBe(true);
+  await act(async () => Simulate.change(container.querySelector('[aria-label="Neuer Block"]'), { target: { value: 'vo2max' } }));
+  await click(button('Hinzufügen'));
+  expect(button('Blöcke speichern').disabled).toBe(false);
+  await click(button('Blöcke speichern'));
+  expect(requests.find(r => r.path === '/api/coach/plan/phases').body).toEqual({ taperWeeks: null, phases: [
+    { id: 'b1', blockType: 'grundlage', weeks: 6 }, { id: 'b2', blockType: 'schwelle', weeks: 4 }, { id: null, blockType: 'vo2max', weeks: 2 }] });
+  expect(changed).toHaveBeenCalled();
+  expect(container.querySelector('.plan-editor')).toBeNull();
+});
+
+test('the number of weeks to work out defaults to three and can go higher', async () => {
+  data = full;
+  const horizon = jest.fn();
+  await render({ onHorizon: horizon });
+  const card = container.querySelector('.plan-horizon');
+  expect(card.textContent).toContain('3 Wochen');
+  // Between the overview and the outlined weeks.
+  expect(container.querySelector('.plan-head').compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(card.compareDocumentPosition(container.querySelector('.plan-outlined')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await click(card.querySelector('[aria-label="Eine Woche mehr"]'));
+  await click(card.querySelector('[aria-label="Eine Woche mehr"]'));
+  await click(button('Übernehmen'));
+  expect(requests.find(r => r.path === '/api/coach/plan/settings').body).toEqual({ startDate: '2026-10-19', endDate: '2027-08-12', replanMode: 'sunday', horizonWeeks: 5 });
+  expect(horizon).toHaveBeenCalled();
 });

@@ -10,6 +10,10 @@ import './CoachOnboarding.css';
 
 const timezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 const number = value => value === '' || value == null ? null : Number(value);
+// An event form that is open with unsaved input survives step changes and closing the wizard (in this browser tab).
+const EVENT_DRAFT = 'trainingPlenum.onboardingEventDraft';
+const readEventForm = () => { try { return JSON.parse(window.sessionStorage.getItem(EVENT_DRAFT)) || null; } catch (_) { return null; } };
+const writeEventForm = value => { try { if (value) window.sessionStorage.setItem(EVENT_DRAFT, JSON.stringify(value)); else window.sessionStorage.removeItem(EVENT_DRAFT); } catch (_) { /* private mode */ } };
 
 // --- Part A -------------------------------------------------------------------------------------
 
@@ -127,6 +131,12 @@ export default function CoachOnboarding({ apiBase = '', onClose, onCreated }) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [eventForm, setEventFormState] = useState(readEventForm);
+  const setEventForm = useCallback(next => setEventFormState(current => {
+    const value = typeof next === 'function' ? next(current) : next;
+    writeEventForm(value);
+    return value;
+  }), []);
   const pending = useRef(false);
   const sheet = useRef(null);
 
@@ -185,7 +195,7 @@ export default function CoachOnboarding({ apiBase = '', onClose, onCreated }) {
   const close = () => { if (!busy) onClose(); };
 
   const ctx = data && { apiBase, data, request, run, busy, update, reloadBackground, go, back, done, complete, saveProfile, onCreated,
-    returning: !!returnTo, setError };
+    returning: !!returnTo, setError, eventForm, setEventForm };
   const Page = step && PAGES[step];
   return <div className="onboarding-backdrop" onKeyDown={event => { if (event.key === 'Escape' && event.target.closest('.onboarding-sheet')) close(); }}>
     <section ref={sheet} className="onboarding-sheet" role="dialog" aria-modal="true" aria-label="Plan bauen">

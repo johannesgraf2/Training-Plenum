@@ -4,10 +4,12 @@ import { ChangeCard, request } from './CoachChat';
 import { localDate, stepDescription, workoutOverview } from './workoutModel';
 import { sportLabels } from './sports';
 import { Icon } from './icons';
+import { HorizonSetting, PhaseEditor, WeekHoursChart } from './PlanEditor';
 import './CoachPlan.css';
 
-// The plan area: phase bar up to the event, the three worked-out weeks, outlined weeks and the history.
-// Changes go through the coach chat (onAsk); only "Behalten" (lock) is a direct switch.
+// The plan area: phase bar up to the event (blocks changed by hand with "Ändern"), weekly hours up to the goal, how many
+// weeks get worked out, the worked-out weeks, outlined weeks and the history.
+// Session changes go through the coach chat (onAsk); "Behalten" (lock), the blocks and the horizon are direct.
 
 const timezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 const tzQuery = () => `timezone=${encodeURIComponent(timezone())}`;
@@ -207,13 +209,14 @@ function History({ weeks, apiBase, version }) {
 /** The plan area of the coach. advance = the running replanning or adapting job, proposalId = an open adjustment of the
  * worked-out weeks after it. */
 export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}, advance, proposalId, reviewWeek, pendingChanges = [], onAsk, onStart, onAdvance,
-  onAdapt, onJob, onChanged, onOpenWorkout }) {
+  onAdapt, onJob, onChanged, onOpenWorkout, onHorizon }) {
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState('');
   const [detail, setDetail] = useState(null);
   const [review, setReview] = useState(null);
   const [proposal, setProposal] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [reloads, setReloads] = useState(0);
   const today = localDate();
   useEffect(() => {
@@ -272,16 +275,26 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
   const proposalWeeks = proposal ? Object.keys(proposal.after || {}).sort().map(key => ({ week: key, before: proposal.before[key], after: proposal.after[key] })) : [];
   const settingsChange = proposal?.reason === 'settings';
   const reviewed = review && weeks.find(w => w.week === review.week);
+  const onlyPhases = !pendingChanges.length && (overview.adapt?.changes || []).every(change => change === 'phases');
   return <div className="coach-plan">
     <section className="coach-card plan-head" aria-label="Plan">
-      <span className="coach-eyebrow">{event ? `${event.title} · ${fullDate(event.startDate)}` : `Dein Plan bis ${fullDate(overview.frame.endDate)}`}</span>
-      <h2>{event ? (countdown === 0 ? 'Diese Woche ist es so weit' : `Noch ${countdown} ${countdown === 1 ? 'Woche' : 'Wochen'}`) : `${weeks.length} Wochen`}{current ? ` · Woche ${current.number} von ${weeks.length}` : ''}</h2>
-      <PhaseBar overview={overview} today={today} />
-      {overview.frame.rationale && <p className="coach-muted">{overview.frame.rationale}</p>}
+      <div className="plan-head-top"><div>
+        <span className="coach-eyebrow">{event ? `${event.title} · ${fullDate(event.startDate)}` : `Dein Plan bis ${fullDate(overview.frame.endDate)}`}</span>
+        <h2>{event ? (countdown === 0 ? 'Diese Woche ist es so weit' : `Noch ${countdown} ${countdown === 1 ? 'Woche' : 'Wochen'}`) : `${weeks.length} Wochen`}{current ? ` · Woche ${current.number} von ${weeks.length}` : ''}</h2></div>
+        {!editing && <button type="button" className="plan-edit" disabled={advance?.status === 'running'} onClick={() => setEditing(true)}>Ändern</button>}</div>
+      {editing ? <PhaseEditor key={`${overview.frame.id}-${reloads}`} apiBase={apiBase} overview={overview} onCancel={() => setEditing(false)}
+        onSaved={result => { setEditing(false); setReloads(n => n + 1); onChanged?.(result); }} />
+        : <PhaseBar overview={overview} today={today} />}
+      {!editing && overview.frame.rationale && overview.frame.source !== 'athlete' && <p className="coach-muted">{overview.frame.rationale}</p>}
+      <WeekHoursChart overview={overview} today={today} />
     </section>
+    <HorizonSetting key={`horizon-${overview.horizonWeeks}`} apiBase={apiBase} overview={overview} disabled={advance?.status === 'running'}
+      onSaved={() => { setReloads(n => n + 1); onHorizon?.(); }} />
     {error && <div role="alert" className="coach-message error">{error}</div>}
     {advance?.status === 'running' && <div role="status" className="coach-message"><span className="coach-spinner" />{(advance.steps?.find(s => s.status === 'running') || advance.steps?.[0])?.label || 'Nächste Woche'} … Der Coach plant.</div>}
-    {(overview.adapt || pendingChanges.length > 0) && advance?.status !== 'running' && <div className="coach-message plan-adapt"><span><strong>Deine Einstellungen haben sich geändert.</strong> Soll ich deinen Plan daran anpassen?</span>
+    {(overview.adapt || pendingChanges.length > 0) && advance?.status !== 'running' && <div className="coach-message plan-adapt"><span>{onlyPhases
+      ? <><strong>Deine Blöcke haben sich geändert.</strong> Die ausgearbeiteten Wochen passen nicht mehr dazu. Soll ich sie neu ausarbeiten?</>
+      : <><strong>Deine Einstellungen haben sich geändert.</strong> Soll ich deinen Plan daran anpassen?</>}</span>
       <button type="button" onClick={() => onAdapt?.(overview.adapt?.changes || [])}>Plan anpassen</button></div>}
     {proposal && <section className="coach-card" aria-label={settingsChange ? 'Anpassung an deine Einstellungen' : 'Anpassung nach deiner Woche'}>
       <span className="coach-eyebrow">{settingsChange ? 'Nach deinen Einstellungen' : 'Nach deiner letzten Woche'}</span>

@@ -218,7 +218,7 @@ function Schedule({ plan, todayKey, onEditEvents, onOpenCoach }) {
 }
 
 export default function Home({ apiBase, activities, plannedWorkouts, workoutLoadError, onReloadWorkouts, onOpenActivity, onOpenWorkout, onEditGoal, bestEffortsYear,
-  whoopDays = {}, onOpenWhoop, onOpenCoach, today: day = null, onOpenCheckIn, user = null }) {
+  whoopDays = {}, onOpenWhoop, onOpenCoach, onStartOnboarding, today: day = null, onOpenCheckIn, user = null }) {
   const appearance = useAppearance(apiBase);
   const today = new Date();
   const todayKey = localDate(today);
@@ -305,7 +305,7 @@ export default function Home({ apiBase, activities, plannedWorkouts, workoutLoad
         <section className="home-card home-block" aria-labelledby="home-today">
           <div className="home-block-head"><h2 id="home-today">Heute</h2><button type="button" className="home-link" aria-label="Workout planen für heute" onClick={() => onOpenWorkout({ date: todayKey })}>Workout planen<Icon name="arrow" size={14} /></button></div>
           <RecoveryHint hint={hint} onOpenWorkout={onOpenWorkout} onOpenCoach={onOpenCoach} />
-          <CheckInStrip today={day} onOpen={onOpenCheckIn} onOpenCoach={onOpenCoach} />
+          <CheckInStrip today={day} onOpen={onOpenCheckIn} onOpenCoach={onOpenCoach} onStartOnboarding={onStartOnboarding} />
           <div className="home-today">
             {todayPlans.map(workout => <TodayPlan key={workout.id} workout={workout} coach={coachIds.has(workout.id)} onOpen={onOpenWorkout} />)}
             {todayActs.map(activity => <ActivityLine key={activity.id} activity={activity} onOpen={onOpenActivity} />)}

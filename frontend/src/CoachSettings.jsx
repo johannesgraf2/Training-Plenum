@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { SourceList } from './CoachOnboarding.jsx';
 import { KeyNotice, ProviderForm } from './CoachProvider';
-import { Field, ThresholdFields, Tiles, thresholdChanges, thresholdDraft, thresholdProblem } from './OnboardingUI';
-import { EventForm, EventList, WeekFields, WindowEditor, fittedWish, planSports, weekDraft, weekProblem } from './PlanSteps';
-import { GOALS, METRICS, SPORT_NAMES, STAGE_SPORTS, dateLabel, hoursHint, hoursLabel, lastAEvent, newId, splitEvents, weeksLabel, windowHours } from './coachOnboarding';
+import { DateField, Field, ThresholdFields, Tiles, thresholdChanges, thresholdDraft, thresholdProblem } from './OnboardingUI';
+import { EventForm, EventList, WeekPanel, WindowEditor, fittedWish, planSports, weekDraft, weekProblem, weekValues } from './PlanSteps';
+import { GOALS, METRICS, SPORT_NAMES, STAGE_SPORTS, dateLabel, lastAEvent, newId, splitEvents, weeksLabel } from './coachOnboarding';
 import { localDate } from './workoutModel';
 import './CoachOnboarding.css';
 
@@ -136,8 +136,8 @@ export function ExceptionEditor({ exceptions, busy, onSave }) {
       <div className="onboarding-segments" role="radiogroup" aria-label="Art der Ausnahme">{EXCEPTION_KINDS.map(([key, text]) =>
         <button key={key} type="button" role="radio" aria-checked={draft.kind === key} onClick={() => set({ kind: key })}>{text}</button>)}</div>
       <div className="coach-form-grid">
-        <Field label="Von"><input type="date" min={today} value={draft.from} onChange={e => set({ from: e.target.value })} /></Field>
-        <Field label="Bis"><input type="date" min={draft.from || today} value={draft.to} onChange={e => set({ to: e.target.value })} /></Field>
+        <DateField label="Von" min={today} value={draft.from} onChange={from => set({ from })} />
+        <DateField label="Bis" min={draft.from || today} value={draft.to} onChange={to => set({ to })} />
         {draft.kind === 'available' && <Field label="Minuten pro Tag"><input type="number" min="0" max="1440" step="5" value={draft.maxMinutes} onChange={e => set({ maxMinutes: e.target.value })} /></Field>}
       </div>
       <Field label="Notiz (optional)"><input maxLength={300} value={draft.note} placeholder="z. B. Urlaub auf Mallorca, Rad dabei" onChange={e => set({ note: e.target.value })} /></Field>
@@ -153,10 +153,7 @@ function AvailabilitySection({ ctx }) {
   const windows = availability.windows || [];
   const [form, setForm] = useState(null);
   const [week, setWeek] = useState(() => weekDraft(availability));
-  const total = windowHours(windows);
   const maximum = number(week.maxWeeklyHours);
-  const effective = maximum == null ? total : Math.min(total, maximum);
-  const hint = windows.length ? hoursHint(events, effective) : null;
   const problem = weekProblem(windows, maximum);
   const store = (patch, message, done) => ctx.run('Verfügbarkeit wird gespeichert …', async () => {
     await ctx.saveProfile({ availability: patch });
@@ -165,15 +162,14 @@ function AvailabilitySection({ ctx }) {
   });
   const saveWindows = list => store({ windows: list, ...fittedWish(availability, list, availability.maxWeeklyHours) }, 'Zeitfenster gespeichert.', () => setForm(null));
   return <Section title="Verfügbarkeiten" intro="Wann du trainieren kannst. Der Coach plant darin und nutzt nicht jedes Fenster.">
+    {!form && <WeekPanel week={week} windows={windows} events={events} background={profile.background} onChange={setWeek}>
+      <div className="coach-actions"><button type="button" disabled={!!ctx.busy || !!problem}
+        onClick={() => store({ ...weekValues(week, maximum), ...fittedWish(availability, windows, maximum) }, 'Wochenwerte gespeichert.')}>Wochenwerte speichern</button></div>
+    </WeekPanel>}
+    {!form && <h3>Deine Tage</h3>}
     <WindowEditor windows={windows} sports={planSports(profile)} busy={!!ctx.busy} form={form} onForm={setForm} onSave={saveWindows} />
     {!form && <>
-      <h3>Für die ganze Woche</h3>
-      <WeekFields week={week} total={total} onChange={setWeek} />
-      <p className="onboarding-hint">{hoursLabel(effective)} pro Woche verfügbar</p>
-      {hint && <p className="onboarding-hint warning" role="note">{hint}</p>}
       {problem && <p className="coach-muted" role="note">{problem}</p>}
-      <div className="coach-actions"><button type="button" disabled={!!ctx.busy || !!problem}
-        onClick={() => store({ maxWeeklyHours: maximum, restDay: week.restDay || null, longDay: week.longDay || null, ...fittedWish(availability, windows, maximum) }, 'Wochenwerte gespeichert.')}>Wochenwerte speichern</button></div>
       <ExceptionEditor exceptions={availability.exceptions || []} busy={!!ctx.busy} onSave={(list, done) => store({ exceptions: list }, 'Ausnahmen gespeichert.', done)} />
     </>}
   </Section>;
@@ -229,8 +225,8 @@ function EventsSection({ ctx, planActive }) {
       {planActive && settings && <>
         <h3>Zeitraum</h3>
         <p className="coach-muted">Der Plan läuft seit {dateLabel(settings.startDate, true)}. Der Start bleibt; für einen neuen Start erstellst du den Plan unter „Plan“ neu.</p>
-        <div className="coach-form-grid"><Field label="Plan endet" hint={endProblem ? undefined : `${weeksLabel(settings.startDate, end)} Plan`}>
-          <input type="date" min={settings.startDate} value={end} onChange={e => setEnd(e.target.value)} /></Field></div>
+        <div className="coach-form-grid"><DateField label="Plan endet" hint={endProblem ? undefined : `${weeksLabel(settings.startDate, end)} Plan`}
+          min={settings.startDate} value={end} onChange={setEnd} /></div>
         {endProblem && <p className="coach-muted" role="note">{endProblem}</p>}
         <div className="coach-actions"><button type="button" disabled={!!ctx.busy || !!endProblem || end === settings.endDate} onClick={saveEnd}>Planende speichern</button></div>
       </>}

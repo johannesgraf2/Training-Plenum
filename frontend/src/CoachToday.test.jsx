@@ -72,6 +72,8 @@ test('"Später" keeps the dialog away until the next day', async () => {
   expect(shouldAskCheckIn(today)).toBe(false);
   expect(shouldAskCheckIn({ ...today, date: '2026-10-22' })).toBe(true);
   expect(shouldAskCheckIn({ ...today, dailyCheckIn: false, date: '2026-10-22' })).toBe(false);
+  // Before the onboarding the coach asks nothing; the start page invites to set it up.
+  expect(shouldAskCheckIn({ ...today, onboarded: false, date: '2026-10-22' })).toBe(false);
 });
 
 test('the start page line shows the open check-in or the traffic light', async () => {
@@ -81,4 +83,13 @@ test('the start page line shows the open check-in or the traffic light', async (
   expect(open).toHaveBeenCalled();
   await act(async () => root.render(<CheckInStrip today={{ ...today, checkIn: { date: today.date }, readiness: { level: 'yellow', reasons: ['Alkohol gestern'] } }} />));
   expect(container.textContent).toBe('Gelb – etwas zurücknehmen · Alkohol gesternZum Coach');
+});
+
+test('before the onboarding the start page invites to set up the profile instead of the check-in', async () => {
+  const start = jest.fn();
+  await act(async () => root.render(<CheckInStrip today={{ ...today, onboarded: false }} onOpen={jest.fn()} onStartOnboarding={start} />));
+  expect(container.textContent).toContain('Erst dein Profil einrichten.');
+  expect(container.textContent).not.toContain('Wie geht es dir heute?');
+  await click(button('Jetzt einrichten'));
+  expect(start).toHaveBeenCalled();
 });

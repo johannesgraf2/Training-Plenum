@@ -115,3 +115,69 @@
 }
 /* Room below the last card, so the floating button never covers it. */
 .ai-coach:has(> .coach-ask) { padding-bottom: 96px; }
+
+/* Changing the blocks by hand (PlanEditor.jsx) */
+.plan-head-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.ai-coach button.plan-edit { flex: none; padding: 7px 14px; font-size: 12px; }
+.plan-editor { margin-top: 14px; }
+.plan-editor-taper { display: grid; gap: 7px; margin: 0 0 14px; font-size: 12px; font-weight: 600; }
+.plan-editor-taper small { font-weight: 400; color: var(--fg-64748b); line-height: 1.5; }
+.plan-editor-taper .onboarding-segments { margin: 0; }
+.plan-editor-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.plan-editor-item { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--bd-e2e8f0); border-radius: 4px; background: var(--bg-ffffff); }
+.plan-editor-item.locked { opacity: .6; background: var(--bg-f8fafc); }
+.plan-editor-item .coach-season-dot { width: 12px; height: 12px; border-radius: 3px; background: var(--muted-2); }
+.plan-editor-item .coach-season-dot.taper, .plan-editor-item .coach-season-dot.wiedereinstieg { background: var(--line-strong); }
+.plan-editor-name { display: flex; flex-direction: column; min-width: 0; font-size: 13px; }
+.plan-editor-name small { font-size: 11px; color: var(--fg-64748b); }
+.plan-editor-weeks { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.plan-editor-weeks span { min-width: 74px; text-align: center; font-weight: 600; }
+.ai-coach .plan-editor-weeks button, .ai-coach .plan-editor-actions button { padding: 5px 9px; min-height: 0; display: inline-flex; align-items: center; }
+.plan-editor-actions { display: inline-flex; gap: 4px; }
+.plan-editor-gap { padding: 7px 10px; border: 1px dashed var(--accent); border-radius: 4px; color: var(--accent-text); font-size: 12px; font-weight: 600; background: var(--accent-bg); }
+.plan-editor-gap.over { border-color: var(--danger); color: var(--danger); background: var(--danger-bg); }
+.plan-editor-add { display: flex; gap: 8px; margin-bottom: 12px; }
+.plan-editor-add select { font: inherit; font-size: 12px; padding: 8px 10px; border: 1px solid var(--bd-d4dce7); border-radius: 2px; background: var(--bg-ffffff); color: var(--fg-1e293b); }
+
+/* Weekly hours up to the goal */
+.plan-hours { margin: 22px 0 0; }
+.plan-hours figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; align-items: baseline; margin-bottom: 4px; }
+.plan-hours-legend { display: inline-flex; gap: 14px; font-size: 11px; color: var(--fg-64748b); }
+.plan-hours-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.plan-hours-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.plan-hours-legend i.load, .plan-hours-bar.load { background: var(--ink-2); fill: var(--ink-2); }
+.plan-hours-legend i.deload, .plan-hours-bar.deload { background: var(--line-strong); fill: var(--line-strong); }
+.plan-hours-wrap { position: relative; }
+.plan-hours svg { display: block; max-width: 100%; overflow: visible; font-family: var(--font-body); }
+.plan-hours-bar.past { opacity: .5; }
+.plan-hours-bar.active { opacity: 1; filter: brightness(1.25); }
+.plan-hours-grid line { stroke: var(--line-soft); stroke-width: 1; }
+.plan-hours-grid text, .plan-hours-x, .plan-hours-unit { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.plan-hours-axis { stroke: var(--line-strong); stroke-width: 1; }
+.plan-hours-hit { fill: transparent; outline: none; }
+.plan-hours-hit:focus-visible { stroke: var(--focus); stroke-width: 2; }
+.plan-hours-today { fill: var(--accent); }
+.plan-hours-event line { stroke: var(--muted-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.plan-hours-event text { font-size: 10px; font-weight: 700; fill: var(--ink-2); }
+.plan-hours-phase line { stroke: var(--muted-2); stroke-width: 3; stroke-linecap: round; }
+.plan-hours-phase line.grundlage { stroke: var(--green); }
+.plan-hours-phase line.aufbau { stroke: var(--blue); }
+.plan-hours-phase line.schwelle { stroke: var(--ochre); }
+.plan-hours-phase line.vo2max { stroke: var(--accent); }
+.plan-hours-phase line.wettkampfspezifisch { stroke: var(--teal); }
+.plan-hours-phase line.taper, .plan-hours-phase line.uebergang, .plan-hours-phase line.wiedereinstieg { stroke: var(--line-strong); }
+.plan-hours-phase text { font-size: 10px; fill: var(--ink-2); }
+.plan-hours-tip { position: absolute; top: 0; transform: translateX(-50%); display: grid; gap: 2px; padding: 7px 10px; border-radius: 4px; background: var(--card); border: 1px solid var(--card-line); box-shadow: var(--card-shadow); font-size: 11px; color: var(--ink-2); pointer-events: none; white-space: nowrap; }
+.plan-hours-tip strong { color: var(--ink); font-size: 12px; }
+.plan-hours-table { margin-top: 6px; font-size: 12px; }
+.plan-hours-table summary { cursor: pointer; color: var(--fg-64748b); }
+
+.plan-horizon { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 24px; }
+.plan-horizon h3 { margin: 4px 0; }
+.plan-horizon p { margin: 0; max-width: 520px; }
+.plan-horizon-control { display: flex; align-items: center; gap: 12px; }
+
+@media (max-width: 650px) {
+  .plan-editor-item { grid-template-columns: 12px minmax(0, 1fr); }
+  .plan-editor-weeks, .plan-editor-actions { grid-column: 2; }
+}

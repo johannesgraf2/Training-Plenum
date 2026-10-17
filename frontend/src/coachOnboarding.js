@@ -176,11 +176,17 @@ export const newId = prefix => `${prefix}-${Date.now().toString(36)}-${(windowCo
 // Recommended weekly hours for the A event, to warn when the windows are too few.
 const EVENT_HOURS = { ride: { ultra: 10, granFondo: 6, xcMarathon: 6, gravel: 6, roadRace: 6 }, run: { marathon: 5, ultra: 7, trail: 5 } };
 const EVENT_NAMES = { ultra: 'ein Ultra-Event', granFondo: 'einen Gran Fondo', xcMarathon: 'einen XC Marathon', gravel: 'ein Gravel-Rennen', roadRace: 'ein Straßenrennen', marathon: 'einen Marathon', trail: 'einen Traillauf' };
-export function hoursHint(events, hours) {
+// The minimum weekly hours the coach recommends for the A event, or null when its kind has none.
+export function recommendedHours(events) {
   const event = lastAEvent(events);
   const minimum = event && EVENT_HOURS[event.sport]?.[event.subtype];
-  return minimum && hours < minimum ? `Für ${EVENT_NAMES[event.subtype]} empfehle ich mindestens ${minimum} h/Woche, du hast ${hoursLabel(hours)} eingetragen.` : null;
+  return minimum ? { hours: minimum, label: EVENT_NAMES[event.subtype], event: event.title } : null;
 }
+export function hoursHint(events, hours) {
+  const recommended = recommendedHours(events);
+  return recommended && hours < recommended.hours ? `Für ${recommended.label} empfehle ich mindestens ${recommended.hours} h/Woche, du hast ${hoursLabel(hours)} eingetragen.` : null;
+}
+export const dayNames = (days, index = 2) => DAYS.filter(([key]) => days.includes(key)).map(day => day[index]);
 
 // --- Plan creation job --------------------------------------------------------------------------
 

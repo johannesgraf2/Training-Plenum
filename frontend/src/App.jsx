@@ -82,6 +82,9 @@ export default function App() {
   const [checkInOpen, setCheckInOpen] = useState(false);
   const [todayVersion, setTodayVersion] = useState(0);
   const [coachAdjust, setCoachAdjust] = useState(0);
+  // A new athlete starts with the onboarding (once per visit); the morning check-in waits until it is done.
+  const [onboardingVersion, setOnboardingVersion] = useState(0);
+  const onboardingShown = useRef(false);
   // The coach stays mounted once opened, so a running proposal or week planning goes on while the athlete
   // looks at other pages. The nav shows that it is working, and that a result waits once it is done.
   const [coachOpened, setCoachOpened] = useState(false);
@@ -168,7 +171,8 @@ export default function App() {
     try {
       const view = await loadToday(API);
       setToday(view);
-      if (ask && shouldAskCheckIn(view)) setCheckInOpen(true);
+      if (view.onboarded === false && !onboardingShown.current) { onboardingShown.current = true; startOnboarding(); }
+      else if (ask && shouldAskCheckIn(view)) setCheckInOpen(true);
     } catch { /* the coach is optional; without it the app works as before */ }
   }, []);
   useEffect(() => {
@@ -227,6 +231,7 @@ export default function App() {
     if (!label && !coachVisibleRef.current) setCoachDone(true);
   };
   const openCoachPlan = () => { setCoachTab(t => ({ tab: 'today', version: t.version + 1 })); setPage('coach'); setSelected(null); window.location.hash = ''; };
+  function startOnboarding() { setOnboardingVersion(v => v + 1); openCoachPlan(); }
   const checkInSaved = view => { setToday(view); setTodayVersion(v => v + 1); };
   const adjustAfterCheckIn = () => { setCheckInOpen(false); setCoachAdjust(v => v + 1); openCoachPlan(); };
   // Goal, events and availability live in the coach settings.
@@ -356,7 +361,7 @@ export default function App() {
           <Home apiBase={API} activities={activities} plannedWorkouts={plannedWorkouts} workoutLoadError={workoutLoadError}
             onReloadWorkouts={reloadWorkouts} onOpenActivity={openActivity} onOpenWorkout={setWorkoutEditor}
             onEditGoal={() => openCoachSettings('events')} bestEffortsYear={calMonth.getFullYear()}
-            whoopDays={whoopDays} onOpenWhoop={() => setShowWhoop(true)} onOpenCoach={openCoachPlan}
+            whoopDays={whoopDays} onOpenWhoop={() => setShowWhoop(true)} onOpenCoach={openCoachPlan} onStartOnboarding={startOnboarding}
             today={today} onOpenCheckIn={() => setCheckInOpen(true)} user={user} />
         ) : page === 'calendar' ? (
           <div className="calendar">
@@ -522,6 +527,7 @@ export default function App() {
         ) : null}
         {coachOpened && <div hidden={!coachVisible}>
           <AICoach initialTab={coachTab.tab} initialSection={coachTab.section} tabVersion={coachTab.version} adjustVersion={coachAdjust} todayVersion={todayVersion}
+            onboardingVersion={onboardingVersion}
             apiBase={API} workouts={plannedWorkouts} onOpenWorkout={setWorkoutEditor}
             onBusyChange={coachBusyChanged} onTodayChanged={setToday}
             onWorkoutsChanged={() => api('/api/workouts').then(saved => { setPlannedWorkouts(saved); setWorkoutLoadError(''); })} />
