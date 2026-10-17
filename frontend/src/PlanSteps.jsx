@@ -492,6 +492,8 @@ export function ReadyStep({ ctx }) {
   const inPlan = settings ? events.filter(e => (e.endDate || e.startDate) >= settings.startDate && e.startDate <= settings.endDate) : [];
   const intervals = Object.entries(background.intervals || {}).map(([sport, yes]) => `${SPORT_NAMES[sport]} ${yes ? 'ja' : 'nein'}`).join(', ');
   const start = () => ctx.run('Wird gespeichert …', async () => { await ctx.saveProfile({}, 'ready'); ctx.go('creating'); });
+  // Everything is saved with its step already; marking this step lets the wizard open here again.
+  const saveForLater = () => ctx.run('Wird gespeichert …', async () => { await ctx.saveProfile({}, 'ready'); ctx.close(); });
   return <>
     <h2>Bereit</h2>
     <p>Überprüfe deine Einstellungen und ich lege los.</p>
@@ -510,7 +512,10 @@ export function ReadyStep({ ctx }) {
         <p>{weeksLabel(settings.startDate, settings.endDate)} · {dateLabel(settings.startDate, true)} bis {dateLabel(settings.endDate, true)}</p></> : <p>Noch offen</p>}
     </Summary>
     {!provider.configured && <div className="coach-message">Zum Erstellen braucht der Coach deinen AI-Provider. <button type="button" onClick={() => ctx.go('provider', 'ready')}>AI-Provider verbinden</button></div>}
-    <StepFooter onBack={ctx.back} onNext={start} nextLabel="Los geht's" disabled={!provider.configured || !settings} busy={ctx.busy} />
+    <p className="coach-muted" role="note">Deine Eingaben sind gespeichert. Du kannst jetzt schließen und den Plan später erstellen, du landest dann wieder hier.</p>
+    <StepFooter onBack={ctx.back} onNext={start} nextLabel="Los geht's" disabled={!provider.configured || !settings} busy={ctx.busy}>
+      <button type="button" disabled={!!ctx.busy} onClick={saveForLater}>Speichern &amp; später erstellen</button>
+    </StepFooter>
   </>;
 }
 
@@ -551,14 +556,18 @@ export function CreatingStep({ ctx }) {
     return () => { cancelled = true; clearTimeout(timer.current); };
     // A retry starts the creation again; the server continues at the missing step.
   }, [attempt]);
+  // Closing waits for a running creation; after a failure the inputs are saved and closing keeps them.
+  useEffect(() => { ctx.setCreating(job.status === 'running'); return () => ctx.setCreating(false); }, [job.status]);
   return <>
     <h2>{job.status === 'done' ? 'Dein Plan ist aktiv' : 'Plan wird erstellt'}</h2>
-    <p>{job.status === 'failed' ? 'Bisher Erstelltes bleibt erhalten.' : 'Das dauert ein bis zwei Minuten. Die Workouts der ersten 3 Wochen landen direkt im Kalender.'}</p>
+    <p>{job.status === 'failed' ? 'Deine Eingaben und bisher Erstelltes bleiben gespeichert. Du kannst es gleich oder später erneut versuchen, der Coach macht dann beim fehlenden Schritt weiter.'
+      : 'Das dauert ein bis zwei Minuten. Die Workouts der ersten 3 Wochen landen direkt im Kalender.'}</p>
     <ol className="onboarding-create" aria-live="polite">{job.steps.map(step => <li key={step.key} className={step.status}>
       <span aria-hidden="true">{step.status === 'running' ? <span className="coach-spinner" /> : STATUS_TEXT[step.status]}</span>{step.label}
       {step.status === 'done' && <span className="visually-hidden"> erledigt</span>}</li>)}</ol>
     {job.status === 'failed' && <div role="alert" className="coach-message error">{job.error || 'Die Planerstellung ist fehlgeschlagen.'}
       <button type="button" onClick={() => setAttempt(a => a + 1)}>Erneut versuchen</button></div>}
-    {job.status === 'failed' && <StepFooter onBack={() => ctx.go('ready')} />}
+    {job.status === 'failed' && <StepFooter onBack={() => ctx.go('ready')}>
+      <button type="button" onClick={ctx.close}>Später erneut versuchen</button></StepFooter>}
   </>;
 }

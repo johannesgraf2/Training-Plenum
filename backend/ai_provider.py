@@ -22,6 +22,8 @@ KEY_FILE_ENV = 'TRAINHUB_AI_ENCRYPTION_KEY_FILE'
 DEFAULT_KEY_FILE = Path(__file__).resolve().parent.parent / '.run' / 'ai-encryption-key.txt'
 MAX_RESPONSE_BYTES = 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 60
+# A generation (a whole plan's phases, a week with its sessions) may take minutes; it runs in a background job.
+GENERATE_TIMEOUT_SECONDS = 180
 # Reasoning models think before answering: allow them more time and output budget.
 REASONING_EFFORTS = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh')
 REASONING_TIMEOUT_SECONDS = 300
@@ -197,7 +199,9 @@ class OpenAIProvider(AIProvider):
                        404: 'Das konfigurierte Modell ist nicht verfügbar.',
                        429: 'AI-Kontingent oder Anfragelimit erreicht. Bitte später erneut versuchen.'}.get(code)
             raise ProviderError(message or 'Der AI-Provider konnte die Anfrage nicht verarbeiten.') from None
-        except (URLError, OSError, TimeoutError):
+        except (URLError, OSError, TimeoutError) as error:
+            if isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError):
+                raise ProviderError('Der AI-Provider hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.') from None
             raise ProviderError('Der AI-Provider ist derzeit nicht erreichbar. Bitte später erneut versuchen.') from None
         except (ValueError, UnicodeError, TypeError, RecursionError) as error:
             if isinstance(error, ProviderError):
@@ -226,7 +230,7 @@ class OpenAIProvider(AIProvider):
             'text': {'format': {'type': 'json_schema', 'name': 'trainhub_recommendation',
                                 'strict': True, 'schema': schema}},
         }
-        timeout = REQUEST_TIMEOUT_SECONDS
+        timeout = GENERATE_TIMEOUT_SECONDS
         if reasoning_effort:
             # Reasoning tokens count toward max_output_tokens.
             payload.update(reasoning={'effort': reasoning_effort}, max_output_tokens=40000)

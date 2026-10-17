@@ -137,6 +137,7 @@ export default function CoachOnboarding({ apiBase = '', onClose, onCreated }) {
     writeEventForm(value);
     return value;
   }), []);
+  const [creating, setCreating] = useState(false);  // A plan creation runs: closing waits for it.
   const pending = useRef(false);
   const sheet = useRef(null);
 
@@ -192,16 +193,16 @@ export default function CoachOnboarding({ apiBase = '', onClose, onCreated }) {
     await saveProfile(patch, id);
     next(id);
   });
-  const close = () => { if (!busy) onClose(); };
+  const close = () => { if (!busy && !creating) onClose(); };
 
   const ctx = data && { apiBase, data, request, run, busy, update, reloadBackground, go, back, done, complete, saveProfile, onCreated,
-    returning: !!returnTo, setError, eventForm, setEventForm };
+    returning: !!returnTo, setError, eventForm, setEventForm, close, setCreating };
   const Page = step && PAGES[step];
   return <div className="onboarding-backdrop" onKeyDown={event => { if (event.key === 'Escape' && event.target.closest('.onboarding-sheet')) close(); }}>
     <section ref={sheet} className="onboarding-sheet" role="dialog" aria-modal="true" aria-label="Plan bauen">
       <header className="onboarding-header">
         {step && step !== 'creating' ? <Progress step={step} /> : <span className="coach-eyebrow">Dein Plan</span>}
-        <button type="button" className="onboarding-close" disabled={!!busy || step === 'creating'} onClick={close} aria-label="Schließen, später weitermachen">×</button>
+        <button type="button" className="onboarding-close" disabled={!!busy || creating} onClick={close} aria-label="Schließen, später weitermachen">×</button>
       </header>
       {error && <div role="alert" className="coach-message error">{error}{!data && <button type="button" onClick={() => setAttempt(a => a + 1)}>Erneut laden</button>}</div>}
       {busy && <div role="status" className="coach-message"><span className="coach-spinner" />{busy}</div>}

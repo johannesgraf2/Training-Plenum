@@ -288,10 +288,29 @@ test('a failed creation keeps everything and continues on retry', async () => {
   expect(heading()).toBe('Bereit');
   await click(button("Los geht's"));
   expect(container.querySelector('[role="alert"]').textContent).toContain('Der Provider hat nicht geantwortet.');
-  expect(container.textContent).toContain('Bisher Erstelltes bleibt erhalten.');
+  expect(container.textContent).toContain('Deine Eingaben und bisher Erstelltes bleiben gespeichert.');
+  // After the failure the dialog may close; the inputs stay saved for later.
+  expect(container.querySelector('.onboarding-close').disabled).toBe(false);
+  expect(button('Später erneut versuchen')).toBeTruthy();
   await click(button('Erneut versuchen'));
   expect(writes('/api/coach/plan/create').map(r => r.body)).toEqual([{}, {}]);
   expect(created).toHaveBeenCalled();
+});
+
+test('the ready step saves for later and a failed creation closes without losing anything', async () => {
+  server.profile.onboarding.completed = ['sports', 'sources', 'thresholds', 'provider', 'background', 'goal', 'planSports', 'period', 'availability'];
+  server.provider.configured = true;
+  server.settings = { startDate: '2026-10-19', endDate: '2027-01-10', replanMode: 'manual' };
+  await render();
+  expect(container.textContent).toContain('Deine Eingaben sind gespeichert.');
+  await click(button('Speichern & später erstellen'));
+  expect(server.profile.onboarding.completed).toContain('ready');
+  expect(closed).toHaveBeenCalledTimes(1);
+  expect(writes('/api/coach/plan/create')).toEqual([]);
+  responses['POST /api/coach/plan/create'] = async () => ({ ok: false, status: 502, json: async () => ({ error: 'Der AI-Provider hat nicht rechtzeitig geantwortet.' }) });
+  await click(button("Los geht's"));
+  await click(button('Später erneut versuchen'));
+  expect(closed).toHaveBeenCalledTimes(2);
 });
 
 test('a creation that already runs is followed instead of failing', async () => {
