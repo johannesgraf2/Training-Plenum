@@ -325,6 +325,13 @@ test('a failed replanning says what broke and still loads the weeks planned befo
     error: 'Woche 10: Der Coach hat zweimal eine Regel verfehlt (Im Block „VO2max“ mindestens 2× VO2max-Einheit pro Belastungswoche).' } });
   await render({ initialTab: 'today' });
   expect(container.querySelector('[role="alert"]').textContent).toBe('Planung abgebrochen: Woche 10: Der Coach hat zweimal eine Regel verfehlt '
-    + '(Im Block „VO2max“ mindestens 2× VO2max-Einheit pro Belastungswoche). Bereits geplante Wochen bleiben erhalten.');
+    + '(Im Block „VO2max“ mindestens 2× VO2max-Einheit pro Belastungswoche). Bereits geplante Wochen bleiben erhalten.Erneut planen');
   expect(changed).toHaveBeenCalled();
+  // "Erneut planen" starts the same job again; the server goes on with the missing weeks.
+  responses['POST /api/coach/plan/advance'] = ok({ job: { id: 'job-2', kind: 'advance', status: 'done', steps: [],
+    result: { week: '2026-W49', weekNumber: 10, calculatedHours: 9, focus: 'VO2max', proposalId: null } } });
+  await click(button('Erneut planen'));
+  expect(writes('/api/coach/plan/advance').map(r => r.body)).toEqual([{ trigger: 'auto' }, { trigger: 'auto' }]);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).toContain('Woche 10 geplant – 9 h, Fokus VO2max.');
 });

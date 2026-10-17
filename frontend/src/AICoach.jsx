@@ -79,6 +79,8 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
   const [busy, setBusy] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [retry, setRetry] = useState(null);  // How to start a failed planning job again.
+  const lastJob = useRef(null);
   const [notice, setNotice] = useState('');
   const [onboarding, setOnboarding] = useState(false);
   const [reloads, setReloads] = useState(0);  // A finished or closed onboarding loads the coach again.
@@ -103,7 +105,7 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
   }
   async function run(label, action) {
     if (pending.current) return;
-    pending.current = true; setBusy(label); setError(''); setNotice('');
+    pending.current = true; setBusy(label); setError(''); setNotice(''); setRetry(null);
     try { await action(); } catch (e) { setError(e.message || 'Die Anfrage konnte nicht abgeschlossen werden.'); }
     finally { pending.current = false; setBusy(''); }
   }
@@ -140,11 +142,14 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
     } else if (state.status === 'failed') {
       setError(kind === 'adapt' ? `Der Plan konnte nicht angepasst werden: ${state.error || 'unbekannter Fehler'}`
         : `Planung abgebrochen: ${state.error || 'unbekannter Fehler'} Bereits geplante Wochen bleiben erhalten.`);
+      setRetry(lastJob.current);
       // Weeks planned before the failure are saved: plan and calendar show them.
       afterPlanChange().catch(() => {});
     }
   }
   function startJob(path, body, quiet) {
+    lastJob.current = { path, body };
+    setRetry(null);
     request(`${path}?${tzQuery()}`, 'POST', body)
       .then(data => { if (data.job) followJob(data.job); }, e => { if (e.status === 409 && e.data?.job) followJob(e.data.job); else if (!quiet) setError(e.message); });
   }
@@ -239,7 +244,8 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
   }
 
   const messages = <>
-    {error && <div role="alert" className="coach-message error">{error}{!profile && !loading && <button onClick={() => window.location.reload()}>Erneut laden</button>}</div>}
+    {error && <div role="alert" className="coach-message error">{error}{!profile && !loading && <button onClick={() => window.location.reload()}>Erneut laden</button>}
+      {retry && <button type="button" onClick={() => { setError(''); setNotice(''); startJob(retry.path, retry.body); }}>Erneut planen</button>}</div>}
     {notice && <div role="status" className="coach-message success">{notice}</div>}
     {busy && <div role="status" className="coach-message"><span className="coach-spinner" />{busy}</div>}
     {job?.status === 'running' && <JobProgress job={job} stopping={stopping} onStop={stopJob} />}

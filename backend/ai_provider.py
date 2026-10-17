@@ -24,6 +24,12 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 60
 # A generation (a whole plan's phases, a week with its sessions) may take minutes; it runs in a background job.
 GENERATE_TIMEOUT_SECONDS = 180
+# Why the provider stopped an answer early, as the athlete reads it.
+INCOMPLETE_MESSAGES = {
+    'max_output_tokens': 'Die AI-Antwort wurde am Ausgabelimit abgeschnitten, auch mit doppeltem Limit. Der Plan wurde nicht '
+                         'geändert. Ein niedrigerer Reasoning-Aufwand in den Einstellungen hilft meist.',
+    'content_filter': 'Der AI-Provider hat die Antwort gefiltert. Der Plan wurde nicht geändert.',
+}
 # Reasoning models think before answering: allow them more time and output budget.
 REASONING_EFFORTS = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh')
 REASONING_TIMEOUT_SECONDS = 300
@@ -235,13 +241,20 @@ class OpenAIProvider(AIProvider):
             # Reasoning tokens count toward max_output_tokens.
             payload.update(reasoning={'effort': reasoning_effort}, max_output_tokens=40000)
             timeout = REASONING_TIMEOUT_SECONDS
-        result = self._request(api_key, '/responses', payload, timeout=timeout)
-        # Charged tokens count even when the answer turns out unusable.
-        usage = token_usage(result.get('usage'))
-        if usage and on_usage:
-            on_usage(usage)
+        for attempt in range(2):
+            result = self._request(api_key, '/responses', payload, timeout=timeout)
+            # Charged tokens count even when the answer turns out unusable.
+            usage = token_usage(result.get('usage'))
+            if usage and on_usage:
+                on_usage(usage)
+            reason = (result.get('incomplete_details') or {}).get('reason') if isinstance(result.get('incomplete_details'), dict) else None
+            # An answer cut off at the output budget (reasoning counts toward it) gets one more try with twice the budget.
+            if result.get('status') == 'incomplete' and reason == 'max_output_tokens' and not attempt:
+                payload['max_output_tokens'] *= 2
+                continue
+            break
         if result.get('status') != 'completed' or result.get('error'):
-            raise ProviderError('Die AI-Antwort ist unvollständig. Der Plan wurde nicht geändert.')
+            raise ProviderError(INCOMPLETE_MESSAGES.get(reason, 'Die AI-Antwort ist unvollständig. Der Plan wurde nicht geändert.'))
         texts = []
         outputs = result.get('output')
         if not isinstance(outputs, list):
