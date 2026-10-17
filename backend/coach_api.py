@@ -28,9 +28,9 @@ from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OV
 from coach_chat import (MAX_HISTORY, MESSAGE_SCHEMA, apply_settings, check_ref, compact_session,
                         response_schema as chat_response_schema, week_lines)
 from coach_plan import (ADAPT_AREAS, ADAPT_SCHEMA, FRAME_RESPONSE_SCHEMA, PHASE_EDIT_SCHEMA, REFRAME_AREAS, REVIEW_SCHEMA,
-                        adapt_response_schema, adopt_blocks, align_frame, check_frame, check_tests, cut_frame, deviation, due_weeks,
-                        edit_phases, frame_blocks, frame_cycles, frame_hint, group_sessions, horizon, horizon_weeks, plan_span,
-                        plan_weeks, reference_monday, replan_date, required_tests)
+                        MAX_RISE, adapt_response_schema, adopt_blocks, align_frame, check_frame, check_tests, cut_frame, deviation,
+                        due_weeks, edit_phases, frame_blocks, frame_cycles, frame_hint, group_sessions, horizon, horizon_weeks,
+                        plan_span, plan_weeks, reference_monday, replan_date, required_tests)
 from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_order,
                           check_season, first_monday, new_season, public_season, season_frame, typical_season, with_fixed)
 from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, flat_steps, render_session, template_catalog
@@ -1078,7 +1078,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'suggestion when periodization.taperWeeks is null); the first cycle may have four or two load weeks so the rhythm '
         'stays clean up to the event. Every phase with a load/deload rhythm consists of whole cycles: deload weeks are '
         'exactly the cycle ends, phase changes come after a deload week, and the peak volume is the last load week before '
-        'the final deload (peakWeek). The server aligns the phases to these cycles. '
+        'the final deload (peakWeek). The server aligns the phases to these cycles and sets their target hours: the first '
+        'load week at trainingBase.weeklyHours, at most periodization.maxRisePerCycle more volume per cycle up to the peak, '
+        'never above weeklyLimits.maxHours; write rationale and focus to fit that curve. '
         'Adapt task with changes.areas phases: the athlete changed the phases by hand; adapt each worked-out week to the '
         'phase, target hours and rules of its week now. '
         'Adapt task: the athlete changed settings (changes.areas: availability, events, thresholds, sports, period, phases). Check '
@@ -1597,7 +1599,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                    'trainingBase': {'source': current_profile['background']['source'] or 'athlete',
                                     **{key: current_profile['background'][key] for key in ('type', 'weeklyHours', 'intervals')}},
                    'periodization': {'source': 'athlete', 'backwardsFromEvent': True, 'loadWeeks': 3, 'deloadWeeks': 1,
-                                     'taperWeeks': settings.get('taperWeeks'), 'cycles': frame_cycles(settings, current_profile)},
+                                     'taperWeeks': settings.get('taperWeeks'),
+                                     'cycles': frame_cycles(settings, current_profile),
+                                     'maxRisePerCycle': round(MAX_RISE - 1, 2)},
                    'previousBlocks': [previous_block(b, plan, rows, today) for b in plan['blocks']
                                       if day_date(b['startDate']) < first][-3:],
                    'snapshot': snapshot()}

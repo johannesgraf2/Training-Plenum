@@ -933,7 +933,8 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual(job['status'], 'done', job)
         self.assertEqual([c['task'] for c in calls], ['frame', 'week', 'week', 'week', 'week'])
         self.assertEqual(calls[0]['periodization'], {'source': 'athlete', 'backwardsFromEvent': True, 'loadWeeks': 3,
-                                                     'deloadWeeks': 1, 'taperWeeks': None, 'cycles': []})
+                                                     'deloadWeeks': 1, 'taperWeeks': None, 'cycles': [],
+                                                     'maxRisePerCycle': 0.1})
         self.assertIn('trainingBase', calls[0])
         self.assertTrue(self.client.get('/api/coach/today').get_json()['onboarded'])
         overview = self.client.get('/api/coach/plan/weeks').get_json()

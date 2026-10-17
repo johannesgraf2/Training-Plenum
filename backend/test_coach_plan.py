@@ -100,6 +100,7 @@ class RhythmTests(unittest.TestCase):
         self.assertEqual(frame_cycles({**self.settings, 'taperWeeks': None}, self.profile)[0]['peakWeek'], 15)
 
     def test_phases_move_to_whole_cycles_so_the_rhythm_runs_over_block_boundaries(self):
+        self.profile['background']['weeklyHours'] = 5
         phases = [phase('grundlage', 7), phase('vo2max', 5), phase('wettkampfspezifisch', 4), phase('taper', 2, 3),
                   phase('uebergang', 2, 3)]
         check_frame(phases, self.settings, self.profile)
@@ -109,10 +110,23 @@ class RhythmTests(unittest.TestCase):
                          [('grundlage', 8), ('vo2max', 4), ('wettkampfspezifisch', 4), ('taper', 2), ('uebergang', 2)])
         pattern = [''.join('D' if w['phase'] in ('recovery', 'taper') else 'L' for w in p['weeks']) for p in aligned[:3]]
         self.assertEqual(pattern, ['LLLDLLLD', 'LLLD', 'LLLD'])
-        # Week 8 was a load week of the AI and becomes the deload at 65 % (in half hours); week 7 was a deload.
-        self.assertEqual([w['targetHours'] for w in aligned[0]['weeks'][5:]], [6.0, 6.0, 3.5])
+        # Week 8 was a load week of the AI and becomes a deload; week 7 was a deload and becomes a load week.
         self.assertEqual([w['focus'] for w in aligned[0]['weeks'][6:]], ['', ''])
-        self.assertEqual(aligned[3:], phases[3:])
+        self.assertEqual(aligned[4:], phases[4:])
+
+    def test_hours_rise_from_the_base_at_most_10_percent_a_cycle_and_the_time_caps_the_peak(self):
+        self.profile['background']['weeklyHours'] = 5
+        phases = [phase('grundlage', 8), phase('vo2max', 4), phase('wettkampfspezifisch', 4), phase('taper', 2, 3),
+                  phase('uebergang', 2, 3)]
+        hours = lambda aligned: [w['targetHours'] for p in aligned[:4] for w in p['weeks']]
+        # Cycle levels 5, 5.5, 6.05, 6.66 h; load weeks at 100/105/110 %, deloads at 65 % of the cycle's top week.
+        self.assertEqual(hours(align_frame(phases, self.settings, self.profile, [10] * 20)),
+                         [5, 5.5, 5.5, 3.5, 5.5, 6, 6, 3.5, 6, 6.5, 6.5, 4, 6.5, 7, 7.5, 4.5, 3.5, 3])
+        # Little time: the peak week (15) stays within it and the rise flattens out; the base stays where it is.
+        self.profile['background']['weeklyHours'] = 6
+        capped = hours(align_frame(phases, self.settings, self.profile, [10] * 14 + [6.6] + [10] * 5))
+        self.assertEqual((capped[0], capped[14], max(capped)), (6, 6.5, 6.5))
+        check_frame(align_frame(phases, self.settings, self.profile, [10] * 20), self.settings, self.profile)
 
     def test_a_stretch_with_more_phases_than_cycles_stays(self):
         settings = {**self.settings, 'endDate': '2027-02-21'}  # 18 weeks, the event in the last one.
