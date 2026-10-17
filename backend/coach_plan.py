@@ -46,8 +46,8 @@ ADAPT_SCHEMA = obj({'changes': {'type': 'array', 'minItems': 1, 'uniqueItems': T
 ADAPT_SCHEMA['required'] = ['changes']
 
 
-def adapt_response_schema(patch):
-    return obj({'adjustments': {'type': 'array', 'maxItems': HORIZON + 1, 'items': patch}, 'hinweise': HINWEISE_SCHEMA})
+def adapt_response_schema(patch, count=HORIZON + 1):
+    return obj({'adjustments': {'type': 'array', 'maxItems': count, 'items': patch}, 'hinweise': HINWEISE_SCHEMA})
 
 
 # A week counts as strongly off plan below this share of the planned hours.
@@ -211,10 +211,10 @@ def frame_hint(settings, profile):
     return {'event': event['title'], 'weeks': weeks, 'segments': typical_season(weeks)}
 
 
-def horizon(weeks, today):
+def horizon(weeks, today, count=HORIZON):
     """The weeks plan creation works out: three from the plan start or the running week, whichever is later."""
     current = iso_week(today - timedelta(days=today.weekday()))
-    return [week for week in weeks if week >= current][:HORIZON]
+    return [week for week in weeks if week >= current][:count]
 
 
 def reference_monday(mode, now, planned, reviewed):
@@ -232,10 +232,12 @@ def reference_monday(mode, now, planned, reviewed):
     return monday
 
 
-def due_week(weeks, planned, reference, today):
+def due_week(weeks, planned, reference, today, count=HORIZON):
     """The next outlined week to work out so the three weeks from reference are ready; a missing running week first."""
     current = today - timedelta(days=today.weekday())
-    wanted = {iso_week(current)} | {iso_week(reference + timedelta(weeks=index)) for index in range(HORIZON)}
+    # Only consider actual plan weeks; a large horizon cannot overflow dates or allocate an unbounded range.
+    wanted = {iso_week(current)} | {week for week in weeks if reference <= week_start(week)
+                                  and (week_start(week) - reference).days // 7 < count}
     return next((week for week in sorted(wanted) if week >= iso_week(current) and week in weeks and week not in planned), None)
 
 

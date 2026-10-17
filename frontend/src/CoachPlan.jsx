@@ -4,15 +4,16 @@ import { ChangeCard, request } from './CoachChat';
 import { localDate, stepDescription, workoutOverview } from './workoutModel';
 import { sportLabels } from './sports';
 import { Icon } from './icons';
+import { BlockEditor, GenerationControl, WeeklyHoursChart } from './CoachPeriodization';
 import './CoachPlan.css';
 
-// The plan area: phase bar up to the event, the three worked-out weeks, outlined weeks and the history.
-// Changes go through the coach chat (onAsk); only "Behalten" (lock) is a direct switch.
+// Phases, shared weekly targets, the configurable generation horizon and worked-out weeks.
+// Blocks are edited directly; session adjustments go through the coach chat (onAsk).
 
 const timezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 const tzQuery = () => `timezone=${encodeURIComponent(timezone())}`;
 const DAYS = [['mon', 'Mo', 'Montag'], ['tue', 'Di', 'Dienstag'], ['wed', 'Mi', 'Mittwoch'], ['thu', 'Do', 'Donnerstag'], ['fri', 'Fr', 'Freitag'], ['sat', 'Sa', 'Samstag'], ['sun', 'So', 'Sonntag']];
-const fmt = value => value == null ? '—' : Number(value).toLocaleString('de-DE', { maximumFractionDigits: 1 });
+const fmt = value => value == null ? '—' : Number(value).toLocaleString('de-DE', { maximumFractionDigits: 2 });
 const hm = minutes => minutes == null ? '—' : minutes >= 60 ? `${Math.floor(minutes / 60)}:${String(Math.round(minutes % 60)).padStart(2, '0')} h` : `${Math.round(minutes)} min`;
 const daysBetween = (from, to) => Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86400000);
 const shortDay = date => new Date(`${date}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
@@ -91,6 +92,7 @@ function WeekCard({ week, today, workoutsById, onOpen, onAsk, onReview }) {
     <div className="plan-week-head"><div>
       <span className="coach-eyebrow">Woche {week.number}{week.phaseName ? ` · ${week.phaseName}` : ''} · {shortDay(week.startDate)}{week.state === 'current' ? ' · diese Woche' : ''}</span>
       <h3>{fmt(value.targetHours)} h · {value.focus || 'Trainingswoche'}</h3></div><Badge week={week} /></div>
+    {value.needsReview && <p className="coach-message" role="note">Blockplanung geändert · neue Zielstunden: {fmt(value.targetHours)} h. Die vorhandenen Einheiten ({fmt(value.calculatedHours)} h) bleiben erhalten. Bitte mit „Woche anpassen“ prüfen.</p>}
     <ol className="plan-days">{DAYS.map(([day, short], index) => {
       const date = new Date(Date.parse(`${week.startDate}T12:00:00Z`) + index * 86400000).toISOString().slice(0, 10);
       const sessions = value.sessions.filter(s => s.rendered?.date === date).sort((a, b) => a.id.localeCompare(b.id));
@@ -215,6 +217,7 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
   const [proposal, setProposal] = useState(null);
   const [busy, setBusy] = useState(false);
   const [reloads, setReloads] = useState(0);
+  const [editingBlocks, setEditingBlocks] = useState(false);
   const today = localDate();
   useEffect(() => {
     let active = true;
@@ -274,11 +277,16 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
   const reviewed = review && weeks.find(w => w.week === review.week);
   return <div className="coach-plan">
     <section className="coach-card plan-head" aria-label="Plan">
+      <button type="button" className="plan-edit-button" disabled={advance?.status === 'running'} onClick={() => setEditingBlocks(v => !v)}>Ändern</button>
       <span className="coach-eyebrow">{event ? `${event.title} · ${fullDate(event.startDate)}` : `Dein Plan bis ${fullDate(overview.frame.endDate)}`}</span>
       <h2>{event ? (countdown === 0 ? 'Diese Woche ist es so weit' : `Noch ${countdown} ${countdown === 1 ? 'Woche' : 'Wochen'}`) : `${weeks.length} Wochen`}{current ? ` · Woche ${current.number} von ${weeks.length}` : ''}</h2>
       <PhaseBar overview={overview} today={today} />
       {overview.frame.rationale && <p className="coach-muted">{overview.frame.rationale}</p>}
     </section>
+    {editingBlocks && <BlockEditor overview={overview} apiBase={apiBase} onClose={() => setEditingBlocks(false)} onSaved={async () => { setReloads(n => n + 1); await onChanged?.(); }} />}
+    <WeeklyHoursChart weeks={weeks} />
+    <GenerationControl key={overview.settings?.generationWeeks || 3} overview={overview} apiBase={apiBase} disabled={advance?.status === 'running'}
+      onSaved={async () => { setReloads(n => n + 1); await onChanged?.(); }} onJob={onJob} />
     {error && <div role="alert" className="coach-message error">{error}</div>}
     {advance?.status === 'running' && <div role="status" className="coach-message"><span className="coach-spinner" />{(advance.steps?.find(s => s.status === 'running') || advance.steps?.[0])?.label || 'Nächste Woche'} … Der Coach plant.</div>}
     {(overview.adapt || pendingChanges.length > 0) && advance?.status !== 'running' && <div className="coach-message plan-adapt"><span><strong>Deine Einstellungen haben sich geändert.</strong> Soll ich deinen Plan daran anpassen?</span>
@@ -290,7 +298,6 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
         onConfirm={() => decide('confirm')} onDiscard={() => decide('discard')} /></section>}
     {reviewed && <WeekReview key={reviewed.week} apiBase={apiBase} week={reviewed} completedHours={reviewed.completedHours} onClose={() => setReview(null)}
       onSaved={result => { setReview(null); setReloads(n => n + 1); onChanged?.(result); if (result.job) onJob?.(result.job); }} />}
-    {worked.map(w => <WeekCard key={w.week} week={w} today={today} workoutsById={workoutsById} onOpen={(session, week) => setDetail({ session, week })} onAsk={ref => onAsk(ref)} onReview={setReview} />)}
     {past.length > 0 && !past.at(-1).plan?.review && past.at(-1).plan && <div className="coach-message"><span>Der Rückblick für Woche {past.at(-1).number} fehlt noch.</span>
       <button type="button" onClick={() => setReview(past.at(-1))}>Wochenrückblick</button></div>}
     {outlined.length > 0 && <section className="coach-card plan-outlined" aria-label="Vorgemerkte Wochen"><span className="coach-eyebrow">Vorgemerkt · Phase und Zielstunden</span>
@@ -298,6 +305,7 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
         <small>{shortDay(w.startDate)} · {replanText(w, mode, today)}</small>{w.events.map(e => <span key={e.id} className={`plan-event ${e.priority}`}>{e.priority} · {e.title}</span>)}</li>)}</ul>
       {mode === 'manual' && overview.nextManualWeek && <div className="coach-actions"><button type="button" className="coach-primary" disabled={advance?.status === 'running'} onClick={onAdvance}>Nächste Woche planen</button></div>}
     </section>}
+    {worked.map(w => <WeekCard key={w.week} week={w} today={today} workoutsById={workoutsById} onOpen={(session, week) => setDetail({ session, week })} onAsk={ref => onAsk(ref)} onReview={setReview} />)}
     <History weeks={past} apiBase={apiBase} version={version} />
     {detail && <SessionDetail session={detail.session} week={detail.week} workout={workoutsById[detail.session.id]} today={today} busy={busy}
       onClose={() => setDetail(null)} onAsk={onAsk} onLock={lock} onOpenWorkout={onOpenWorkout} />}

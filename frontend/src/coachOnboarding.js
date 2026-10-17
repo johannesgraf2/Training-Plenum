@@ -179,7 +179,7 @@ const EVENT_NAMES = { ultra: 'ein Ultra-Event', granFondo: 'einen Gran Fondo', x
 export function hoursHint(events, hours) {
   const event = lastAEvent(events);
   const minimum = event && EVENT_HOURS[event.sport]?.[event.subtype];
-  return minimum && hours < minimum ? `Für ${EVENT_NAMES[event.subtype]} empfehle ich mindestens ${minimum} h/Woche, du hast ${hoursLabel(hours)} eingetragen.` : null;
+  return minimum ? `Für ${EVENT_NAMES[event.subtype]} empfehle ich mindestens ${minimum} h/Woche.${hours < minimum ? ` Du hast ${hoursLabel(hours)} Zeit pro Woche eingetragen.` : ''}` : null;
 }
 
 // --- Plan creation job --------------------------------------------------------------------------

@@ -129,6 +129,7 @@ export default function CoachOnboarding({ apiBase = '', onClose, onCreated }) {
   const [attempt, setAttempt] = useState(0);
   const pending = useRef(false);
   const sheet = useRef(null);
+  const drafts = useRef({});
 
   const request = useCallback(async (path, method = 'GET', body) => {
     const response = await fetch(`${apiBase}${path}`, { method, headers: { 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -184,7 +185,7 @@ export default function CoachOnboarding({ apiBase = '', onClose, onCreated }) {
   });
   const close = () => { if (!busy) onClose(); };
 
-  const ctx = data && { apiBase, data, request, run, busy, update, reloadBackground, go, back, done, complete, saveProfile, onCreated,
+  const ctx = data && { drafts: drafts.current, apiBase, data, request, run, busy, update, reloadBackground, go, back, done, complete, saveProfile, onCreated,
     returning: !!returnTo, setError };
   const Page = step && PAGES[step];
   return <div className="onboarding-backdrop" onKeyDown={event => { if (event.key === 'Escape' && event.target.closest('.onboarding-sheet')) close(); }}>

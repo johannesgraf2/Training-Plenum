@@ -58,7 +58,7 @@ export const healInjury = (apiBase, identity) => send(apiBase, `/api/coach/injur
 const DISMISSED = 'trainingPlenum.checkInDismissed';
 export const checkInDismissed = date => { try { return window.localStorage.getItem(DISMISSED) === date; } catch (_) { return false; } };
 export const dismissCheckIn = date => { try { window.localStorage.setItem(DISMISSED, date); } catch (_) { /* private mode */ } };
-export const shouldAskCheckIn = today => !!today && !today.checkIn && today.dailyCheckIn !== false && !checkInDismissed(today.date);
+export const shouldAskCheckIn = today => !!today && !today.onboardingRequired && !today.checkIn && today.dailyCheckIn !== false && !checkInDismissed(today.date);
 
 function SeasonBar({ segments, date }) {
   if (!segments?.length) return null;
@@ -301,7 +301,7 @@ export function HintCards({ hints, onReview, onPlan }) {
 
 /** Compact line for the start page: open check-in or the traffic light of the day. */
 export function CheckInStrip({ today, onOpen, onOpenCoach }) {
-  if (!today || today.dailyCheckIn === false && !today.checkIn) return null;
+  if (!today || today.onboardingRequired || today.dailyCheckIn === false && !today.checkIn) return null;
   if (!today.checkIn) return <div className="today-strip open"><span><strong>Morgen-Check-in offen.</strong> Wie geht es dir heute?</span><button type="button" onClick={onOpen}>Jetzt ausfüllen</button></div>;
   const level = today.readiness.level;
   return <div className={`today-strip ${level}`}><span className={`today-dot ${level}`} aria-hidden="true" /><span><strong>{LEVELS[level]}</strong>{today.readiness.reasons.length ? ` · ${today.readiness.reasons[0]}` : ''}</span>

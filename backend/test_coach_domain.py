@@ -344,7 +344,7 @@ class PlanInputTests(unittest.TestCase):
         first = plan_settings({'startDate': '2026-10-19', 'endDate': '2027-08-12', 'replanMode': 'afterReview'}, None, 'now')
         self.assertEqual(first['createdAt'], 'now')
         self.assertEqual(plan_settings({'startDate': '2026-10-19', 'endDate': '2030-01-01', 'replanMode': 'manual'}, first, 'later'),
-                         {'startDate': '2026-10-19', 'endDate': '2030-01-01', 'replanMode': 'manual', 'createdAt': 'now'})
+                         {'startDate': '2026-10-19', 'endDate': '2030-01-01', 'replanMode': 'manual', 'generationWeeks': 3, 'taperWeeks': 1, 'createdAt': 'now'})
         for bad in ({'endDate': '2026-10-19'}, {'replanMode': 'daily'}, {'startDate': 'soon'}):
             with self.subTest(value=bad), self.assertRaises(CoachError):
                 plan_settings({'startDate': '2026-10-19', 'endDate': '2027-01-01', 'replanMode': 'sunday', **bad}, None, 'now')

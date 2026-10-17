@@ -165,7 +165,7 @@ test('a new athlete with data goes from A1 to the created plan', async () => {
   // B4: next Monday until the end of the A event.
   expect(inputFor('Plan startet').value).toBe('2026-10-19');
   expect(inputFor('Plan endet').value).toBe('2027-08-12');
-  expect(container.querySelector('.onboarding-timeline-event.priority-a').textContent).toBe('NorthCape 4000');
+  expect(container.querySelector('.onboarding-timeline-event.priority-a').textContent).toBe('A · NorthCape 4000');
   await click(button('Weiter'));
   expect(server.settings).toMatchObject({ startDate: '2026-10-19', endDate: '2027-08-12', replanMode: 'afterReview' });
 
@@ -177,17 +177,19 @@ test('a new athlete with data goes from A1 to the created plan', async () => {
     ['tue', '18:00', '19:30', { indoor: true, outdoor: false }], ['thu', '18:00', '19:30', { indoor: true, outdoor: false }]]);
   // The earlier wish of 8 h may not exceed the 3 h of the windows.
   expect(server.profile.availability.preferredWeeklyHours).toBe(3);
-  expect(container.textContent).toContain('Für ein Ultra-Event empfehle ich mindestens 10 h/Woche, du hast 3 h eingetragen.');
+  expect(container.textContent).toContain('Für ein Ultra-Event empfehle ich mindestens 10 h/Woche. Du hast 3 h Zeit pro Woche eingetragen.');
   await addWindow('Mittwoch', { from: '18:00', to: '20:00', group: true });
   expect(server.profile.availability.windows[2]).toMatchObject({ day: 'wed', group: { sport: 'ride', intensity: 'moderate', note: '' }, sports: { ride: { indoor: true, outdoor: true } } });
   await addWindow('Samstag', { allDay: true });
   await addWindow('Montag', { unavailable: true, allDay: true });
   expect(container.textContent).toContain('Ganzer Tag · nicht verfügbar');
-  await change(inputFor('Maximale Stunden pro Woche'), '10');
-  await change(inputFor('Bevorzugter Ruhetag'), 'mon');
-  await change(inputFor('Tag für die lange Einheit'), 'sat');
+  await change(inputFor('Maximal verfügbare Trainingszeit pro Woche'), '10');
+  await click(buttonIn('Bevorzugte Ruhetage', 'Montag'));
+  await click(buttonIn('Bevorzugte Ruhetage', 'Freitag'));
+  await click(buttonIn('Mögliche Tage für lange Einheiten', 'Samstag'));
+  await click(buttonIn('Mögliche Tage für lange Einheiten', 'Sonntag'));
   await click(button('Weiter'));
-  expect(server.profile.availability).toMatchObject({ maxWeeklyHours: 10, restDay: 'mon', longDay: 'sat' });
+  expect(server.profile.availability).toMatchObject({ maxWeeklyHours: 10, restDays: ['mon', 'fri'], longDays: ['sat', 'sun'] });
 
   // B6: the summary, with a jump back that returns here.
   expect(heading()).toBe('Bereit');
@@ -226,7 +228,7 @@ test('without data part B asks instead of prefilling and thresholds can be teste
   expect(button('Weiter').disabled).toBe(true);
   await change(inputFor('Schwellenpace (min/km)'), '4:35');
   await click(button('Weiter'));
-  expect(server.profile.thresholds).toEqual({ ride: { source: 'test' }, run: { source: 'athlete', paceSecPerKm: 275, basis: null } });
+  expect(server.profile.thresholds).toEqual({ ride: { source: 'test' }, run: { source: 'athlete', paceSecPerKm: 275, basis: null, referenceType: 'threshold' } });
   expect(writes('/api/user')[0].body.ftp).toBeUndefined();
   // A4 skipped without provider.
   await click(button('Überspringen'));
@@ -330,4 +332,19 @@ test('events can be edited and deleted, plausibility only warns, closing keeps t
   expect(server.events).toEqual([]);
   await click(button('Schließen, später weitermachen'));
   expect(closed).toHaveBeenCalled();
+});
+
+test('an unsaved event draft survives going back to the previous wizard step', async () => {
+  server.profile.onboarding.completed = ['sports', 'sources', 'thresholds', 'provider', 'background'];
+  await render();
+  await click(button('+ Event hinzufügen'));
+  await change(inputFor('Titel'), 'Frankfurt Marathon');
+  await click(buttonIn('Sportart des Events', 'Laufen'));
+  await change(inputFor('Ziel (Untertyp)'), 'marathon');
+  await click(button('Zurück'));
+  expect(heading()).toBe('Dein Hintergrund');
+  await click(button('Stimmt so'));
+  expect(heading()).toBe('Dein Ziel');
+  expect(inputFor('Titel').value).toBe('Frankfurt Marathon');
+  expect(inputFor('Ziel (Untertyp)').value).toBe('marathon');
 });

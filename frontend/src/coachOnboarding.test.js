@@ -49,8 +49,8 @@ test('event hints warn but never block, and ultra may be anything', () => {
   expect(eventHints({ sport: 'run', subtype: 'marathon', distanceKm: 30 })).toEqual(['Ein Marathon ist etwa 42,2 km lang.']);
   expect(eventHints({ sport: 'ride', subtype: 'granFondo', distanceKm: 200, targetSeconds: 3600 })).toHaveLength(1);
   expect(eventHints({ sport: 'ride', subtype: 'ultra', distanceKm: 4000, targetSeconds: 3600 })).toEqual([]);
-  expect(hoursHint([{ priority: 'A', sport: 'ride', subtype: 'ultra', startDate: '2027-07-29' }], 6)).toBe('Für ein Ultra-Event empfehle ich mindestens 10 h/Woche, du hast 6 h eingetragen.');
-  expect(hoursHint([{ priority: 'A', sport: 'ride', subtype: 'ultra', startDate: '2027-07-29' }], 12)).toBeNull();
+  expect(hoursHint([{ priority: 'A', sport: 'ride', subtype: 'ultra', startDate: '2027-07-29' }], 6)).toBe('Für ein Ultra-Event empfehle ich mindestens 10 h/Woche. Du hast 6 h Zeit pro Woche eingetragen.');
+  expect(hoursHint([{ priority: 'A', sport: 'ride', subtype: 'ultra', startDate: '2027-07-29' }], 12)).toBe('Für ein Ultra-Event empfehle ich mindestens 10 h/Woche.');
 });
 
 test('the FTP suggestion comes from the best 20 minutes', () => {

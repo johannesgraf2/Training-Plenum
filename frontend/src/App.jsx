@@ -164,10 +164,15 @@ export default function App() {
     return () => { clearInterval(timer); window.removeEventListener('focus', loadWhoop); };
   }, [loadWhoop]);
 
+  const onboardingPrompted = useRef(false);
   const refreshToday = useCallback(async ask => {
     try {
       const view = await loadToday(API);
       setToday(view);
+      if (ask && view.onboardingRequired && !onboardingPrompted.current) {
+        onboardingPrompted.current = true;
+        setCheckInOpen(false); setPage('coach'); setSelected(null); window.location.hash = '';
+      }
       if (ask && shouldAskCheckIn(view)) setCheckInOpen(true);
     } catch { /* the coach is optional; without it the app works as before */ }
   }, []);

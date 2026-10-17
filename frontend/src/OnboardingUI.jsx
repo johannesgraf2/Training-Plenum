@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Icon } from './icons';
 import { STEPS, dateLabel, daysBetween, ftpFromData, paceLabel, parsePace } from './coachOnboarding';
 
@@ -61,6 +61,7 @@ export function thresholdDraft({ profile, user, thresholds, snapshot }) {
     ride: { mode: ride === 'test' ? 'test' : user?.ftp ? (ride === 'calculated' ? 'calculated' : 'athlete') : suggestion ? 'calculated' : 'athlete',
       ftp: user?.ftp ?? '', suggestion },
     run: { mode: run.source === 'test' ? 'test' : run.paceSecPerKm != null ? run.source || 'athlete' : run.calculated ? 'calculated' : 'athlete',
+      referenceType: run.referenceType || 'threshold',
       pace: run.paceSecPerKm != null && run.source !== 'calculated' ? paceLabel(run.paceSecPerKm) : '', stored: run.paceSecPerKm != null ? run : null,
       suggestion: run.calculated || (run.source === 'calculated' ? run : null) },
   };
@@ -70,7 +71,7 @@ export function thresholdDraft({ profile, user, thresholds, snapshot }) {
 export function thresholdProblem(draft, sports) {
   if (sports.includes('ride') && draft.ride.mode === 'athlete' && !(Number(draft.ride.ftp) >= 1 && Number(draft.ride.ftp) <= 1000)) return 'Bitte eine FTP zwischen 1 und 1000 W eintragen oder „Testen lassen“ wählen.';
   if (sports.includes('ride') && draft.ride.mode === 'calculated' && !draft.ride.suggestion && !draft.ride.ftp) return 'Aus deinen Daten lässt sich keine FTP ableiten.';
-  if (sports.includes('run') && draft.run.mode === 'athlete' && parsePace(draft.run.pace) == null) return 'Bitte die Schwellenpace als m:ss pro km eintragen (z. B. 4:35) oder „Testen lassen“ wählen.';
+  if (sports.includes('run') && draft.run.mode === 'athlete' && parsePace(draft.run.pace) == null) return 'Bitte die Laufpace als m:ss pro km eintragen (z. B. 4:35) oder „Testen lassen“ wählen.';
   return null;
 }
 
@@ -86,7 +87,8 @@ export function thresholdChanges(draft, sports) {
     const { mode, suggestion } = draft.run;
     thresholds.run = mode === 'test' ? { source: 'test', paceSecPerKm: null, basis: null }
       : mode === 'calculated' ? { source: 'calculated', paceSecPerKm: suggestion.paceSecPerKm, basis: suggestion.basis }
-        : { source: 'athlete', paceSecPerKm: parsePace(draft.run.pace), basis: null };
+        : { source: 'athlete', paceSecPerKm: parsePace(draft.run.pace), basis: null,
+          ...(draft.run.referenceType === 'tenKm' ? { referenceType: 'tenKm' } : { referenceType: 'threshold' }) };
   }
   return { thresholds, user };
 }
@@ -113,7 +115,12 @@ export function ThresholdFields({ draft, sports, onChange }) {
     </ThresholdCard>}
     {sports.includes('run') && <ThresholdCard title="Schwellenpace (Laufen)" mode={run.mode} modes={runModes} onMode={mode => set('run', { mode })}>
       {run.mode === 'calculated' && run.suggestion && <p className="onboarding-origin">aus deinen Daten: <strong>{paceLabel(run.suggestion.paceSecPerKm)} /km</strong>, abgeleitet aus {PACE_BASIS[run.suggestion.basis] || 'deinen Bestzeiten'}{ago(run.suggestion.date)}</p>}
-      {run.mode === 'athlete' && <Field label="Schwellenpace (min/km)" hint={run.stored?.source === 'athlete' ? 'von dir eingetragen' : 'Das Tempo, das du etwa eine Stunde halten kannst, z. B. 4:35.'}><input inputMode="decimal" placeholder="4:35" value={run.pace} onChange={e => set('run', { pace: e.target.value })} /></Field>}
+      {run.mode === 'athlete' && <>
+        <Field label="Bezugswert Laufen"><select value={run.referenceType || 'threshold'} onChange={e => set('run', { referenceType: e.target.value })}>
+          <option value="threshold">Schwellenpace</option><option value="tenKm">10-km-Pace</option></select></Field>
+        <Field label={run.referenceType === 'tenKm' ? '10-km-Pace (min/km)' : 'Schwellenpace (min/km)'} hint={run.referenceType === 'tenKm' ? 'Deine durchschnittliche Pace über 10 km. Bis eine Schwelle bekannt ist, bleiben Laufziele nach Gefühl oder Puls.' : 'Das Tempo, das du etwa eine Stunde halten kannst, z. B. 4:35.'}>
+          <input inputMode="decimal" placeholder="4:35" value={run.pace} onChange={e => set('run', { pace: e.target.value })} /></Field>
+      </>}
       {run.mode === 'test' && <p className="coach-muted">Der Coach plant einen 30-min-Lauftest in die erste Planwoche. Bis zum Ergebnis sind die Laufziele nach Gefühl (RPE) angegeben.</p>}
     </ThresholdCard>}
   </div>;
@@ -131,7 +138,7 @@ export function PlanTimeline({ start, end, events }) {
   return <div className="onboarding-timeline" aria-label="Zeitstrahl des Plans">
     <div className="onboarding-timeline-track">{inRange.map(e =>
       <span key={e.id} className={`onboarding-timeline-event priority-${e.priority.toLowerCase()} ${side(e.startDate)}`} style={{ left: `${share(e.startDate)}%` }} title={`${e.title} · ${e.priority}`}>
-        {e.priority === 'A' && <em>{e.title}</em>}</span>)}</div>
+        <em>{e.priority} · {e.title}</em></span>)}</div>
     <div className="onboarding-timeline-ends"><span>Plan startet {dateLabel(start, true)}</span><span>Plan endet {dateLabel(end, true)}</span></div>
   </div>;
 }

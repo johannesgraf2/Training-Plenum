@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { SourceList } from './CoachOnboarding.jsx';
 import { KeyNotice, ProviderForm } from './CoachProvider';
 import { Field, ThresholdFields, Tiles, thresholdChanges, thresholdDraft, thresholdProblem } from './OnboardingUI';
-import { EventForm, EventList, WeekFields, WindowEditor, fittedWish, planSports, weekDraft, weekProblem } from './PlanSteps';
+import { AvailabilityInfo, EventForm, EventList, WeekFields, WindowEditor, fittedWish, planSports, weekDraft, weekValues, weekProblem } from './PlanSteps';
 import { GOALS, METRICS, SPORT_NAMES, STAGE_SPORTS, dateLabel, hoursHint, hoursLabel, lastAEvent, newId, splitEvents, weeksLabel, windowHours } from './coachOnboarding';
 import { localDate } from './workoutModel';
 import './CoachOnboarding.css';
@@ -165,7 +165,6 @@ function AvailabilitySection({ ctx }) {
   });
   const saveWindows = list => store({ windows: list, ...fittedWish(availability, list, availability.maxWeeklyHours) }, 'Zeitfenster gespeichert.', () => setForm(null));
   return <Section title="Verfügbarkeiten" intro="Wann du trainieren kannst. Der Coach plant darin und nutzt nicht jedes Fenster.">
-    <WindowEditor windows={windows} sports={planSports(profile)} busy={!!ctx.busy} form={form} onForm={setForm} onSave={saveWindows} />
     {!form && <>
       <h3>Für die ganze Woche</h3>
       <WeekFields week={week} total={total} onChange={setWeek} />
@@ -173,9 +172,11 @@ function AvailabilitySection({ ctx }) {
       {hint && <p className="onboarding-hint warning" role="note">{hint}</p>}
       {problem && <p className="coach-muted" role="note">{problem}</p>}
       <div className="coach-actions"><button type="button" disabled={!!ctx.busy || !!problem}
-        onClick={() => store({ maxWeeklyHours: maximum, restDay: week.restDay || null, longDay: week.longDay || null, ...fittedWish(availability, windows, maximum) }, 'Wochenwerte gespeichert.')}>Wochenwerte speichern</button></div>
+        onClick={() => store({ maxWeeklyHours: maximum, ...weekValues(week), ...fittedWish(availability, windows, maximum) }, 'Wochenwerte gespeichert.')}>Wochenwerte speichern</button></div>
       <ExceptionEditor exceptions={availability.exceptions || []} busy={!!ctx.busy} onSave={(list, done) => store({ exceptions: list }, 'Ausnahmen gespeichert.', done)} />
     </>}
+    <AvailabilityInfo />
+    <WindowEditor windows={windows} sports={planSports(profile)} busy={!!ctx.busy} form={form} onForm={setForm} onSave={saveWindows} />
   </Section>;
 }
 

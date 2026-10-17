@@ -90,6 +90,7 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
   const [adaptPending, setAdaptPending] = useState([]);  // Changed settings the athlete has not answered "Plan anpassen?" for.
   const jobTimer = useRef(null);
   const pending = useRef(false);
+  const onboardingShown = useRef(false);
 
   async function request(path, method = 'GET', body) {
     const response = await fetch(`${apiBase}${path}`, { method, headers: { 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -119,14 +120,15 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
     setJob(state);
     clearTimeout(jobTimer.current);
     if (state.status === 'running' && state.id) {
-      jobTimer.current = setTimeout(() => request(`/api/coach/plan/${kind === 'adapt' ? 'adapt' : 'advance'}/${encodeURIComponent(state.id)}`)
+      jobTimer.current = setTimeout(() => request(`/api/coach/plan/${['adapt', 'create'].includes(kind) ? kind : 'advance'}/${encodeURIComponent(state.id)}`)
         .then(next => followJob(next.job), e => setJob({ ...state, status: 'failed', error: e.message })), POLL_MS);
     } else if (state.status === 'done') {
       const result = data.result || {};
       if (kind === 'adapt') {
         setNotice(result.proposalId ? `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}Prüfe unten die Anpassung deiner ausgearbeiteten Wochen.`
           : `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}Die ausgearbeiteten Wochen passen weiter zu deinen Einstellungen.`);
-      } else setNotice(`Woche ${result.weekNumber} geplant – ${fmt(result.calculatedHours)} h${result.focus ? `, Fokus ${result.focus}` : ''}.`);
+      } else if (kind === 'create') setNotice(`${result.weeks?.length || 0} Wochen ausgearbeitet.`);
+      else setNotice(`Woche ${result.weekNumber} geplant – ${fmt(result.calculatedHours)} h${result.focus ? `, Fokus ${result.focus}` : ''}.`);
       if (result.proposalId) setPlanProposal(result.proposalId);
       afterPlanChange().catch(() => {});
     } else if (state.status === 'failed') {
@@ -151,6 +153,9 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
       .then(([p, ai, saved]) => {
         if (cancelled) return;
         setProfile(p); setProvider(ai); setPlan(saved);
+        if (!saved.frame && !(p.onboarding?.completed || []).some(step => ['ready', 'created'].includes(step)) && !onboardingShown.current) {
+          onboardingShown.current = true; setOnboarding(true);
+        }
         // There is no server scheduler: opening the coach works out a week that is due by the replan mode.
         if (saved.frame?.status === 'active' && ai.configured) startAdvance('auto');
       })
@@ -234,7 +239,7 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
 
     {!loading && profile && tab === 'today' && <>
       {!planActive && <OnboardingStart profile={profile} onStart={() => setOnboarding(true)} />}
-      {dayView ? <>
+      {dayView?.onboardingRequired ? null : dayView ? <>
         <section className="coach-card coach-today-period"><PeriodHeader today={dayView} /></section>
         {dayView.checkIn ? <ReadinessCard readiness={dayView.readiness} time="heute">
           <div className="coach-actions"><button type="button" disabled={!!busy} onClick={() => setCheckInOpen(true)}>Check-in ändern</button></div>

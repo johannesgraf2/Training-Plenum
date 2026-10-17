@@ -98,3 +98,19 @@
   .onboarding-day-head strong { min-width: 0; }
   .onboarding-duration { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+.onboarding-week-fields { display: grid; gap: 8px; }
+.onboarding-week-fields h4 { margin-bottom: 0; }
+.onboarding-week-fields .onboarding-tiles { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+.onboarding-flexibility { margin: 16px 0; }
+.onboarding-date { position: relative; display: flex; gap: 6px; align-items: center; }
+.onboarding-date input { min-width: 0; flex: 1; }
+.onboarding-date input::-webkit-calendar-picker-indicator { display: none; }
+.onboarding-calendar { position: absolute; top: 100%; left: 0; width: min(320px, 80vw); z-index: 5; padding: 12px; background: var(--surface, #fff); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 8px 24px #0002; }
+.onboarding-calendar-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.onboarding-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin: 8px 0; text-align: center; }
+.ai-coach .onboarding-calendar-grid button { padding: 7px 0; border-color: transparent; }
+.ai-coach .onboarding-calendar-grid button.today { color: #fff; background: #1864ab; }
+.ai-coach .onboarding-calendar-grid button[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: -2px; font-weight: 700; text-decoration: underline; }
+.ai-coach .onboarding-calendar-grid button:hover:not(:disabled) { background: #d0ebff; color: #16436b; }
+.onboarding-timeline-event em { max-width: 180px; white-space: nowrap; }

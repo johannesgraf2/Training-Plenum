@@ -28,8 +28,9 @@ from coach_domain import (CoachError, DAYS, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OV
 from coach_chat import (MAX_HISTORY, MESSAGE_SCHEMA, apply_settings, check_ref, compact_session,
                         response_schema as chat_response_schema, week_lines)
 from coach_plan import (ADAPT_SCHEMA, FRAME_RESPONSE_SCHEMA, REFRAME_AREAS, REVIEW_SCHEMA, adapt_response_schema, adopt_blocks,
-                        check_frame, check_tests, cut_frame, deviation, due_week, frame_blocks, frame_hint, group_sessions, horizon,
+                        check_frame, check_tests, cut_frame, deviation, due_week, frame_hint, group_sessions, horizon,
                         plan_span, plan_weeks, reference_monday, required_tests)
+from coach_periodization import EDIT_FRAME_SCHEMA, edit_frame, initial_segments, periodized_blocks
 from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_order,
                           check_season, first_monday, new_season, public_season, season_frame, typical_season, with_fixed)
 from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, flat_steps, render_session, template_catalog
@@ -226,6 +227,10 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             week['calculatedHours'] = round(sum(durations) / 60, 2) if all(d is not None for d in durations) else None
             week['fixedSessions'] = fixed
             week['events'] = week_events(current_profile, week['week'])
+            # Older stored frames may still carry the pre-generation target.
+            block, number = block_for_week(plan['blocks'], week_start(week['week']))
+            if block and block['id'] in (plan.get('frame') or {}).get('blockIds', []):
+                block['weeks'][number - 1].update(targetHours=week['targetHours'], focus=week['focus'])
         return {**plan, 'revision': value.revision}
 
     def fingerprint():
@@ -407,12 +412,14 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         check_in = next((c for c in morning if c['date'] == stamp), None)
         whoop = whoop_day(day)
         light = readiness(check_in, current_profile['injuries'], sessions, (whoop or {}).get('band'))
+        onboarding_required = not plan.get('frame') and not set(current_profile['onboarding']['completed']) & {'ready', 'created'}
         result = {'date': stamp, 'checkIn': check_in, 'readiness': light,
                   'previousCheckIn': next((c for c in reversed(morning) if c['date'] < stamp), None),
                   'injuries': [public_injury(i) for i in current_profile['injuries'] if i['status'] == 'active'],
                   'sessions': sessions, 'whoop': whoop, 'period': period_view(plan, day, current_profile),
                   'weekPlanned': iso_week(day) in plan['weeks'],
-                  'dailyCheckIn': current_profile['preferences']['dailyCheckIn'],
+                  'onboardingRequired': onboarding_required,
+                  'dailyCheckIn': current_profile['preferences']['dailyCheckIn'] and not onboarding_required,
                   'outlook': [{'date': (day + timedelta(days=n)).isoformat(),
                                'sessions': training_sessions(day + timedelta(days=n), plan, saved)[0]} for n in (1, 2, 3)],
                   'hints': today_hints(plan, current_profile, day)}
@@ -606,6 +613,19 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             record.revision += 1
             db.session.commit()
         return jsonify({'source': 'athlete', 'settings': stored.get('settings')})
+
+    @app.route('/api/coach/plan/phases', methods=['PUT'])
+    def edit_plan_phases():
+        data = validate(request.get_json(silent=True), EDIT_FRAME_SCHEMA)
+        plan = current_plan()
+        if data['revision'] != plan['revision']:
+            return jsonify(error='Der Plan wurde inzwischen geändert. Bitte neu laden und erneut bearbeiten.'), 409
+        if running_job():
+            return jsonify(error='Der Coach plant gerade. Bitte nach Abschluss erneut bearbeiten.'), 409
+        changed = edit_frame(plan, data, profile())
+        save_plan(changed)
+        db.session.commit()
+        return jsonify(public_plan())
 
     @app.route('/api/coach/templates')
     def templates():
@@ -1034,6 +1054,10 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'exactly once on a rested day without a hard session the day before; until then targets of that sport are open. '
         'groupSessions are fixed group trainings, already part of fixedSessions: plan around them, a hard group session '
         'counts as a quality session of its week. '
+        'availability[].preferRest marks soft rest-day preferences; prefer several of these days for rest without treating '
+        'them as unavailable. availability[].preferLong marks alternative suitable days: choose among them, do not schedule '
+        'a long session on every marked day. A self-reported tenKm run reference is not a measured threshold; when '
+        'thresholdPaceSecPerKm is null keep the targets by perceived effort or heart rate. '
         'Advance task: work out the requested week like a week task, with feedback (planned against completed, the athlete '
         'review with effort 1-5 and reasons) of the last week as context. deviation is set when that week was strongly off '
         'plan (sick, injured or far less training): then adjustments may hold one patch for each week in workedOutWeeks '
@@ -1162,7 +1186,12 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                     row.definition = packed(workout)
             elif row:
                 db.session.delete(row)
+        after.pop('needsReview', None)
         plan['weeks'][after['week']] = after
+        # The frame, chart and worked-out week share one target after generation or an accepted adjustment.
+        block, number = block_for_week(plan['blocks'], week_start(after['week']))
+        if block and block['id'] in (plan.get('frame') or {}).get('blockIds', []):
+            block['weeks'][number - 1].update(targetHours=after['targetHours'], focus=after['focus'])
 
     def stage(kind, before, after, hinweise, decision, base, rejected=(), reported=None, timezone_name=None, **extra):
         """Stores an AI change as a proposal the athlete confirms or discards."""
@@ -1575,13 +1604,17 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         plan = current_plan()
         first, _ = plan_span(settings)
         blocks = plan['blocks']
-        new_blocks = frame_blocks(decision['phases'], first)
+        frame_id = str(uuid.uuid4())
+        baseline = training_background(load_rows(), zone(), datetime.now(zone()).date(), user().ftp, user().max_hr)['weeklyHours']
+        new_blocks = periodized_blocks(initial_segments(decision['phases'], settings, profile()), settings, profile(), frame_id, baseline)
+        for block in new_blocks:
+            block['source'] = 'plan'
         for block in new_blocks:
             blocks, _ = place_block(blocks, plan['weeks'], day_date(block['startDate']), len(block['weeks']))
             blocks = blocks + [block]
         plan['blocks'] = blocks
         plan.pop('season', None)  # The phases replace a former season plan.
-        plan['frame'] = {'id': str(uuid.uuid4()), 'status': 'active', 'startDate': settings['startDate'],
+        plan['frame'] = {'id': frame_id, 'status': 'active', 'startDate': settings['startDate'],
                          'endDate': settings['endDate'], 'source': 'aiRecommendation', 'rationale': decision['rationale'],
                          'hinweise': [h.strip() for h in decision['hinweise'] if h.strip()],
                          'blockIds': [b['id'] for b in new_blocks],
@@ -1609,6 +1642,12 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         if week in plan['weeks']:
             raise CoachError('Diese Woche wurde inzwischen schon geplant.')
         after = finish_week(decision, None, week, 'week', current_profile, plan, first_day)
+        block, number = block_for_week(plan['blocks'], week_start(week))
+        if block and block['id'] in (plan.get('frame') or {}).get('blockIds', []):
+            target = block['weeks'][number - 1]['targetHours']
+            fixed_hours = sum(s['durationMin'] or 0 for s in fixed_sessions(week, None)) / 60
+            if after['targetHours'] > max(target, fixed_hours) + .26:
+                raise CoachError('Die ausgearbeitete Woche überschreitet die Zielstunden aus der Trainingsausgangsbasis.')
         check_tests(after['sessions'], tests)
         after.update(hinweise=hinweise, groupSessions=groups)
         store_week(plan, after, None)
@@ -1641,7 +1680,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         frame = active_frame(plan)
         if frame and (frame['startDate'], frame['endDate']) != (settings['startDate'], settings['endDate']):
             return jsonify(error='Es gibt bereits einen Plan. Bitte ihn zuerst beenden, um einen neuen zu erstellen.'), 409
-        weeks = horizon(plan_weeks(settings), today)
+        weeks = horizon(plan_weeks(settings), today, settings.get('generationWeeks', 3))
         if not weeks:
             raise CoachError('Das Planende liegt in der Vergangenheit.')
         if not frame:
@@ -1700,7 +1739,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             reference = reference_monday(plan['settings']['replanMode'], now, plan['weeks'], reviewed_weeks(plan))
             if reference is None:
                 return None
-        return due_week(plan_weeks(plan['settings']), plan['weeks'], reference, today)
+        return due_week(plan_weeks(plan['settings']), plan['weeks'], reference, today, plan['settings'].get('generationWeeks', 3))
 
     @app.route('/api/coach/plan/advance', methods=['GET', 'POST'])
     def advance_plan():
@@ -1716,7 +1755,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         week = advance_state(plan, data['trigger'])
         if week is None:
             if data['trigger'] == 'manual':
-                raise CoachError('Die nächsten drei Wochen sind bereits ausgearbeitet.')
+                raise CoachError('Die ausgewählten nächsten Wochen sind bereits ausgearbeitet.')
             return jsonify(job=None, week=None)
         return start_advance(plan, week)
 
@@ -1752,7 +1791,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                          workedOutWeeks=[compact_week(plan['weeks'][key]) for key in ahead])
         schemas = response_schemas(SESSION_SCHEMA)
         schema = {**schemas['week'], 'properties': {**schemas['week']['properties'],
-                                                    'adjustments': {'type': 'array', 'maxItems': 3, 'items': schemas['patch']}},
+                                                    'adjustments': {'type': 'array', 'maxItems': len(ahead), 'items': schemas['patch']}},
                   'required': [*schemas['week']['required'], 'adjustments']}
         after, decision, plan = work_out_week(week, plan_start_day(plan, today), extra, schema, kind='advance')
         proposal, rejected = None, []
@@ -1824,7 +1863,14 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                                 for b in blocks if b['id'] in kept]}})
             plan = current_plan()  # Re-read after the provider call.
         blocks, kept = cut_frame(plan['blocks'], set(frame['blockIds']), min(start, after_end))
-        new_blocks = frame_blocks(decision['phases'], start) if decision else []
+        if decision:
+            remaining_settings = {**settings, 'startDate': start.isoformat()}
+            new_blocks = periodized_blocks(initial_segments(decision['phases'], remaining_settings, profile()),
+                                           remaining_settings, profile(), frame['id'])
+            for block in new_blocks:
+                block['source'] = 'plan'
+        else:
+            new_blocks = []
         if new_blocks:
             blocks, _ = place_block(blocks, plan['weeks'], start, sum(len(b['weeks']) for b in new_blocks))
         plan['blocks'] = blocks + new_blocks
@@ -1847,7 +1893,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                        **plan_context(plan, current_profile, today), 'wellness': wellness_context(current_profile, today),
                        'workedOutWeeks': [
                            worked_week(plan, current_profile, key, first_day) for key in keys]}
-            schema = adapt_response_schema(response_schemas(SESSION_SCHEMA)['patch'])
+            schema = adapt_response_schema(response_schemas(SESSION_SCHEMA)['patch'], len(keys))
             decision = generate('adapt', context, schema)
             current_profile, plan = profile(), current_plan()  # Re-read after the provider call.
             hinweise = [h.strip() for h in decision['hinweise'] if h.strip()]
@@ -1984,13 +2030,15 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                 'completedHours': None if state == 'future' else
                 summarize_period(rows, zone(), monday, min(monday + timedelta(days=6), today), ftp, max_hr)['trainingHours'],
                 # Rolling replanning reaches a week on the Sunday evening two weeks and a day before it.
-                'replanDate': None if worked or settings['replanMode'] == 'manual' else (monday - timedelta(days=15)).isoformat()})
+                'replanDate': None if worked or settings['replanMode'] == 'manual' else
+                (monday - timedelta(days=min((monday - day_date('1970-01-01')).days,
+                                            7 * (min(settings.get('generationWeeks', 3), len(keys)) - 1) + 1))).isoformat()})
         db.session.commit()  # Activity summaries may have been cached.
         first, total = plan_span(settings)
         busy = running_job()
         return jsonify({
-            'frame': frame, 'settings': settings, 'today': today.isoformat(),
-            'phases': [{key: b.get(key) for key in ('id', 'blockType', 'typeName', 'secondaryName', 'purpose', 'startDate', 'endDate', 'status')}
+            'revision': plan['revision'], 'frame': frame, 'settings': settings, 'today': today.isoformat(),
+            'phases': [{key: b.get(key) for key in ('id', 'blockType', 'typeName', 'secondaryFocus', 'secondaryName', 'purpose', 'startDate', 'endDate', 'status')}
                        | {'weeks': len(b['weeks'])} for b in blocks],
             'events': [{**e, 'planWeek': (day_date(e['startDate']) - first).days // 7 + 1} for e in current_profile['events']
                        if first.isoformat() <= e['startDate'] <= (first + timedelta(weeks=total, days=-1)).isoformat()],
@@ -2069,7 +2117,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                         'athleteWish': {'source': 'athlete', 'text': e['description']}}
                        for e in current_profile['events'] if e['endDate'] >= today.isoformat()],
             'availability': {**{key: availability[key] for key in ('windows', 'maxWeeklyHours', 'absoluteMaxWeeklyHours', 'restDay',
-                                                                   'longDay', 'trainingDaysPerWeek', 'noConsecutiveRestDays')},
+                                                                   'longDay', 'restDays', 'longDays', 'trainingDaysPerWeek', 'noConsecutiveRestDays')},
                              'exceptions': [e for e in availability['exceptions'] if e['to'] >= today.isoformat()]},
             'thresholds': {'source': 'athlete', 'ftp': user().ftp, 'maxHr': user().max_hr,
                            'thresholdPaceSecPerKm': threshold_pace(current_profile), 'metrics': current_profile['metrics']},
