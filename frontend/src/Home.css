@@ -38,34 +38,10 @@
 .home-week-pill { padding: 4px 10px; border-radius: 999px; background: var(--btn-bg); color: var(--btn-fg); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
 .home-kicker-rest { color: var(--accent-text); font-weight: 600; }
 .home-hero h1 { margin: 0; font-size: clamp(44px, 5.6vw, 80px); font-weight: 400; line-height: .98; letter-spacing: -.025em; }
-.home-hero h1 span { display: block; }
-.home-hero h1 em { display: block; color: var(--accent-text); font-style: italic; }
-.home-lede { margin: 22px 0 0; max-width: 560px; font-size: 18px; line-height: 1.5; color: var(--ink-2); }
+.home-hero h1 em { color: var(--accent-text); font-style: italic; }
+.home-date { margin: 14px 0 0; font-family: var(--font-display); font-size: 24px; color: var(--ink-2); }
+.home-lede { margin: 14px 0 0; max-width: 560px; font-size: 18px; line-height: 1.5; color: var(--ink-2); }
 .home-time { white-space: nowrap; } /* keep "0:59 h" on one line */
-
-.home-week { margin: 0; padding: 22px 24px 18px; display: flex; flex-direction: column; gap: 12px; background: color-mix(in srgb, var(--card) 94%, transparent); }
-.home-week-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; color: var(--ink-2); }
-.home-week-head strong { font-family: var(--font-display); font-size: 28px; font-weight: 400; color: var(--ink); }
-.home-week-head small { font-size: 15px; color: var(--muted-2); }
-.home-week-chart { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; }
-.home-week-axis { height: 150px; display: flex; flex-direction: column; justify-content: space-between; margin-top: -7px; margin-bottom: -7px; font-size: 11px; color: var(--muted-2); text-align: right; }
-.home-week-bars { position: relative; height: 150px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; border-bottom: 1px solid var(--ink);
-  background: repeating-linear-gradient(180deg, var(--line-soft) 0 1px, transparent 1px calc(150px / var(--rows))); }
-.home-week-bars > div { position: relative; }
-.home-week-bars > div.today { background: var(--highlight); border-radius: 3px 3px 0 0; }
-.home-week-bars i.planned { position: absolute; left: 0; right: 0; bottom: 0; box-sizing: border-box; border: 1.5px solid color-mix(in srgb, var(--sport-ride) 55%, transparent); border-bottom: 0; border-radius: 3px 3px 0 0;
-  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--sport-ride) 22%, transparent) 0 4px, transparent 4px 9px); }
-.home-week-bars .done { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column-reverse; gap: 1px; border-radius: 3px 3px 0 0; overflow: hidden; }
-.home-week-bars .done i { flex-basis: 0; min-height: 2px; }
-.home-week-rest { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); color: var(--accent-text); }
-.home-week-labels { display: grid; grid-template-columns: 30px repeat(7, minmax(0, 1fr)); column-gap: 10px; margin-top: -4px; font-size: 12px; color: var(--muted); text-align: center; }
-.home-week-labels::before { content: ''; }
-.home-week-labels span.today { color: var(--ink); font-weight: 600; }
-.home-week figcaption { display: flex; flex-wrap: wrap; gap: 8px 20px; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); }
-.home-week figcaption:empty { display: none; }
-.home-week figcaption span { display: inline-flex; align-items: center; gap: 6px; }
-.home-week figcaption i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; box-sizing: border-box; }
-.home-week figcaption i.planned { border: 1px solid color-mix(in srgb, var(--sport-ride) 55%, transparent); background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--sport-ride) 35%, transparent) 0 2px, transparent 2px 4px); }
 
 .home-grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 24px; align-items: start; }
 .home-main, .home-side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
@@ -76,17 +52,17 @@
 .home-block-head .home-link { margin: -10px 0; }
 .home-side .home-block h2 { font-size: 26px; }
 .home-side .home-block-head { border-bottom: 0; padding-bottom: 0; margin-bottom: 14px; }
-.home-subhead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; margin: 24px 0 14px; }
-.home-subhead h3 { margin: 0; font-size: 24px; font-weight: 500; }
-.home-subhead span { font-size: 13px; color: var(--muted); }
 
 /* Today: a planned workout gets the room, finished sessions are a line each, a free day is a rest day. */
-.today-plan { display: flex; flex-direction: column; gap: 14px; padding: 4px 0 24px; border-bottom: 1px solid var(--line); }
-.today-plan-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
-.today-plan h3 { margin: 0; font-size: 40px; font-weight: 400; line-height: 1.05; letter-spacing: -.015em; overflow-wrap: anywhere; }
+.today-plan { display: flex; flex-direction: column; gap: 16px; padding: 4px 0 24px; border-bottom: 1px solid var(--line); }
+.today-plan-top { display: flex; align-items: flex-start; gap: 16px; }
+.today-plan-title { flex-grow: 1; min-width: 0; }
+.today-plan h3 { margin: 0; font-size: 36px; font-weight: 400; line-height: 1.05; letter-spacing: -.015em; overflow-wrap: anywhere; }
+.today-plan-notes { margin: 8px 0 0; font-size: 15px; line-height: 1.5; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+.today-plan-ai { flex-shrink: 0; padding: 3px 8px; border-radius: 6px; background: var(--accent-bg); color: var(--accent-text); font-size: 12px; font-weight: 700; letter-spacing: .06em; }
 .today-plan dl, .race-goal dl { margin: 0; }
-.today-plan dl { display: flex; gap: 28px; }
-.today-plan dt { font-size: 13px; color: var(--muted); }
+.today-plan dl { display: flex; flex-wrap: wrap; gap: 12px 32px; padding-left: 60px; }
+.today-plan dt { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .today-plan dd { margin: 2px 0 0; font-size: 20px; font-weight: 600; }
 .today-profile { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 .today-profile-bars { display: flex; align-items: flex-end; gap: 1px; height: 64px; }
@@ -98,7 +74,7 @@
 .today-done { display: grid; gap: 4px; width: 100%; padding: 16px 0; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); text-align: left; }
 .today-done strong { font-family: var(--font-display); font-size: 24px; font-weight: 400; }
 .today-done > span:last-child { font-size: 14px; color: var(--ink-2); }
-.today-done:hover strong, .home-day-row:hover strong, .home-table-row:hover strong, .plan-card:hover .plan-card-title { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.today-done:hover strong, .home-table-row:hover strong { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
 
 .home-rest { display: flex; align-items: center; gap: 22px; padding: 22px 24px; border-radius: 10px; background: var(--highlight); }
 .home-rest-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 60px; height: 60px; border-radius: 50%; background: var(--accent-bg); color: var(--accent-text); }
@@ -107,22 +83,74 @@
 .home-rest p { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
 .home-rest .home-button { flex-shrink: 0; }
 
-.plan-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
-.plan-card { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; border: 1px solid var(--card-line); border-radius: 10px; background: var(--surface); box-shadow: 0 4px 14px rgba(27, 26, 23, .05); color: var(--ink); text-align: left; }
-.plan-card:hover { border-color: var(--line-strong); }
-.plan-card-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.plan-card-sport { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
-.plan-card-top strong { font-size: 14px; }
-.plan-card-title { font-family: var(--font-display); font-size: 30px; line-height: 1.05; overflow-wrap: anywhere; }
-
-.home-day-row { display: grid; grid-template-columns: 100px minmax(0, 1fr) auto; gap: 16px; align-items: baseline; width: 100%; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); text-align: left; }
-.home-day-label { font-size: 14px; color: var(--muted); }
-.home-day-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; }
-.home-day-title strong { font-family: var(--font-display); font-size: 20px; font-weight: 400; overflow-wrap: anywhere; }
-.home-day-detail { font-size: 14px; color: var(--ink-2); }
-.home-day-empty { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 6px 0; }
-.home-upcoming .home-day-row:last-child { border-bottom: 0; }
 .home-error { font-size: 14px; color: var(--danger); }
+
+/* The week as seven tiles: done (sport colour), planned (dashed), missed, free; today framed. */
+.home-week-sum { font-family: var(--font-display); font-size: 22px; color: var(--ink); white-space: nowrap; }
+.home-week-sum small { font-size: 15px; color: var(--muted-2); }
+.home-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+.home-day { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; }
+.home-day-name { font-size: 14px; color: var(--muted); text-align: center; }
+.home-day.today .home-day-name { color: var(--accent-text); font-weight: 600; }
+.home-day-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 84px; padding: 6px 2px; box-sizing: border-box; border: 1.5px solid transparent; border-radius: 12px; background: var(--tint); color: var(--muted-2); }
+.home-day-tile small { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.home-day-icons { display: flex; gap: 2px; }
+.home-day-tile.done { background: color-mix(in srgb, var(--day) 16%, var(--card)); color: var(--day); }
+.home-day-tile.planned { border-style: dashed; border-color: var(--line-strong); background: var(--surface); color: var(--day); }
+.home-day-tile.missed { background: var(--surface); color: var(--muted-2); opacity: .75; }
+.home-day.today .home-day-tile { border: 2px solid var(--accent); }
+button.home-day-tile:hover { filter: brightness(.97); border-color: var(--line-strong); }
+.home-day.today button.home-day-tile:hover { border-color: var(--accent); }
+
+/* Events with the time left; A, B and C as a round badge. */
+.home-events { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.home-events li { display: flex; align-items: center; gap: 16px; padding: 14px 16px; border: 1px solid var(--card-line); border-radius: 12px; background: var(--surface); }
+.home-priority { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: 12px; background: var(--tint); color: var(--ink-2); font-size: 18px; font-weight: 700; }
+.home-priority.priority-a { background: var(--accent); color: var(--btn-fg); }
+.home-priority.priority-b { background: var(--accent-bg); color: var(--accent-text); }
+.home-event-text { display: flex; flex-direction: column; gap: 3px; flex-grow: 1; min-width: 0; }
+.home-event-text strong { font-family: var(--font-display); font-size: 22px; font-weight: 400; overflow-wrap: anywhere; }
+.home-event-text span { font-size: 13px; color: var(--muted); }
+.home-event-text b { margin-right: 6px; font-weight: 600; color: var(--sport-ride); }
+.home-event-until { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; text-align: right; }
+.home-event-until strong { font-family: var(--font-display); font-size: 32px; font-weight: 400; line-height: 1; color: var(--accent-text); }
+.home-event-until span { margin-top: 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.home-events-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.home-events-empty p { margin: 0; font-size: 15px; line-height: 1.55; }
+
+/* Training phase: the phases of the plan as one bar with today as a ring. */
+.home-phase-title, .home-focus h3 { margin: 0 0 14px; font-size: 22px; font-weight: 500; }
+.home-phase-bar { position: relative; display: flex; gap: 3px; height: 12px; }
+.home-phase-bar i { flex-basis: 0; min-width: 4px; border-radius: 3px; background: var(--line-strong); }
+.home-phase-bar i:first-child { border-radius: 6px 3px 3px 6px; }
+.home-phase-bar i:last-child { border-radius: 3px 6px 6px 3px; }
+.home-phase-bar i.grundlage { background: var(--green); }
+.home-phase-bar i.aufbau { background: var(--blue); }
+.home-phase-bar i.schwelle { background: var(--ochre); }
+.home-phase-bar i.vo2max { background: var(--accent); }
+.home-phase-bar i.wettkampfspezifisch { background: var(--teal); }
+.home-phase-bar i.past { opacity: .45; }
+.home-phase-bar i:not(.current):not(.past) { opacity: .7; }
+.home-phase-today { position: absolute; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; box-sizing: border-box; border: 3px solid var(--ink); border-radius: 50%; background: var(--card); }
+.home-phase-status { display: flex; justify-content: space-between; gap: 16px; margin-top: 14px; font-size: 16px; }
+.home-phase-status strong { font-weight: 600; }
+.home-phase-status span { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.home-focus { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line-soft); }
+.home-focus h3 { margin-bottom: 6px; }
+.home-focus-facts { font-size: 13px; color: var(--muted); }
+.home-focus p { margin: 10px 0 0; font-family: var(--font-display); font-size: 19px; font-style: italic; line-height: 1.5; color: var(--ink-2); }
+
+/* Schedule: plan start, events and plan end on a vertical line. */
+.home-schedule { position: relative; margin: 0; padding: 0; list-style: none; }
+.home-schedule::before { content: ''; position: absolute; left: 8px; top: 10px; bottom: 10px; width: 2px; background: var(--line); }
+.home-schedule li { position: relative; display: flex; align-items: center; gap: 18px; padding: 12px 0; }
+.home-schedule-dot { position: relative; flex-shrink: 0; width: 18px; height: 18px; box-sizing: border-box; border: 2px solid var(--line-strong); border-radius: 50%; background: var(--card); }
+.home-schedule li.reached .home-schedule-dot { border-color: var(--accent); background: var(--accent); }
+.home-schedule li > div { display: flex; flex-direction: column; gap: 3px; flex-grow: 1; min-width: 0; }
+.home-schedule strong { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.home-schedule li > div span { font-size: 13px; color: var(--muted); }
+.home-schedule .home-priority { width: 32px; height: 32px; border-radius: 8px; font-size: 14px; }
+.home-schedule-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 24px; margin-top: 8px; }
 
 /* Recent activities as a ledger. */
 .home-table-head, .home-table-row { display: grid; grid-template-columns: 96px 34px 92px minmax(0, 1fr) 64px 76px 44px 44px 16px; gap: 14px; align-items: center; }
@@ -208,11 +236,19 @@
   .home-backdrop { height: 420px; }
   .home-block { padding: 20px 18px 22px; }
   .home-rest { flex-wrap: wrap; }
-  .today-plan h3 { font-size: 32px; }
+  .today-plan h3 { font-size: 28px; }
+  .today-plan dl { padding-left: 0; gap: 10px 24px; }
+  .home-days { gap: 6px; }
+  .home-day-name { font-size: 12px; }
+  .home-day-tile { height: 64px; border-radius: 10px; }
+  .home-day-tile small { display: none; }
+  .home-events li { padding: 12px; gap: 12px; }
+  .home-priority { width: 38px; height: 38px; font-size: 16px; }
+  .home-event-text strong { font-size: 19px; }
+  .home-event-until strong { font-size: 26px; }
   .home-table-head { display: none; }
   .home-table-row { grid-template-columns: 34px minmax(0, 1fr) auto; row-gap: 4px; }
   .home-table-row > span:first-child { grid-column: 2 / -1; order: -1; }
   .home-table-row > .home-table-chevron, .home-table-row > span:nth-child(n+6) { display: none; }
   .home-figures { grid-template-columns: minmax(0, 1fr); }
-  .home-day-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 }

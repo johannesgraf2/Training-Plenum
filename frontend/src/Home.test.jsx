@@ -6,7 +6,7 @@ import { powerStep } from './workoutModel';
 
 jest.mock('./BestEfforts', () => () => null);
 
-let container, root, originalFetch, profile, appearance, sparklines;
+let container, root, originalFetch, profile, appearance, sparklines, coachPlan, coachEvents;
 beforeEach(() => {
   jest.useFakeTimers();
   jest.setSystemTime(new Date('2026-01-28T09:00:00'));
@@ -16,11 +16,14 @@ beforeEach(() => {
   profile = { source: 'athlete', goal: { type: 'endurance', name: '', date: null, target: null } };
   appearance = { background: 'default', backgroundImage: null, raceGoalImage: null };
   sparklines = {};
+  coachPlan = null; coachEvents = null;
   global.fetch = jest.fn(async (url, options = {}) => {
     if (url === 'http://api/api/athlete-profile') return { ok: true, json: async () => profile };
     if (url === 'http://api/api/appearance') return { ok: true, json: async () => appearance };
     if (url === 'http://api/api/appearance/race-goal/image' && options.method === 'DELETE') return { ok: true, json: async () => ({ ...appearance, raceGoalImage: null }) };
     if (url.startsWith('http://api/api/activities/sparklines?ids=')) return { ok: true, json: async () => sparklines };
+    if (url.startsWith('http://api/api/coach/plan/weeks?')) return coachPlan ? { ok: true, json: async () => coachPlan } : { ok: false, json: async () => ({}) };
+    if (url === 'http://api/api/coach/events') return coachEvents ? { ok: true, json: async () => ({ source: 'athlete', events: coachEvents }) } : { ok: false, json: async () => ({}) };
     throw new Error(`Unexpected request ${url}`);
   });
 });
@@ -70,25 +73,95 @@ test('the start page leads with today and the week, and shows the race goal inst
     { id: 'a2', sport: 'ride', title: 'Grundlage mit Sprints', date: '2026-01-27T17:00:00', duration: 125, distance: 62.4, calories: 1450, power: 196 },
     { id: 'old', sport: 'ride', title: 'Letzte Woche', date: '2026-01-20T17:00:00', duration: 60, distance: 30, calories: 700 },
   ];
-  const threshold = { id: 'p1', version: 1, sport: 'ride', name: 'Schwelle 3 × 12 min', date: '2026-01-28', steps: [powerStep('warmup', 600, 150), powerStep('interval', 720, 260), powerStep('cooldown', 480, 120)] };
+  const threshold = { id: 'p1', version: 1, sport: 'ride', name: 'Schwelle 3 × 12 min', date: '2026-01-28', notes: 'Gleichmäßig an der Schwelle fahren.', steps: [powerStep('warmup', 600, 150), powerStep('interval', 720, 260), powerStep('cooldown', 480, 120)] };
   const easyRun = { id: 'p2', version: 1, sport: 'run', name: 'Lockerer Dauerlauf', date: '2026-01-29', steps: [powerStep('active', 2700, 0)].map(step => ({ ...step, target: { type: 'none' } })) };
-  const onOpenWorkout = jest.fn();
-  await act(async () => root.render(<Home apiBase="http://api" activities={activities} plannedWorkouts={[threshold, easyRun]} onOpenWorkout={onOpenWorkout} onOpenActivity={() => {}} onEditGoal={() => {}} onReloadWorkouts={() => {}} />));
+  const onOpenWorkout = jest.fn(); const onOpenActivity = jest.fn();
+  const today = { date: '2026-01-28', checkIn: null, dailyCheckIn: false, sessions: [{ id: 'p1', source: 'coach' }] };
+  await act(async () => root.render(<Home apiBase="http://api" activities={activities} plannedWorkouts={[threshold, easyRun]} onOpenWorkout={onOpenWorkout} onOpenActivity={onOpenActivity}
+    onEditGoal={() => {}} onReloadWorkouts={() => {}} today={today} user={{ name: 'Nora Berger' }} />));
 
-  expect(container.querySelector('h1').textContent).toBe('Mittwoch, 28. Januar');
+  expect(container.querySelector('h1').textContent).toBe('Hey Nora!');
+  expect(container.querySelector('.home-date').textContent).toBe('Mittwoch, 28. Januar');
   expect(container.querySelector('.home-kicker').textContent).toBe('KW 5Tag 3 von 7');
   // 2:51 h done, plus 30 min today and 45 min tomorrow still planned.
   expect(container.querySelector('.home-lede').textContent).toBe('Heute steht Schwelle 3 × 12 min auf dem Plan. Diese Woche hast du 2:51 h absolviert von geplanten 4:06 h.');
   expect(container.querySelector('.home-figures').textContent).toBe('2:51 hvon 4:06 h70,6 kmDistanz2 / 4Einheiten2.070 kcalKalorien');
   expect(container.querySelector('.today-plan h3').textContent).toBe('Schwelle 3 × 12 min');
   expect(container.querySelectorAll('.today-plan .today-profile-bars i')).toHaveLength(3);
-  expect(container.querySelector('.home-tomorrow .plan-card-title').textContent).toBe('Lockerer Dauerlauf');
+  expect(container.querySelector('.today-plan-notes').textContent).toBe('Gleichmäßig an der Schwelle fahren.');
+  expect(container.querySelector('.today-plan-ai').textContent).toBe('KI');
+  expect(container.querySelector('.today-plan dl').textContent).toContain('Datum28. Jan. 2026');
+  // The week as tiles: Monday and Tuesday done, today and tomorrow planned, the rest free.
+  const tiles = [...container.querySelectorAll('.home-day-tile')];
+  expect(tiles.map(tile => tile.className.replace('home-day-tile ', ''))).toEqual(['done', 'done', 'planned', 'planned', 'free', 'free', 'free']);
+  expect(container.querySelector('.home-day.today .home-day-name').textContent).toBe('Heute');
+  expect(tiles[3].getAttribute('aria-label')).toBe('Donnerstag: Lockerer Dauerlauf (geplant)');
+  act(() => tiles[0].click());
+  expect(onOpenActivity).toHaveBeenCalledWith(activities[0]);
+  act(() => tiles[5].click());
+  expect(onOpenWorkout).toHaveBeenCalledWith({ date: '2026-01-31' });
   expect(container.textContent).not.toContain('Herzfrequenz-Zonen');
   expect(container.querySelector('#race-goal-title').textContent).toBe('Wettkampfziel');
   expect(container.textContent).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
 
   act(() => button('Workout öffnen').click());
   expect(onOpenWorkout).toHaveBeenCalledWith(threshold);
+});
+
+test('without a name the greeting stays short, and without the coach there are no plan sections', async () => {
+  await act(async () => root.render(<Home apiBase="http://api" activities={[]} plannedWorkouts={[]} onOpenWorkout={() => {}} onOpenActivity={() => {}} onEditGoal={() => {}} onReloadWorkouts={() => {}} />));
+  expect(container.querySelector('h1').textContent).toBe('Hey!');
+  expect(container.querySelector('#home-events')).toBeNull();
+  expect(container.querySelector('#home-phase')).toBeNull();
+  expect(container.querySelector('#home-schedule')).toBeNull();
+});
+
+test('events count the weeks left, and the plan shows its phase, the week focus and the schedule', async () => {
+  coachEvents = [
+    { id: 'e1', title: 'northcape4000', sport: 'ride', subtype: 'ultra', priority: 'A', startDate: '2026-11-04', endDate: '2026-11-18', distanceKm: 4000, targetSeconds: null, elevationM: null },
+    { id: 'e2', title: 'Testrennen', sport: 'run', subtype: null, priority: 'B', startDate: '2026-02-05', endDate: '2026-02-05', distanceKm: null, targetSeconds: null, elevationM: null },
+    { id: 'old', title: 'Vorbei', sport: 'run', priority: 'C', startDate: '2025-12-01', endDate: '2025-12-01' },
+  ];
+  coachPlan = {
+    frame: { endDate: '2026-11-22' }, settings: { startDate: '2026-01-19', endDate: '2026-11-22' },
+    phases: [{ id: 'b1', blockType: 'grundlage', typeName: 'Base', startDate: '2026-01-19', endDate: '2026-03-15', weeks: 8, purpose: 'Aerobe Grundlage.' },
+      { id: 'b2', blockType: 'aufbau', typeName: 'Build', startDate: '2026-03-16', endDate: '2026-11-22', weeks: 36 }],
+    events: [coachEvents[0]],
+    weeks: Array.from({ length: 44 }, (_, i) => ({ number: i + 1, state: i < 1 ? 'past' : i === 1 ? 'current' : 'future', startDate: new Date(Date.UTC(2026, 0, 19 + i * 7)).toISOString().slice(0, 10),
+      phaseName: i < 8 ? 'Base' : 'Build', deload: false, targetHours: 6, focus: 'Umriss', plan: i === 1 ? { focus: 'Ruhige Bike-Ausdauer für einen kontrollierten Einstieg.', targetHours: 6.5 } : null })),
+  };
+  const onEditGoal = jest.fn(); const onOpenCoach = jest.fn();
+  await renderHome({ onEditGoal, onOpenCoach });
+
+  const events = [...container.querySelectorAll('.home-events li')];
+  expect(events).toHaveLength(2);
+  expect(events[0].textContent).toBe('BTestrennenLaufen 05.02.20268Tage übrig');
+  expect(events[1].textContent).toBe('Anorthcape4000Rad 04.11.–18.11.202640Wochen übrig');
+  act(() => button('Bearbeiten').click());
+  expect(onEditGoal).toHaveBeenCalledTimes(1);
+
+  expect(container.querySelectorAll('.home-phase-bar i')).toHaveLength(2);
+  expect(container.querySelector('.home-phase-status').textContent).toBe('BaseWoche 2/44');
+  expect(container.querySelector('.home-focus p').textContent).toBe('Ruhige Bike-Ausdauer für einen kontrollierten Einstieg.');
+  expect(container.querySelector('.home-focus-facts').textContent).toBe('Belastungswoche · Wochenziel 6,5 h');
+
+  const schedule = [...container.querySelectorAll('.home-schedule li')];
+  expect(schedule.map(item => item.querySelector('strong').textContent)).toEqual(['Plan startet', 'northcape4000', 'Plan endet']);
+  expect(schedule[0].className).toBe('reached');
+  expect(schedule[1].textContent).toContain('Ultra');
+  act(() => button('Plan im AI Coach').click());
+  expect(onOpenCoach).toHaveBeenCalledTimes(1);
+});
+
+test('without a plan the training phase invites to create one', async () => {
+  coachPlan = { frame: null, settings: null, phases: [], events: [], weeks: [] };
+  coachEvents = [];
+  const onOpenCoach = jest.fn();
+  await renderHome({ onOpenCoach });
+  expect(container.querySelector('#home-schedule')).toBeNull();
+  expect(container.querySelector('.home-events-empty')).not.toBeNull();
+  act(() => button('Plan erstellen').click());
+  expect(onOpenCoach).toHaveBeenCalledTimes(1);
 });
 
 const renderHome = (props = {}) => act(async () => root.render(<Home apiBase="http://api" activities={[]} plannedWorkouts={[]} onOpenWorkout={() => {}}
