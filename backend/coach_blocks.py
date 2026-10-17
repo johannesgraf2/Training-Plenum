@@ -33,6 +33,9 @@ GROUPS = {
     'vo2': _VO2,
     'sprint': {'bike_sit'},
     'quality': _TEMPO | _THRESHOLD | _VO2 | {'bike_sit'},
+    # Threshold tests are hard but fit into every block; they do not count toward the quality limits.
+    'test': {'bike_ftp_test', 'run_test_30'},
+    'hard': _TEMPO | _THRESHOLD | _VO2 | {'bike_sit', 'bike_ftp_test', 'run_test_30'},
     'strength': {'strength_general'},
     'ride': _SPORT['ride'],
     'run': _SPORT['run'],
@@ -339,12 +342,12 @@ def check_event_rules(events, sessions, changed):
             if start <= day(session) <= end:
                 raise CoachError(f'Am Tag von „{name}“ plant der Coach keine weitere Einheit.')
             if event['handling'] == 'miniTaper' and day(session) == start - timedelta(days=1) \
-                    and session['template'] in GROUPS['quality']:
+                    and session['template'] in GROUPS['hard']:
                 raise CoachError(f'Mini-Taper: am Tag vor „{name}“ keine harte Einheit.')
             if end < day(session) <= end + timedelta(days=after) and session['template'] not in GROUPS['easy']:
                 raise CoachError(f'Nach „{name}“ {"einen Tag" if after == 1 else f"{after} Tage"} nur locker.')
         if event['handling'] == 'miniTaper':
-            taper = [s for s in sessions if s['template'] in GROUPS['quality'] and start - timedelta(days=3) <= day(s) < start]
+            taper = [s for s in sessions if s['template'] in GROUPS['hard'] and start - timedelta(days=3) <= day(s) < start]
             if any(s['id'] in changed for s in taper) and \
                     (len(taper) > 1 or any((s['rendered']['durationMin'] or 0) > SHORT_QUALITY_MINUTES for s in taper)):
                 raise CoachError(f'Mini-Taper: in den 3 Tagen vor „{name}“ höchstens eine kurze Qualitätseinheit '

@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 from unittest.mock import Mock, patch
 
 from cryptography.fernet import Fernet
+from ai_provider import ProviderError
 from coach_domain import DEFAULT_PROFILE, DAYS, iso_week
 from coach_templates import PARAM_NAMES
 
@@ -825,6 +826,234 @@ class CoachAPITests(unittest.TestCase):
         provider.test_connection.return_value = {'connected': True, 'model': 'gpt-4.1-mini'}
         with patch('coach_api.get_provider', return_value=provider):
             self.assertTrue(self.client.post('/api/ai-provider/test', json={}).json['connected'])
+
+
+    # --- Plan with phases (M2) ----------------------------------------------------------------
+
+    @staticmethod
+    def phases(*items):
+        """Frame phases from (blockType, weeks) with the suggested rhythm and 1 h per week."""
+        from coach_blocks import suggested_rhythm
+        return [{'blockType': kind, 'secondaryFocus': None, 'purpose': 'Zweck', 'weeks': [
+            {'week': i + 1, 'phase': 'recovery' if deload else 'build', 'targetHours': 1, 'focus': 'Fokus'}
+            for i, deload in enumerate(suggested_rhythm(weeks, kind))]} for kind, weeks in items]
+
+    def planner(self, sessions=None, fail=None, adjustments=None):
+        """A test-double provider: the frame of 8 weeks Grundlage and 4 weeks Schwelle, then one ride per week."""
+        calls = []
+
+        def answer(key, model, instructions, context, schema, reasoning_effort=None, on_usage=None):
+            calls.append(copy.deepcopy(context))
+            on_usage({'inputTokens': 10, 'outputTokens': 5, 'cachedTokens': 0})
+            if fail and fail(context):
+                raise ProviderError('Der AI-Provider ist derzeit nicht erreichbar.')
+            if context['task'] == 'frame':
+                return {'phases': self.phases(('grundlage', 8), ('schwelle', 4)), 'rationale': 'Erst Basis.', 'hinweise': []}
+            week = context['week']
+            items = sessions(context) if sessions else [self.session(day=self.free_day(context))]
+            total = sum(i['params']['durationMin'] or 55 for i in items) / 60 + \
+                sum(f['durationMin'] for f in context['fixedSessions']) / 60
+            result = {'week': week, 'targetHours': round(total, 2), 'focus': 'Locker', 'hinweise': [' Ruhig. '], 'sessions': items}
+            if context['task'] == 'advance':
+                result['adjustments'] = adjustments(context) if adjustments else []
+            return result
+        provider = Mock()
+        provider.generate.side_effect = answer
+        return provider, calls
+
+    @staticmethod
+    def free_day(context):
+        return DAYS[len(context.get('elapsedDays', []))]
+
+    def plan_settings(self, start=None, weeks=12, mode='afterReview'):
+        start = start or self.start
+        body = {'startDate': start.isoformat(), 'endDate': (start - timedelta(days=start.weekday()) + timedelta(weeks=weeks, days=-1)).isoformat(),
+                'replanMode': mode}
+        self.assertEqual(self.client.put('/api/coach/plan/settings', json=body).status_code, 200)
+
+    def run_job(self, response, expected=202):
+        self.assertEqual(response.status_code, expected, response.get_json())
+        job = response.get_json()['job']
+        self.backend.app.extensions['coach_jobs'][job['id']].join(20)
+        return self.client.get('/api/coach/plan/create/' + job['id']).get_json()['job']
+
+    def create(self, provider, expected=202):
+        with patch('coach_api.get_provider', return_value=provider):
+            return self.run_job(self.client.post('/api/coach/plan/create?timezone=Europe/Berlin', json={}), expected)
+
+    def test_plan_creation_lays_out_phases_and_takes_over_three_weeks(self):
+        self.assertEqual(self.client.post('/api/coach/plan/create', json={}).status_code, 400)  # No settings yet.
+        self.plan_settings()
+        provider, calls = self.planner()
+        job = self.create(provider)
+        self.assertEqual(job['status'], 'done', job)
+        weeks = [iso_week(self.start + timedelta(weeks=i)) for i in range(3)]
+        self.assertEqual([(s['id'], s['label'], s['status']) for s in job['steps']],
+                         [('frame', 'Phasen festlegen', 'done')] + [(w, f'Woche {i + 1} planen', 'done') for i, w in enumerate(weeks)])
+        self.assertEqual([c['task'] for c in calls], ['frame', 'week', 'week', 'week'])
+        frame = calls[0]
+        self.assertEqual((frame['plan']['weeks'], len(frame['weeklyLimits']), frame['weeklyLimits'][0]['maxHours']), (12, 12, 10))
+        self.assertIn('snapshot', frame)
+        self.assertEqual(len(calls[2]['blockHistory']), 1)  # Week 2 builds on week 1.
+        self.assertEqual(job['result']['weeks'][0], {'week': weeks[0], 'weekNumber': 1, 'phase': 'build', 'phaseName': 'Grundlage',
+                                                     'targetHours': 1, 'calculatedHours': 1, 'focus': 'Locker', 'hinweise': ['Ruhig.']})
+        plan = self.client.get('/api/coach/plan').get_json()
+        self.assertEqual([(b['blockType'], b['source'], b['purpose']) for b in plan['blocks']],
+                         [('grundlage', 'plan', 'Zweck'), ('schwelle', 'plan', 'Zweck')])
+        self.assertEqual((plan['frame']['status'], plan['frame']['rationale']), ('active', 'Erst Basis.'))
+        self.assertEqual(sorted(plan['weeks']), weeks)
+        self.assertEqual(len(self.client.get('/api/workouts').get_json()), 3)
+        self.assertEqual(self.client.get('/api/coach/usage').get_json()['byKind'], {'frame': 1, 'week': 3})
+        self.assertEqual(self.client.post('/api/coach/plan/create', json={}).status_code, 409)  # Already created.
+        self.plan_settings(weeks=10)
+        self.assertIn('beenden', self.client.post('/api/coach/plan/create', json={}).get_json()['error'])
+
+    def test_a_failed_step_keeps_what_is_saved_and_a_retry_continues(self):
+        self.plan_settings()
+        second = iso_week(self.start + timedelta(weeks=1))
+        provider, calls = self.planner(fail=lambda context: context.get('week') == second)
+        job = self.create(provider)
+        self.assertEqual(job['status'], 'failed')
+        self.assertIn('nicht erreichbar', job['error'])
+        self.assertEqual([s['status'] for s in job['steps']], ['done', 'done', 'failed', 'pending'])
+        self.assertEqual(sorted(self.client.get('/api/coach/plan').get_json()['weeks']), [iso_week(self.start)])
+        provider, calls = self.planner()
+        job = self.create(provider)
+        self.assertEqual((job['status'], [s['status'] for s in job['steps']]), ('done', ['done'] * 4))
+        self.assertEqual([c['week'] for c in calls], [second, iso_week(self.start + timedelta(weeks=2))])
+
+    def test_a_frame_that_breaks_the_rules_saves_nothing(self):
+        self.plan_settings(weeks=13)
+        provider, _ = self.planner()
+        job = self.create(provider)
+        self.assertEqual((job['status'], job['steps'][0]['status']), ('failed', 'failed'))
+        self.assertIn('Die Phasen ergeben 12 Wochen, der Plan hat 13.', job['error'])
+        plan = self.client.get('/api/coach/plan').get_json()
+        self.assertEqual((plan['blocks'], plan['weeks'], plan.get('frame')), ([], {}, None))
+
+    def test_a_requested_ftp_test_must_be_in_the_first_week(self):
+        self.assertEqual(self.client.put('/api/athlete-profile', json={'thresholds': {'ride': {'source': 'test'}}}).status_code, 200)
+        self.plan_settings()
+        provider, calls = self.planner()
+        job = self.create(provider)
+        self.assertIn('FTP-Test', job['error'])
+        self.assertEqual(calls[1]['requiredTests'], ['bike_ftp_test'])
+        test = {**self.session('test', 'tue', None, 'bike_ftp_test'), 'params': dict.fromkeys(PARAM_NAMES)}
+        first = [test, self.session('lang', 'sat', 120)]  # The test is hard: Grundlage still needs 80 % easy time.
+        provider, calls = self.planner(sessions=lambda context: first if context['week'] == iso_week(self.start) else [self.session()])
+        job = self.create(provider)
+        self.assertEqual(job['status'], 'done', job)
+        self.assertNotIn('requiredTests', calls[1])
+        workouts = self.client.get('/api/workouts').get_json()
+        self.assertIn('FTP-Test Rad', [w['name'] for w in workouts])
+
+    def test_group_training_is_a_fixed_session_that_counts_toward_the_week(self):
+        window = lambda day, group=None: {'id': day, 'day': day, 'kind': 'available', 'allDay': False, 'from': '18:00', 'to': '20:00',
+                                          'sports': {'ride': {'indoor': True, 'outdoor': True}}, 'group': group}
+        windows = [window(day) for day in DAYS if day != 'wed'] + [window('wed', {'sport': 'ride', 'intensity': 'hard', 'note': 'Verein'})]
+        self.assertEqual(self.client.put('/api/athlete-profile', json={'availability': {'windows': windows, 'maxWeeklyHours': 10}}).status_code, 200)
+        self.plan_settings()
+        provider, calls = self.planner()
+        self.assertEqual(self.create(provider)['status'], 'done')
+        context = calls[1]
+        self.assertEqual([(g['group']['intensity'], g['date']) for g in context['groupSessions']],
+                         [('hard', (self.start + timedelta(days=2)).isoformat())])
+        self.assertEqual([(f['day'], f['durationMin']) for f in context['fixedSessions']], [('wed', 120)])
+        week = self.client.get('/api/coach/plan').get_json()['weeks'][self.week]
+        self.assertEqual((week['calculatedHours'], len(week['groupSessions'])), (3, 1))
+        group = [w for w in self.client.get('/api/workouts').get_json() if w['name'] == 'Gruppentraining']
+        self.assertEqual(len(group), 3)
+        self.assertTrue(all(w['locked'] for w in group))
+        self.assertIn('hart · Verein', group[0]['notes'])
+        # Ending the plan removes the coming weeks with their workouts; the plan had not started yet.
+        result = self.client.post('/api/coach/plan/reset', json={}).get_json()
+        self.assertEqual((result['weeks'], result['blocks'], result['frame']['status'], result['deletedWorkouts']), ({}, [], 'ended', 6))
+        self.assertEqual(self.client.get('/api/workouts').get_json(), [])
+        self.assertEqual(self.create(self.planner()[0])['status'], 'done')  # A new plan with the same settings.
+
+    def test_rolling_replanning_after_the_review_with_a_proposal_after_illness(self):
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        self.plan_settings(start=today)
+        provider, _ = self.planner()
+        self.assertEqual(self.create(provider)['status'], 'done')
+        weeks = [iso_week(monday + timedelta(weeks=i)) for i in range(4)]
+        state = self.client.get('/api/coach/plan/advance').get_json()
+        self.assertEqual((state['replanMode'], state['week'], state['nextManualWeek'], state['job']), ('afterReview', None, weeks[3], None))
+        with patch('coach_api.get_provider', return_value=provider):
+            self.assertEqual(self.client.post('/api/coach/plan/advance', json={'trigger': 'auto'}).get_json(), {'job': None, 'week': None})
+        plan = self.client.get('/api/coach/plan').get_json()
+        current = plan['weeks'][weeks[0]]
+        bad = {'missedSessions': ['fremd'], 'effort': 4, 'reasons': ['sick'], 'note': ''}
+        self.assertEqual(self.client.put(f'/api/coach/weeks/{weeks[0]}/review', json=bad).status_code, 400)
+        self.assertEqual(self.client.put(f'/api/coach/weeks/{weeks[0]}/review', json={**bad, 'reasons': ['flu']}).status_code, 400)
+
+        def adjust(context):
+            target = context['workedOutWeeks'][0]
+            session = {**target['sessions'][0], 'params': {**target['sessions'][0]['params'], 'durationMin': 30}}
+            session = {key: session[key] for key in ('id', 'day', 'template', 'params')}
+            return [{'week': target['week'], 'targetHours': .5, 'focus': 'Leichter', 'hinweise': ['Nach Krankheit ruhiger.'],
+                     'operations': [{'op': 'replace', 'sessionId': session['id'], 'session': session}]},
+                    {'week': weeks[3], 'targetHours': 0, 'focus': 'x', 'hinweise': [], 'operations': []}]
+        provider, calls = self.planner(adjustments=adjust)
+        with patch('coach_api.get_provider', return_value=provider):
+            response = self.client.put(f'/api/coach/weeks/{weeks[0]}/review?timezone=Europe/Berlin',
+                                       json={**bad, 'missedSessions': [current['sessions'][0]['id']]})
+            self.assertEqual(response.status_code, 200, response.get_json())
+            self.assertEqual(response.get_json()['weeks'][weeks[0]]['review']['reasons'], ['sick'])
+            job = self.run_job(response, 200)
+        self.assertEqual(job['status'], 'done', job)
+        self.assertEqual((job['kind'], job['steps'][0]['id'], job['steps'][0]['label']), ('advance', weeks[3], 'Woche 4 planen'))
+        result = job['result']
+        self.assertEqual((result['week'], result['weekNumber'], result['deviation'], result['reviewWeek']), (weeks[3], 4, 'sick', weeks[0]))
+        self.assertEqual(result['rejectedAdjustments'][0]['week'], weeks[3])
+        context = calls[0]
+        self.assertEqual((context['task'], context['deviation']['reason'], context['feedback']['review']['effort']), ('advance', 'sick', 4))
+        self.assertEqual([w['week'] for w in context['workedOutWeeks']], weeks[1:3])
+        self.assertIn(weeks[3], self.client.get('/api/coach/plan').get_json()['weeks'])
+        with self.backend.app.app_context():
+            proposal = json.loads(self.backend.db.session.get(self.Proposal, result['proposalId']).definition)
+        self.assertEqual((proposal['kind'], sorted(proposal['after']), proposal['reason']), ('weeks', [weeks[1]], 'sick'))
+        confirmed = self.client.post(f"/api/coach/proposals/{result['proposalId']}/confirm", json={'confirm': True})
+        self.assertEqual(confirmed.status_code, 200, confirmed.get_json())
+        self.assertEqual(confirmed.get_json()['weeks'][weeks[1]]['calculatedHours'], .5)
+        # Ending the plan keeps the running week up to yesterday and cuts the running phase at its Sunday.
+        result = self.client.post('/api/coach/plan/reset', json={}).get_json()
+        self.assertEqual(list(result['weeks']), [weeks[0]])
+        self.assertEqual(result['weeks'][weeks[0]]['sessions'], [])
+        self.assertEqual([(b['status'], b['endDate']) for b in result['blocks']], [('abandoned', (monday + timedelta(days=6)).isoformat())])
+        self.assertEqual(self.client.get('/api/workouts').get_json(), [])
+
+    def test_manual_replanning_and_one_job_at_a_time(self):
+        import threading
+        today = date.today()
+        self.plan_settings(start=today, mode='manual')
+        provider, _ = self.planner()
+        self.assertEqual(self.create(provider)['status'], 'done')
+        self.assertIsNone(self.client.get('/api/coach/plan/advance').get_json()['week'])  # Never automatically.
+        release = threading.Event()
+        slow, _ = self.planner(fail=lambda context: not release.wait(10))
+        with patch('coach_api.get_provider', return_value=slow):
+            started = self.client.post('/api/coach/plan/advance', json={'trigger': 'manual'})
+            busy = self.client.post('/api/coach/plan/advance', json={'trigger': 'manual'})
+            self.assertEqual((busy.status_code, busy.get_json()['job']['id']), (409, started.get_json()['job']['id']))
+            self.assertEqual(self.client.post('/api/coach/plan/reset', json={}).status_code, 409)
+            release.set()
+            self.assertEqual(self.run_job(started)['status'], 'done')
+        self.assertIn('bereits ausgearbeitet',
+                      self.client.post('/api/coach/plan/advance', json={'trigger': 'manual'}).get_json()['error'])
+
+    def test_a_job_of_a_stopped_server_shows_as_interrupted(self):
+        Job = self.backend.app.extensions['coach_job_model']
+        with self.backend.app.app_context():
+            Job.query.delete()
+            self.backend.db.session.add(Job(id='old', user_id=self.backend.DEMO_USER_ID, kind='create',
+                                            steps=json.dumps([{'id': 'frame', 'label': 'Phasen festlegen', 'status': 'running'}])))
+            self.backend.db.session.commit()
+        job = self.client.get('/api/coach/plan/create/old').get_json()['job']
+        self.assertEqual((job['status'], job['steps'][0]['status']), ('failed', 'failed'))
+        self.assertIn('unterbrochen', job['error'])
+        self.assertEqual(self.client.get('/api/coach/plan/create/unknown').status_code, 404)
 
 
 if __name__ == '__main__':
