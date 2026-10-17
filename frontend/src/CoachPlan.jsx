@@ -4,7 +4,7 @@ import { ChangeCard, request } from './CoachChat';
 import { localDate, stepDescription, workoutOverview } from './workoutModel';
 import { sportLabels } from './sports';
 import { Icon } from './icons';
-import { HorizonSetting, PhaseEditor, WeekHoursChart } from './PlanEditor';
+import { HorizonSetting, PhaseEditor, WeekHoursChart } from './PlanEditor.jsx';
 import './CoachPlan.css';
 
 // The plan area: phase bar up to the event (blocks changed by hand with "Ändern"), weekly hours up to the goal, how many

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { request } from './CoachChat';
 import { Icon } from './icons';
-import { add, body, editorState, grow, layout, move, remove, setTaper, shrink } from './planEditor';
+import { add, body, editorState, grow, layout, move, remove, setTaper, shrink } from './phaseEditing';
 
 const fmt = value => value == null ? '—' : Number(value).toLocaleString('de-DE', { maximumFractionDigits: 1 });
 const shortDate = date => new Date(`${date}T12:00:00`).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
