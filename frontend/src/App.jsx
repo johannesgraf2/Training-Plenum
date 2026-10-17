@@ -357,7 +357,7 @@ export default function App() {
             onReloadWorkouts={reloadWorkouts} onOpenActivity={openActivity} onOpenWorkout={setWorkoutEditor}
             onEditGoal={() => openCoachSettings('events')} bestEffortsYear={calMonth.getFullYear()}
             whoopDays={whoopDays} onOpenWhoop={() => setShowWhoop(true)} onOpenCoach={openCoachPlan}
-            today={today} onOpenCheckIn={() => setCheckInOpen(true)} />
+            today={today} onOpenCheckIn={() => setCheckInOpen(true)} user={user} />
         ) : page === 'calendar' ? (
           <div className="calendar">
             <div className="calendar-toolbar">
