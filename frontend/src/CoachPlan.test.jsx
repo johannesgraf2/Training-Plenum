@@ -161,7 +161,7 @@ test('blocks change by hand with fixed rules: no room means a conflict, freed we
   data = full;
   const changed = jest.fn();
   await render({ onChanged: changed });
-  await click(button('Ändern'));
+  await click(button('Phasen ändern'));
   const press = label => click(container.querySelector(`[aria-label="${label}"]`));
   await press('Grundlage länger');
   expect(container.querySelector('.plan-editor [role="alert"]').textContent).toContain('Kein Platz bis zum Planende');

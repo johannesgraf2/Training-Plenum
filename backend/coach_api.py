@@ -1033,7 +1033,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'the Sunday has. '
         'blockWeek.targetHours is the volume of the week from the plan (athleteHours true: the athlete set it): targetHours '
         'stays within 30 minutes of it unless the availability does not allow it (systemNote.rejectedChange: your previous '
-        'week missed the athlete\'s hours); blockWeek.phase recovery is a deload week. '
+        'week missed the athlete\'s hours); blockWeek.phase recovery is a deload week. In a week task systemNote.rejectedChange '
+        'is why the server rejected your previous answer for this week: fix exactly that and keep every other rule. '
         'Interval rides may set durationMin to embed the intervals in a longer easy ride. '
         'Block task: recommend mode returns 2-3 distinct options (blockType, optional secondaryFocus, length within the type limits), '
         'exactly one recommended; choose mode returns exactly one option with the chosen blockType, secondaryFocus and length and only '
@@ -1801,23 +1802,26 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         tests = required_tests(current_profile) if week == plan_weeks(plan['settings'])[0] else []
         if tests:
             context['requiredTests'] = tests
+        # A week that breaks a rule goes back to the coach once with the reason, so one slip does not stop the planning.
         for attempt in range(2):
             decision = generate(kind, context, schema or response_schemas(SESSION_SCHEMA)['week'])
             current_profile, plan = profile(), current_plan()  # Re-read after the provider call.
             if week in plan['weeks']:
                 raise CoachError('Diese Woche wurde inzwischen schon geplant.')
-            # Hours the athlete set are binding; the coach gets one more try when he misses them.
-            wanted = athlete_hours(plan, week)
-            if wanted is None or abs(decision['targetHours'] - wanted) <= ATHLETE_HOURS_TOLERANCE or attempt:
+            try:
+                # Hours the athlete set are binding.
+                wanted = athlete_hours(plan, week)
+                if wanted is not None and abs(decision['targetHours'] - wanted) > ATHLETE_HOURS_TOLERANCE:
+                    raise CoachError(f'Die Woche hat {decision["targetHours"]:g} h, du hast {wanted:g} h für sie festgelegt.')
+                after = finish_week(copy.deepcopy(decision), None, week, 'week', current_profile, plan, first_day)
+                check_tests(after['sessions'], tests)
                 break
-            context['systemNote'] = {'source': 'calculated', 'rejectedChange': f'Die Woche hat {decision["targetHours"]:g} h, '
-                                     f'du hast {wanted:g} h für sie festgelegt.'}
-        if wanted is not None and abs(decision['targetHours'] - wanted) > ATHLETE_HOURS_TOLERANCE:
-            raise CoachError(f'Der Coach hat die von dir festgelegten {wanted:g} h für {week} nicht getroffen. Bitte neu planen '
-                             'oder die Stunden der Woche ändern.')
+            except (CoachError, TemplateError) as error:
+                if attempt:
+                    raise CoachError(f'{week_label(plan, week).removesuffix(" planen")}: Der Coach hat zweimal eine Regel '
+                                     f'verfehlt ({str(error).rstrip(".")}). Bitte erneut planen lassen.') from None
+                context['systemNote'] = {'source': 'calculated', 'rejectedChange': str(error)}
         hinweise = [h.strip() for h in decision['hinweise'] if h.strip()]
-        after = finish_week(decision, None, week, 'week', current_profile, plan, first_day)
-        check_tests(after['sessions'], tests)
         after.update(hinweise=hinweise, groupSessions=groups)
         store_week(plan, after, None)
         save_plan(plan)

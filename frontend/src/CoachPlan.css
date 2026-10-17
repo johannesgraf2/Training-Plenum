@@ -193,3 +193,8 @@
 .plan-week-editor-hours { display: grid; gap: 4px; max-width: 180px; font-size: 11px; font-weight: 600; }
 .plan-week-editor small { font-size: 11px; }
 .plan-week-editor .coach-actions { margin: 0; }
+.plan-section-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 14px 0 8px; }
+.plan-section-label small { font-size: 11px; color: var(--fg-64748b); }
+.plan-hours { border-top: 1px solid var(--line-soft); padding-top: 16px; }
+.plan-week-editor-head > div { display: grid; gap: 2px; }
+.plan-week-editor-head small { font-size: 11px; }

@@ -290,7 +290,10 @@ export default function CoachPlan({ apiBase = '', version = 0, workoutsById = {}
       <div className="plan-head-top"><div>
         <span className="coach-eyebrow">{event ? `${event.title} · ${fullDate(event.startDate)}` : `Dein Plan bis ${fullDate(overview.frame.endDate)}`}</span>
         <h2>{event ? (countdown === 0 ? 'Diese Woche ist es so weit' : `Noch ${countdown} ${countdown === 1 ? 'Woche' : 'Wochen'}`) : `${weeks.length} Wochen`}{current ? ` · Woche ${current.number} von ${weeks.length}` : ''}</h2></div>
-        {!editing && <button type="button" className="plan-edit" disabled={advance?.status === 'running'} onClick={() => setEditing(true)}>Ändern</button>}</div>
+        {!editing && <button type="button" className="plan-edit" disabled={advance?.status === 'running'} onClick={() => setEditing(true)}>Phasen ändern</button>}</div>
+      <div className="plan-section-label"><span className="coach-eyebrow">Phasen</span>
+        <small>{editing ? 'Reihenfolge und Länge der Schwerpunkte ändern. Stunden und Belastung einzelner Wochen änderst du unten im Diagramm.'
+          : 'Der Schwerpunkt je Zeitraum, z. B. Grundlage, VO2max oder Schwelle.'}</small></div>
       {editing ? <PhaseEditor key={`${overview.frame.id}-${reloads}`} apiBase={apiBase} overview={overview} onCancel={() => setEditing(false)}
         onSaved={result => { setEditing(false); setReloads(n => n + 1); onChanged?.(result); }} />
         : <PhaseBar overview={overview} today={today} />}

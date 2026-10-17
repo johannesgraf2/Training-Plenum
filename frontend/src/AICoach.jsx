@@ -128,7 +128,7 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
     } else if (state.status === 'done') {
       const result = data.result || {};
       if (kind === 'adapt') {
-        setNotice(result.proposalId ? `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}Prüfe unten die Anpassung deiner ausgearbeiteten Wochen.`
+        setNotice(result.proposalId ? `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}Prüfe unten die Anpassung deiner ausgearbeiteten Wochen. In den Kalender kommt sie erst mit „Übernehmen“.`
           : `${result.frameChanged ? 'Phasen neu festgelegt. ' : ''}Die ausgearbeiteten Wochen passen weiter zu deinen Einstellungen.`);
       } else if (result.weeks?.length === 0) setNotice('Die Wochen sind bereits ausgearbeitet.');
       else setNotice(`${result.weeks?.length > 1 ? `${result.weeks.length} Wochen geplant, zuletzt ` : ''}Woche ${result.weekNumber} geplant – ${fmt(result.calculatedHours)} h${result.focus ? `, Fokus ${result.focus}` : ''}.`);
@@ -138,7 +138,10 @@ export default function AICoach({ initialTab = 'today', initialSection, tabVersi
       setNotice('Planung gestoppt. Bereits geplante Wochen bleiben erhalten.');
       afterPlanChange().catch(() => {});
     } else if (state.status === 'failed') {
-      setError(`${kind === 'adapt' ? 'Der Plan konnte nicht angepasst werden' : 'Die nächste Woche konnte nicht geplant werden'}: ${state.error || 'unbekannter Fehler'}`);
+      setError(kind === 'adapt' ? `Der Plan konnte nicht angepasst werden: ${state.error || 'unbekannter Fehler'}`
+        : `Planung abgebrochen: ${state.error || 'unbekannter Fehler'} Bereits geplante Wochen bleiben erhalten.`);
+      // Weeks planned before the failure are saved: plan and calendar show them.
+      afterPlanChange().catch(() => {});
     }
   }
   function startJob(path, body, quiet) {

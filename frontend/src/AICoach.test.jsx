@@ -319,3 +319,12 @@ test('a yellow check-in adapts the day in the coach chat', async () => {
   expect(container.querySelector('.chat-ref').textContent).toContain('Über: Heute · Grundlage');
   expect(requests.some(r => r.path === '/api/coach/proposals')).toBe(false);
 });
+
+test('a failed replanning says what broke and still loads the weeks planned before into plan and calendar', async () => {
+  responses['POST /api/coach/plan/advance'] = ok({ job: { id: 'job-1', kind: 'advance', status: 'failed', steps: [],
+    error: 'Woche 10: Der Coach hat zweimal eine Regel verfehlt (Im Block „VO2max“ mindestens 2× VO2max-Einheit pro Belastungswoche).' } });
+  await render({ initialTab: 'today' });
+  expect(container.querySelector('[role="alert"]').textContent).toBe('Planung abgebrochen: Woche 10: Der Coach hat zweimal eine Regel verfehlt '
+    + '(Im Block „VO2max“ mindestens 2× VO2max-Einheit pro Belastungswoche). Bereits geplante Wochen bleiben erhalten.');
+  expect(changed).toHaveBeenCalled();
+});
