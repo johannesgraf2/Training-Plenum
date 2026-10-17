@@ -33,32 +33,41 @@ function SportsStep({ ctx }) {
   </>;
 }
 
-function SourcesStep({ ctx }) {
-  const { apiBase } = ctx;
+/** Garmin, WHOOP and files with their state; a dialog opens to connect or import. onChanged runs after a dialog closed,
+ * onConnected learns whether any source is connected. */
+export function SourceList({ apiBase, hasData, onChanged, onConnected }) {
   const [dialog, setDialog] = useState(null);
   const [whoop, setWhoop] = useState(null);
-  const reload = ctx.reloadBackground;
-  const garmin = useGarminStatus(apiBase, reload);
+  const garmin = useGarminStatus(apiBase, onChanged);
   const loadWhoop = useCallback(() => fetch(`${apiBase}/api/whoop`).then(r => r.ok ? r.json() : null).then(setWhoop).catch(() => setWhoop(null)), [apiBase]);
   useEffect(() => { loadWhoop(); }, [loadWhoop]);
-  const close = () => { setDialog(null); reload(); loadWhoop(); };
+  const close = () => { setDialog(null); onChanged(); loadWhoop(); };
   const garminReady = garmin.status?.connected && !garmin.status.needsLogin;
   const sources = [
     { key: 'garmin', title: 'Garmin', gives: 'Aktivitäten, Workout-Export', connected: garminReady, text: garminSummary(garmin.status).text },
     { key: 'whoop', title: 'WHOOP', gives: 'Erholung, Schlaf', connected: !!whoop?.connected, text: whoop?.connected ? 'Verbunden' : 'Nicht verbunden' },
-    { key: 'files', title: 'Dateien & Exporte', gives: 'FIT, GPX, TCX, TrainingPeaks, Strava-Export', connected: ctx.data.background.hasData,
-      text: ctx.data.background.hasData ? 'Aktivitäten vorhanden' : 'Noch keine Aktivitäten' },
+    { key: 'files', title: 'Dateien & Exporte', gives: 'FIT, GPX, TCX, TrainingPeaks, Strava-Export', connected: hasData,
+      text: hasData ? 'Aktivitäten vorhanden' : 'Noch keine Aktivitäten' },
   ];
+  const connected = sources.some(source => source.connected);
+  useEffect(() => { onConnected?.(connected); }, [connected]);
   return <>
-    <h2>Verbinde deine Daten</h2>
-    <p>Mit deinen Trainingsdaten füllt der Coach vieles vor und plant passender. Du kannst den Schritt auch überspringen; dann fragt er nach.</p>
     <ul className="onboarding-sources">{sources.map(source => <li key={source.key}>
       <div><strong>{source.title}</strong><small>{source.gives}</small><span className={source.connected ? 'onboarding-ok' : ''}>{source.text}</span></div>
       <button type="button" onClick={() => setDialog(source.key)}>{source.connected ? 'Öffnen' : 'Verbinden'}</button>
     </li>)}</ul>
-    <StepFooter onBack={ctx.back} onNext={() => ctx.complete('sources')} nextLabel={sources.some(s => s.connected) ? 'Weiter' : 'Überspringen'} busy={ctx.busy} />
-    {(dialog === 'garmin' || dialog === 'files') && <DataHub apiBase={apiBase} initialView={dialog} onClose={close} onOpen={close} onSynced={reload} />}
+    {(dialog === 'garmin' || dialog === 'files') && <DataHub apiBase={apiBase} initialView={dialog} onClose={close} onOpen={close} onSynced={onChanged} />}
     {dialog === 'whoop' && <WhoopSync apiBase={apiBase} onClose={close} />}
+  </>;
+}
+
+function SourcesStep({ ctx }) {
+  const [connected, setConnected] = useState(false);
+  return <>
+    <h2>Verbinde deine Daten</h2>
+    <p>Mit deinen Trainingsdaten füllt der Coach vieles vor und plant passender. Du kannst den Schritt auch überspringen; dann fragt er nach.</p>
+    <SourceList apiBase={ctx.apiBase} hasData={ctx.data.background.hasData} onChanged={ctx.reloadBackground} onConnected={setConnected} />
+    <StepFooter onBack={ctx.back} onNext={() => ctx.complete('sources')} nextLabel={connected ? 'Weiter' : 'Überspringen'} busy={ctx.busy} />
   </>;
 }
 

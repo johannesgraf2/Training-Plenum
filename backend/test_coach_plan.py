@@ -2,10 +2,10 @@ import copy
 import unittest
 from datetime import date, datetime, timedelta
 
-from coach_blocks import suggested_rhythm
+from coach_blocks import new_block, suggested_rhythm
 from coach_domain import DAYS, CoachError, complete_profile, DEFAULT_PROFILE, complete_event, iso_week
-from coach_plan import (check_frame, check_tests, deviation, due_week, frame_blocks, frame_hint, group_sessions, horizon,
-                        plan_span, plan_weeks, reference_monday, required_tests)
+from coach_plan import (adopt_blocks, check_frame, check_tests, cut_frame, deviation, due_week, frame_blocks, frame_hint,
+                        group_sessions, horizon, plan_span, plan_weeks, reference_monday, required_tests)
 
 
 def phase(block_type, weeks, hours=6.0, secondary=None):
@@ -151,6 +151,55 @@ class PlanExtrasTests(unittest.TestCase):
         with self.assertRaisesRegex(CoachError, 'den 30-min-Lauftest'):
             check_tests([{'template': 'bike_ftp_test'}], required_tests(self.profile))
         check_tests([{'template': 'run_test_30'}, {'template': 'bike_ftp_test'}], required_tests(self.profile))
+
+
+
+class AdoptionTests(unittest.TestCase):
+    def setUp(self):
+        self.profile = complete_profile(copy.deepcopy(DEFAULT_PROFILE))
+        self.phases = [phase('grundlage', 6), phase('vo2max', 3), phase('wettkampfspezifisch', 4), phase('uebergang', 2, 3)]
+
+    def test_new_phases_cut_the_running_one_and_drop_the_later_ones(self):
+        blocks = frame_blocks(self.phases, date(2026, 10, 19))
+        other = new_block('grundlage', None, '2026-01-05', [{'week': 1, 'phase': 'build', 'targetHours': 4, 'focus': ''}], key='old')
+        result, kept = cut_frame([other, *blocks], {b['id'] for b in blocks}, date(2026, 11, 16))
+        self.assertEqual(kept, [blocks[0]['id']])
+        self.assertEqual([(b['id'], b['endDate'], len(b['weeks'])) for b in result],
+                         [('old', other['endDate'], 1), (blocks[0]['id'], '2026-11-15', 4)])
+        # Cutting at the start of a phase keeps the phases before it whole.
+        _, kept = cut_frame(blocks, {b['id'] for b in blocks}, date(2026, 11, 30))
+        self.assertEqual(kept, [blocks[0]['id']])
+
+    def test_blocks_and_season_from_before_the_phases_become_a_plan(self):
+        weeks = lambda count: [{'week': i + 1, 'phase': 'build', 'targetHours': 6, 'focus': 'Basis'} for i in range(count)]
+        done = new_block('wiedereinstieg', None, '2026-09-21', weeks(2), key='done')
+        running = new_block('grundlage', None, '2026-10-05', weeks(6), key='running')
+        dropped = {**new_block('vo2max', None, '2026-11-16', weeks(3), key='dropped'), 'status': 'abandoned'}
+        season = {'id': 's', 'startDate': '2026-09-21', 'goalDate': '2027-01-09', 'rationale': 'Erst Basis.', 'source': 'aiRecommendation',
+                  'segments': [{'blockType': 'wiedereinstieg', 'secondaryFocus': None, 'weeks': 2, 'purpose': ''},
+                               {'blockType': 'grundlage', 'secondaryFocus': None, 'weeks': 6, 'purpose': ''},
+                               {'blockType': 'vo2max', 'secondaryFocus': None, 'weeks': 4, 'purpose': 'Motor.'},
+                               {'blockType': 'wettkampfspezifisch', 'secondaryFocus': None, 'weeks': 4, 'purpose': 'Rennen.'}]}
+        self.profile['availability']['preferredWeeklyHours'] = 7
+        plan = {'blocks': [done, running, dropped], 'weeks': {}, 'season': season}
+        adopted = adopt_blocks(plan, self.profile, date(2026, 10, 17))
+        self.assertEqual(adopted, adopt_blocks(plan, self.profile, date(2026, 10, 17)))  # Deterministic reads.
+        frame = adopted['frame']
+        self.assertEqual((frame['status'], frame['source'], frame['startDate'], frame['endDate'], frame['rationale']),
+                         ('active', 'adopted', '2026-09-21', '2027-01-10', 'Erst Basis.'))
+        self.assertEqual(frame['blockIds'], ['done', 'running', 'season-2026-11-16', 'season-2026-12-14'])
+        self.assertEqual((adopted['settings']['startDate'], adopted['settings']['endDate'], adopted['settings']['replanMode']),
+                         ('2026-09-21', '2027-01-10', 'afterReview'))
+        vo2 = adopted['blocks'][3]
+        self.assertEqual((vo2['source'], vo2['purpose'], [w['phase'] for w in vo2['weeks']], [w['targetHours'] for w in vo2['weeks']]),
+                         ('plan', 'Motor.', ['build', 'build', 'build', 'recovery'], [7, 7, 7, 5]))
+        self.assertEqual(adopted['season'], season)  # Stays for the former endpoints.
+        self.assertNotIn('frame', plan)
+        # Without a running or upcoming block, and once a plan exists or ended, nothing changes.
+        self.assertIs(adopt_blocks(plan, self.profile, date(2027, 2, 1)), plan)
+        self.assertNotIn('frame', adopt_blocks({'blocks': [], 'weeks': {}, 'season': season}, self.profile, date(2026, 10, 17)))
+        ended = {**plan, 'frame': {**frame, 'status': 'ended'}}
+        self.assertIs(adopt_blocks(ended, self.profile, date(2026, 10, 17)), ended)
 
 
 if __name__ == '__main__':

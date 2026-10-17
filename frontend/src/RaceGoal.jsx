@@ -55,7 +55,7 @@ function Timeline({ date }) {
   </div>;
 }
 
-// The race goal lives in the athlete profile (edited in the AI Coach); the start page shows it with an optional photo.
+// The race goal follows the A event of the coach (edited in its settings); the start page shows it with an optional photo.
 export default function RaceGoal({ apiBase, onEdit, photo }) {
   const [state, setState] = useState({ status: 'loading' });
   const [photoError, setPhotoError] = useState('');

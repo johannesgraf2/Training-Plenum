@@ -36,7 +36,7 @@ Die Datenmodelle lassen für diese Sportarten aber schon Platz (Sportart-Listen 
 | Provider, Verschlüsselung, strukturierte Antworten | `ai_provider.py` | unverändert, dazu ein Chat-Aufruf |
 | Snapshot | `athlete_context.py` | Vorbefüllung in A1, A3, B1 und Kontext für alle KI-Aufrufe |
 
-Das alte Coach-UI bleibt nutzbar, bis M4 fertig ist. Danach wird es ersetzt (M5).
+Das alte Coach-UI blieb nutzbar, bis M4 fertig war. M5 hat es ersetzt.
 
 ## Meilensteine
 
@@ -167,6 +167,8 @@ Jeder Meilenstein ist für sich lauffähig, hat Tests und wird einzeln gemerged.
 **Tests:** Chat mit Test-Double (Antwort ohne Änderung, mit Patch, Regelverstoß und Alternative), Karte übernehmen und verwerfen, Bezug-Chip, Schnellbutton aus Heute.
 
 ### M5 Einstellungen, Umstellung und Aufräumen
+
+**Stand: umgesetzt.** „Soll ich deinen Plan anpassen?“ läuft über `POST /api/coach/plan/adapt` als Job: bei Events oder einem neuen Planende zuerst **Phasen neu festlegen** (ab der Woche nach den ausgearbeiteten Wochen, die laufende Phase endet davor), dann **Ausgearbeitete Wochen prüfen** in einem AI-Aufruf; Änderungen kommen als Mehrwochen-Vorschlag (`kind: weeks`, `reason: settings`) in den Plan. „Später“ speichert die Bereiche als `plan.adapt`, der Plan zeigt dann einen Hinweis. Neben den Editoren aus dem Onboarding gibt es in den Einstellungen Ausnahmen, das Planende eines laufenden Plans (der Start bleibt), den Verbrauch des Monats sowie „Plan neu erstellen“ (startet das Onboarding beim Zeitraum) und „Plan beenden“. Bestandsdaten werden beim Lesen übernommen: laufende und kommende Blöcke plus die danach offenen Blöcke des Saisonplans; ein Saisonplan ohne angelegten Block führt ins Onboarding. Noch offen: der Live-Durchlauf mit eigenem Provider-Key, das Aufräumen der früheren Endpunkte und die Karte „Wie geht's weiter?“ nach dem A-Event (Abschnitt 12 der UX).
 
 - **Einstellungen:** `CoachSettings.jsx` mit den Editoren aus dem Onboarding und „Soll ich deinen Plan anpassen?“ nach planrelevanten Änderungen. Das erzeugt einen Patch-Vorschlag für die ausgearbeiteten Wochen und berechnet bei Event-Änderungen den Rahmen neu.
 - **Umstellung:** Die Bereiche Heute, Plan und Einstellungen ersetzen die 6 Tabs in `AICoach.jsx`. `App.jsx` und `Home.jsx` (Check-in-Leiste, Sprung in den Coach) werden angepasst.

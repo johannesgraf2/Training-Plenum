@@ -11,7 +11,7 @@ const timezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const number = value => value === '' || value == null ? null : Number(value);
 const typeName = type => BACKGROUND_TYPES.find(([key]) => key === type)?.[1];
 // Sports of the plan: ride and run from the goal, strength through the gym setting.
-const planSports = profile => [...profile.goal.sports.filter(s => ['ride', 'run'].includes(s)), ...(profile.preferences.gymAvailability ? ['strength'] : [])];
+export const planSports = profile => [...profile.goal.sports.filter(s => ['ride', 'run'].includes(s)), ...(profile.preferences.gymAvailability ? ['strength'] : [])];
 const TYPE_OF_SPORT = { ride: 'ride', run: 'run', swim: 'swim', strength: 'other', xcski: 'xcski', hyrox: 'hyrox' };
 
 // --- B1 Background ------------------------------------------------------------------------------
@@ -129,7 +129,7 @@ export function EventForm({ initial, busy, onSave, onCancel }) {
   </section>;
 }
 
-function EventList({ title, events, busy, onEdit, onDelete }) {
+export function EventList({ title, events, busy, onEdit, onDelete }) {
   if (!events.length) return null;
   return <><h3>{title}</h3><ul className="onboarding-events">{events.map(event => <li key={event.id}>
     <span className={`onboarding-priority priority-${event.priority.toLowerCase()}`}>{event.priority}</span>
@@ -209,8 +209,10 @@ export function PlanSportsStep({ ctx }) {
 export function PeriodStep({ ctx }) {
   const { events, settings } = ctx.data;
   const today = localDate();
-  const [start, setStart] = useState(() => settings?.startDate || defaultStart(events, today));
-  const [end, setEnd] = useState(() => settings?.endDate || defaultEnd(settings?.startDate || defaultStart(events, today), events));
+  // A plan made anew after an earlier one starts again from the defaults.
+  const saved = settings?.startDate >= today ? settings : null;
+  const [start, setStart] = useState(() => saved?.startDate || defaultStart(events, today));
+  const [end, setEnd] = useState(() => saved?.endDate || defaultEnd(saved?.startDate || defaultStart(events, today), events));
   const main = lastAEvent(events);
   const mainEnd = main && (main.endDate || main.startDate);
   const problem = !start || !end ? 'Bitte Start und Ende wählen.' : end <= start ? 'Das Planende muss nach dem Planstart liegen.' : null;
@@ -307,10 +309,39 @@ export function AvailabilityForm({ day, initial, sports, busy, onSave, onCancel 
 }
 
 // The wished hours of earlier profiles may not exceed what the windows hold.
-function fittedWish(availability, windows, maxWeeklyHours) {
+export function fittedWish(availability, windows, maxWeeklyHours) {
   const cap = Math.floor(Math.min(windowHours(windows), maxWeeklyHours ?? Infinity, 80) * 100) / 100;
   return Object.fromEntries(['preferredWeeklyHours', 'indoorWeeklyHours'].filter(key => availability[key] != null && availability[key] > cap).map(key => [key, cap]));
 }
+
+/** The windows per weekday; form ({day, window}) opens the editor, onSave(list) stores the whole list. */
+export function WindowEditor({ windows, sports, busy, form, onForm, onSave }) {
+  const minutes = windowMinutes(windows);
+  if (form) return <AvailabilityForm day={form.day} initial={form.window} sports={sports} busy={busy}
+    onSave={list => onSave(form.window ? windows.map(w => w.id === form.window.id ? list[0] : w) : [...windows, ...list])} onCancel={() => onForm(null)} />;
+  return <ul className="onboarding-days">{DAYS.map(([day, , name]) => <li key={day}>
+    <div className="onboarding-day-head"><strong>{name}</strong>{minutes[day] > 0 && <small>{clockLabel(minutes[day])} h</small>}
+      <button type="button" onClick={() => onForm({ day, window: null })}>+ Neue Verfügbarkeit</button></div>
+    {windows.filter(w => w.day === day).map(window => <div key={window.id} className={`onboarding-window ${window.kind}`}>
+      <span>{windowLabel(window)}</span>
+      <button type="button" onClick={() => onForm({ day, window })}>Ändern</button>
+      <button type="button" className="coach-danger" disabled={busy} onClick={() => onSave(windows.filter(w => w.id !== window.id))}>Löschen</button>
+    </div>)}
+  </li>)}</ul>;
+}
+
+/** Maximum hours, rest day and long day for the whole week, as strings while editing. */
+export function WeekFields({ week, total, onChange }) {
+  const set = patch => onChange({ ...week, ...patch });
+  return <div className="coach-form-grid">
+    <Field label="Maximale Stunden pro Woche" hint={`Leer = Summe der Zeitfenster (${hoursLabel(total)}).`}><input type="number" min="0" max="80" step="0.5" placeholder={String(Math.round(total * 10) / 10)} value={week.maxWeeklyHours} onChange={e => set({ maxWeeklyHours: e.target.value })} /></Field>
+    <Field label="Bevorzugter Ruhetag"><select value={week.restDay} onChange={e => set({ restDay: e.target.value })}><option value="">Keine Präferenz</option>{DAYS.map(([day, , name]) => <option key={day} value={day}>{name}</option>)}</select></Field>
+    <Field label="Tag für die lange Einheit"><select value={week.longDay} onChange={e => set({ longDay: e.target.value })}><option value="">Keine Präferenz</option>{DAYS.map(([day, , name]) => <option key={day} value={day}>{name}</option>)}</select></Field>
+  </div>;
+}
+export const weekDraft = availability => ({ maxWeeklyHours: availability.maxWeeklyHours ?? '', restDay: availability.restDay || '', longDay: availability.longDay || '' });
+export const weekProblem = (windows, maximum) => !windows.some(w => w.kind === 'available') ? 'Trage mindestens ein Zeitfenster ein, in dem du trainieren kannst.'
+  : maximum != null && !(maximum > 0 && maximum <= 80) ? 'Die maximalen Stunden liegen zwischen 0 und 80.' : null;
 
 export function AvailabilityStep({ ctx }) {
   const { profile, events } = ctx.data;
@@ -318,7 +349,7 @@ export function AvailabilityStep({ ctx }) {
   const windows = availability.windows || [];
   const sports = planSports(profile);
   const [form, setForm] = useState(null);  // { day, window }
-  const [week, setWeek] = useState({ maxWeeklyHours: availability.maxWeeklyHours ?? '', restDay: availability.restDay || '', longDay: availability.longDay || '' });
+  const [week, setWeek] = useState(() => weekDraft(availability));
   const total = windowHours(windows);
   const maximum = number(week.maxWeeklyHours);
   const effective = maximum == null ? total : Math.min(total, maximum);
@@ -328,31 +359,14 @@ export function AvailabilityStep({ ctx }) {
     await ctx.saveProfile({ availability: { windows: list, ...fittedWish(availability, list, number(availability.maxWeeklyHours)) } });
     setForm(null);
   });
-  const remove = window => saveWindows(windows.filter(w => w.id !== window.id));
-  const minutes = windowMinutes(windows);
-  const problem = !windows.some(w => w.kind === 'available') ? 'Trage mindestens ein Zeitfenster ein, in dem du trainieren kannst.'
-    : maximum != null && !(maximum > 0 && maximum <= 80) ? 'Die maximalen Stunden liegen zwischen 0 und 80.' : null;
+  const problem = weekProblem(windows, maximum);
   return <>
     <h2>Verfügbarkeiten</h2>
     <p>Sag mir, wann du trainieren kannst. Einmalige Ausnahmen wie Urlaub trägst du später ein.</p>
-    {form ? <AvailabilityForm day={form.day} initial={form.window} sports={sports} busy={!!ctx.busy}
-      onSave={list => saveWindows(form.window ? windows.map(w => w.id === form.window.id ? list[0] : w) : [...windows, ...list])} onCancel={() => setForm(null)} />
-      : <ul className="onboarding-days">{DAYS.map(([day, , name]) => <li key={day}>
-        <div className="onboarding-day-head"><strong>{name}</strong>{minutes[day] > 0 && <small>{clockLabel(minutes[day])} h</small>}
-          <button type="button" onClick={() => setForm({ day, window: null })}>+ Neue Verfügbarkeit</button></div>
-        {windows.filter(w => w.day === day).map(window => <div key={window.id} className={`onboarding-window ${window.kind}`}>
-          <span>{windowLabel(window)}</span>
-          <button type="button" onClick={() => setForm({ day, window })}>Ändern</button>
-          <button type="button" className="coach-danger" disabled={!!ctx.busy} onClick={() => remove(window)}>Löschen</button>
-        </div>)}
-      </li>)}</ul>}
+    <WindowEditor windows={windows} sports={sports} busy={!!ctx.busy} form={form} onForm={setForm} onSave={saveWindows} />
     {!form && <>
       <h3>Für die ganze Woche</h3>
-      <div className="coach-form-grid">
-        <Field label="Maximale Stunden pro Woche" hint={`Leer = Summe der Zeitfenster (${hoursLabel(total)}).`}><input type="number" min="0" max="80" step="0.5" placeholder={String(Math.round(total * 10) / 10)} value={week.maxWeeklyHours} onChange={e => setWeek(w => ({ ...w, maxWeeklyHours: e.target.value }))} /></Field>
-        <Field label="Bevorzugter Ruhetag"><select value={week.restDay} onChange={e => setWeek(w => ({ ...w, restDay: e.target.value }))}><option value="">Keine Präferenz</option>{DAYS.map(([day, , name]) => <option key={day} value={day}>{name}</option>)}</select></Field>
-        <Field label="Tag für die lange Einheit"><select value={week.longDay} onChange={e => setWeek(w => ({ ...w, longDay: e.target.value }))}><option value="">Keine Präferenz</option>{DAYS.map(([day, , name]) => <option key={day} value={day}>{name}</option>)}</select></Field>
-      </div>
+      <WeekFields week={week} total={total} onChange={setWeek} />
       <p className="onboarding-hint">{hoursLabel(effective)} pro Woche verfügbar</p>
       {hint && <p className="onboarding-hint warning" role="note">{hint}</p>}
       {problem && <p className="coach-muted" role="note">{problem}</p>}

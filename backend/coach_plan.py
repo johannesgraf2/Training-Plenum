@@ -9,10 +9,10 @@ import copy
 import uuid
 from datetime import timedelta
 
-from coach_blocks import BLOCK_TYPES, SECONDARY_FOCUS, SELECTABLE, check_block, new_block
+from coach_blocks import BLOCK_TYPES, SECONDARY_FOCUS, SELECTABLE, check_block, new_block, suggested_rhythm
 from coach_domain import (BLOCK_WEEKS_SCHEMA, DAYS, HINWEISE_SCHEMA, CoachError, day_date, effective_availability, iso_week,
-                          minutes_of, num, obj, text, week_start)
-from coach_season import typical_season
+                          minutes_of, num, obj, preferred_hours, text, week_start)
+from coach_season import dated, typical_season
 
 HORIZON = 3
 MAX_PHASES = 40
@@ -37,6 +37,19 @@ REVIEW_SCHEMA = obj({'missedSessions': {'type': 'array', 'maxItems': 21, 'items'
                      'reasons': {'type': 'array', 'uniqueItems': True, 'maxItems': len(REVIEW_REASONS), 'items': {'enum': REVIEW_REASONS}},
                      'note': text(1000)})
 REVIEW_SCHEMA['required'] = ['missedSessions']
+# Settings whose change may call for adapting the plan ("Soll ich deinen Plan anpassen?"); events and the plan
+# end lay out the phases again.
+ADAPT_AREAS = ['availability', 'events', 'thresholds', 'sports', 'period']
+REFRAME_AREAS = {'events', 'period'}
+ADAPT_SCHEMA = obj({'changes': {'type': 'array', 'minItems': 1, 'uniqueItems': True, 'items': {'enum': ADAPT_AREAS}},
+                    'later': {'type': 'boolean'}})
+ADAPT_SCHEMA['required'] = ['changes']
+
+
+def adapt_response_schema(patch):
+    return obj({'adjustments': {'type': 'array', 'maxItems': HORIZON + 1, 'items': patch}, 'hinweise': HINWEISE_SCHEMA})
+
+
 # A week counts as strongly off plan below this share of the planned hours.
 DEVIATION_SHARE = .6
 # The replan modes shift the moment a new week is due: Sunday 18:00, or Monday 06:00 without a review.
@@ -116,6 +129,76 @@ def frame_blocks(phases, first):
         blocks.append({**block, 'purpose': phase['purpose']})
         start += timedelta(weeks=len(phase['weeks']))
     return blocks
+
+
+def cut_frame(blocks, frame_ids, start):
+    """The phases before start: later ones go, the one running over start ends the week before."""
+    result, kept = [], []
+    for block in blocks:
+        if block['id'] not in frame_ids or day_date(block['startDate']) < start <= day_date(block['endDate']):
+            if block['id'] in frame_ids:
+                weeks = (start - day_date(block['startDate'])).days // 7
+                block = {**block, 'weeks': copy.deepcopy(block['weeks'][:weeks]), 'endDate': (start - timedelta(days=1)).isoformat()}
+                kept.append(block['id'])
+            result.append(block)
+        elif day_date(block['endDate']) < start:
+            result.append(block)
+            kept.append(block['id'])
+    return result, kept
+
+
+# Phase of a load week per block type, for season blocks that never got their own outline.
+LOAD_PHASES = {'wiedereinstieg': 'base', 'grundlage': 'base', 'uebergang': 'recovery', 'aufbau': 'build', 'vo2max': 'build',
+               'schwelle': 'build', 'wettkampfspezifisch': 'peak', 'taper': 'taper', 'custom': 'build'}
+
+
+def adopt_blocks(plan, profile, today):
+    """Plans from before the phases: running and upcoming blocks and the open blocks of the season plan become the
+    phases of a plan, with settings from the season start up to the end of the last block. The season plan stays as
+    data for its former endpoints.
+
+    Deterministic, so unsaved reads stay stable; saved in this shape with the next change. Plans that already had a
+    frame (also an ended one) and plans without a current or upcoming block stay as they are: a season plan whose
+    first block was never created starts with the onboarding."""
+    if plan.get('frame'):
+        return plan
+    live = sorted((b for b in plan['blocks'] if b['status'] != 'abandoned'), key=lambda b: b['startDate'])
+    ahead = [b for b in live if day_date(b['endDate']) >= today]
+    if not ahead:
+        return plan
+    season = dated(plan.get('season'))
+    start = min(ahead[0]['startDate'], season[0]['startDate']) if season else ahead[0]['startDate']
+    phases = [b for b in live if b['endDate'] >= start]
+    end = phases[-1]['endDate']
+    result = copy.deepcopy(plan)
+    recent = [w['targetHours'] for b in phases for w in b['weeks'] if w.get('targetHours')]
+    fallback = round(sum(recent) / len(recent) * 2) / 2 if recent else 5.0
+    for segment in season:
+        if segment['startDate'] <= end:
+            continue
+        monday = day_date(segment['startDate'])
+        weeks = []
+        for index, deload in enumerate(suggested_rhythm(segment['weeks'], segment['blockType'])):
+            hours = preferred_hours(profile, monday + timedelta(weeks=index)) or fallback
+            phase = 'taper' if segment['blockType'] == 'taper' else 'recovery' if deload else LOAD_PHASES.get(segment['blockType'], 'build')
+            weeks.append({'week': index + 1, 'phase': phase, 'targetHours': round(hours * (.7 if deload else 1) * 2) / 2,
+                          'focus': segment.get('purpose') or ''})
+        block = new_block(segment['blockType'], segment.get('secondaryFocus'), segment['startDate'], weeks, source='plan',
+                          key=f"season-{segment['startDate']}")
+        block['purpose'] = segment.get('purpose') or ''
+        result['blocks'].append(block)
+        phases.append(block)
+        end = block['endDate']
+    start = phases[0]['startDate']
+    identities = [b['id'] for b in phases]
+    previous = result.get('settings') or {}
+    result['settings'] = {'startDate': start, 'endDate': end, 'replanMode': previous.get('replanMode', 'afterReview'),
+                          'createdAt': previous.get('createdAt') or start}
+    result['frame'] = {'id': str(uuid.uuid5(uuid.NAMESPACE_URL, f"trainhub-adopted:{':'.join(identities)}")), 'status': 'active',
+                       'startDate': start, 'endDate': end, 'source': 'adopted',
+                       'rationale': (plan.get('season') or {}).get('rationale', ''), 'hinweise': [], 'blockIds': identities,
+                       'createdAt': start}
+    return result
 
 
 def frame_hint(settings, profile):

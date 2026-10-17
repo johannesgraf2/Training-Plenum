@@ -71,7 +71,7 @@ function SeasonBar({ segments, date }) {
   </div>;
 }
 
-/** Season, block, block week and phase of the day, with WHOOP when a strap delivers. */
+/** Plan week, phase and focus of the day (a former season plan without a plan), with WHOOP when a strap delivers. */
 export function PeriodHeader({ today, compact = false }) {
   const period = today.period || {};
   const block = period.block;
@@ -84,15 +84,15 @@ export function PeriodHeader({ today, compact = false }) {
       <div>
         <span className="coach-eyebrow">{longDate(today.date)} · KW {Number(period.week?.split('-W')[1])}</span>
         <h2>{planWeek ? `Woche ${planWeek.number} von ${planWeek.total}${block ? ` · ${block.typeName}` : ''}`
-          : block ? `${block.typeName}${block.secondaryName ? ` + ${block.secondaryName}` : ''} · Woche ${block.weekNumber} von ${block.totalWeeks}` : 'Kein laufender Trainingsblock'}</h2>
-        <p className="today-facts">{block ? facts.join(' · ') : planWeek ? 'Diese Woche gehört zu keiner Phase.' : 'Im Bereich „Saison“ legst du deinen nächsten Trainingsblock an.'}</p>
+          : block ? `${block.typeName}${block.secondaryName ? ` + ${block.secondaryName}` : ''} · Woche ${block.weekNumber} von ${block.totalWeeks}` : 'Noch kein Plan'}</h2>
+        <p className="today-facts">{block ? facts.join(' · ') : planWeek ? 'Diese Woche gehört zu keiner Phase.' : 'Mit deinem Plan steht hier, wo du gerade stehst.'}</p>
       </div>
       {today.whoop && <div className="today-whoop" aria-label="WHOOP">
         <div><strong>{today.whoop.readiness}</strong><span>Readiness</span></div>
         {!compact && today.whoop.sleepMinutes != null && <div><strong>{hm(today.whoop.sleepMinutes)}</strong><span>Schlaf</span></div>}
       </div>}
     </div>
-    <SeasonBar segments={period.season?.segments} date={today.date} />
+    {!planWeek && <SeasonBar segments={period.season?.segments} date={today.date} />}
     {period.weeksToGoal != null && goal.date && <p className="today-goal"><strong>Noch {period.weeksToGoal} {period.weeksToGoal === 1 ? 'Woche' : 'Wochen'}</strong> bis {goal.name?.trim() || 'zu deinem Ziel'} · {new Date(`${goal.date}T12:00:00`).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' })}</p>}
   </div>;
 }
@@ -116,7 +116,7 @@ export function TodaySessions({ sessions }) {
   return <ul className="today-sessions">{sessions.map(session => <li key={session.id} className={`sport-${session.sport}`}>
     <span className="today-session-tag">{SESSION_SPORTS[session.sport] || session.sport}{session.hard ? <b> · hart</b> : ''}</span>
     <strong>{session.name}</strong>
-    <small>{hm(session.durationMin)} · {session.source === 'coach' ? 'vom Coach' : 'eigenes Workout'}{session.locked ? ' · fixiert' : ''}</small>
+    <small>{hm(session.durationMin)} · {session.source === 'coach' ? 'vom Coach' : 'eigenes Workout'}{session.locked ? ' · wird behalten' : ''}</small>
   </li>)}</ul>;
 }
 

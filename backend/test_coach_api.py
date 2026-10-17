@@ -1265,6 +1265,105 @@ class CoachAPITests(unittest.TestCase):
         self.plan_settings(mode='manual')
         self.assertIsNone(self.client.get('/api/coach/plan/weeks').get_json()['weeks'][3]['replanDate'])
 
+    # --- Settings, adapting the plan and plans from before the phases (M5) ---------------------
+
+    def adapter(self, phases, adjustments=None):
+        """A test-double provider for adapting: the given phases for the rest of the plan, then the adjustments."""
+        calls = []
+
+        def answer(key, model, instructions, context, schema, reasoning_effort=None, on_usage=None):
+            calls.append(copy.deepcopy(context))
+            on_usage({'inputTokens': 10, 'outputTokens': 5, 'cachedTokens': 0})
+            if context['task'] == 'frame':
+                return {'phases': phases, 'rationale': 'Neu zum Rennen.', 'hinweise': ['Kürzere Grundlage.']}
+            return {'adjustments': adjustments(context) if adjustments else [], 'hinweise': []}
+        provider = Mock()
+        provider.generate.side_effect = answer
+        return provider, calls
+
+    def adapt(self, provider, changes, expected=202):
+        with patch('coach_api.get_provider', return_value=provider):
+            return self.run_job(self.client.post('/api/coach/plan/adapt?timezone=Europe/Berlin', json={'changes': changes}), expected)
+
+    def test_settings_changes_adapt_phases_and_worked_out_weeks(self):
+        self.assertEqual(self.client.post('/api/coach/plan/adapt', json={'changes': ['events']}).status_code, 400)  # No plan yet.
+        self.planned()
+        weeks = [iso_week(self.start + timedelta(weeks=i)) for i in range(12)]
+        # "Später" only notes the change; the plan offers to adapt.
+        later = self.client.post('/api/coach/plan/adapt', json={'changes': ['availability'], 'later': True})
+        self.assertEqual((later.status_code, later.get_json()['adapt']['changes'], later.get_json()['job']), (200, ['availability'], None))
+        self.assertEqual(self.client.get('/api/coach/plan/weeks').get_json()['adapt']['changes'], ['availability'])
+        race = (self.start + timedelta(weeks=11, days=5)).isoformat()
+        self.assertEqual(self.client.post('/api/coach/events', json={'title': 'Rennen', 'sport': 'ride', 'startDate': race,
+                                                                     'priority': 'A'}).status_code, 201)
+        phases = self.phases(('vo2max', 5), ('wettkampfspezifisch', 4))
+        phases[1]['weeks'][-1]['targetHours'] = .5  # The taper drop of the last week.
+
+        def adjust(context):
+            target = context['workedOutWeeks'][0]
+            session = {key: target['sessions'][0][key] for key in ('id', 'day', 'template', 'params')}
+            session['params'] = {**dict.fromkeys(PARAM_NAMES), **session['params'], 'durationMin': 30}  # The context leaves out unused params.
+            return [{'week': target['week'], 'targetHours': .5, 'focus': 'Kürzer', 'hinweise': ['Weniger Zeit am Montag.'],
+                     'operations': [{'op': 'replace', 'sessionId': session['id'], 'session': session}]},
+                    {'week': weeks[5], 'targetHours': 1, 'focus': 'x', 'hinweise': [], 'operations': []}]
+        provider, calls = self.adapter(phases, adjust)
+        job = self.adapt(provider, ['events'])
+        self.assertEqual(job['status'], 'done', job)
+        self.assertEqual((job['kind'], [s['id'] for s in job['steps']]), ('adapt', ['frame', 'weeks']))
+        result = job['result']
+        self.assertEqual((result['changes'], result['frameChanged'], result['weeks'], result['changedWeeks']),
+                         (['availability', 'events'], True, 3, [weeks[0]]))
+        self.assertEqual(result['rejectedAdjustments'][0]['week'], weeks[5])
+        frame, adapt = calls
+        # The new phases start after the three worked-out weeks; the running phase ends before them.
+        self.assertEqual((frame['plan']['firstMonday'], frame['plan']['weeks']), ((self.start + timedelta(weeks=3)).isoformat(), 9))
+        self.assertEqual((frame['replan']['changes'], frame['replan']['phasesSoFar'][0]['weeks']), (['availability', 'events'], 3))
+        self.assertEqual((adapt['task'], adapt['changes']['areas']), ('adapt', ['availability', 'events']))
+        self.assertEqual([w['week'] for w in adapt['workedOutWeeks']], weeks[:3])
+        overview = self.client.get('/api/coach/plan/weeks').get_json()
+        self.assertEqual([(p['blockType'], p['weeks']) for p in overview['phases']], [('grundlage', 3), ('vo2max', 5), ('wettkampfspezifisch', 4)])
+        self.assertEqual((overview['frame']['rationale'], overview['frame']['hinweise'], overview['adapt']),
+                         ('Neu zum Rennen.', ['Kürzere Grundlage.'], None))
+        self.assertEqual([w['plan'] is not None for w in overview['weeks'][:4]], [True, True, True, False])
+        proposal = self.client.get(f"/api/coach/proposals/{result['proposalId']}").get_json()
+        self.assertEqual((proposal['kind'], proposal['reason'], sorted(proposal['after'])), ('weeks', 'settings', [weeks[0]]))
+        confirmed = self.client.post(f"/api/coach/proposals/{result['proposalId']}/confirm", json={'confirm': True})
+        self.assertEqual(confirmed.status_code, 200, confirmed.get_json())
+        self.assertEqual(confirmed.get_json()['weeks'][weeks[0]]['calculatedHours'], .5)
+        # Without a frame change only the worked-out weeks are checked.
+        provider, calls = self.adapter(phases)
+        job = self.adapt(provider, ['thresholds'])
+        self.assertEqual(([s['id'] for s in job['steps']], job['result']['proposalId'], [c['task'] for c in calls]), (['weeks'], None, ['adapt']))
+
+    def test_a_running_plan_keeps_its_start_and_a_later_end_gets_phases(self):
+        self.planned()
+        body = {'startDate': (self.start + timedelta(weeks=1)).isoformat(), 'endDate': (self.start + timedelta(weeks=14, days=-1)).isoformat(),
+                'replanMode': 'afterReview'}
+        response = self.client.put('/api/coach/plan/settings', json=body)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('beenden', response.get_json()['error'])
+        self.plan_settings(weeks=14)
+        overview = self.client.get('/api/coach/plan/weeks').get_json()
+        self.assertEqual((len(overview['weeks']), overview['weeks'][12]['phaseName']), (14, None))
+        provider, calls = self.adapter(self.phases(('grundlage', 11)))
+        self.assertEqual(self.adapt(provider, ['period'])['status'], 'done')
+        overview = self.client.get('/api/coach/plan/weeks').get_json()
+        self.assertEqual([(p['blockType'], p['weeks']) for p in overview['phases']], [('grundlage', 3), ('grundlage', 11)])
+        self.assertEqual((overview['frame']['endDate'], overview['weeks'][13]['phaseName']), (overview['settings']['endDate'], 'Grundlage'))
+
+    def test_blocks_from_before_the_phases_read_as_a_plan_until_it_ends(self):
+        self.block(block_type='grundlage', phases=('base', 'base', 'base', 'recovery') * 2, hours=5)
+        overview = self.client.get('/api/coach/plan/weeks?timezone=Europe/Berlin').get_json()
+        self.assertEqual((overview['frame']['source'], overview['settings']['startDate'], len(overview['weeks'])),
+                         ('adopted', self.start.isoformat(), 8))
+        self.assertEqual(overview['phases'][0]['blockType'], 'grundlage')
+        # The plan settings show the same plan; a new end is saved with it.
+        self.assertEqual(self.client.get('/api/coach/plan/settings').get_json()['settings']['startDate'], self.start.isoformat())
+        self.plan_settings(weeks=14)
+        self.assertEqual(self.client.get('/api/coach/plan').get_json()['frame']['source'], 'adopted')
+        self.client.post('/api/coach/plan/reset', json={})
+        self.assertIsNone(self.client.get('/api/coach/plan/weeks').get_json()['frame'])  # Ended plans stay ended.
+
 
 if __name__ == '__main__':
     unittest.main()

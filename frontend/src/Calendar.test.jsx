@@ -137,7 +137,7 @@ test('a fixed (locked) plan is not draggable', async () => {
   await renderCalendar();
   const plan = day('2026-01-31').querySelector('.calendar-planned-workout');
   expect(plan.getAttribute('draggable')).toBe('false');
-  expect(plan.title).toContain('Fixiert');
+  expect(plan.title).toContain('Wird behalten');
 });
 
 test('the week column shows the planned weekly hours per week', async () => {
