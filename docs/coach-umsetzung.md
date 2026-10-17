@@ -72,8 +72,8 @@ Jeder Meilenstein ist für sich lauffähig, hat Tests und wird einzeln gemerged.
 - `createdAt`
 
 **5. Ultra-Ergänzung in `coach_templates.py`**
-- Lange Grundlage am Rad bis 10 h statt 6 h
-- Rendering-Grenze von 600 min prüfen
+- Radeinheiten bis 15 h statt 6 h (`durationMin` bis 900, betrifft die lange Grundlage und Intervall-Einheiten mit Gesamtdauer)
+- Rendering-Grenze von 600 min auf 900 min anheben, Verpflegungshinweis für sehr lange Einheiten (ab 6 h) ergänzen
 - Fürs NorthCape: Steigerungskette „Back-to-back-Wochenenden“ als Hinweis im wettkampfspezifischen Blocktyp
 
 **6. B- und C-Events in der Wochenprüfung**
