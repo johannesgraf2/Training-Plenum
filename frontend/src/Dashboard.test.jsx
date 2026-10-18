@@ -102,6 +102,9 @@ test('failures support retry and a stale request cannot replace the chosen year'
 
 test('a missing chart value stays a dash while a recorded zero remains zero', async () => {
   await act(async () => root.render(<BarChart rows={[{ key: '1', label: 'KW 1', value: null }, { key: '2', label: 'KW 2', value: 0 }]} series={[{ key: 'value', label: 'TSS', color: '#000' }]} unit="TSS" label="Test" />));
+  expect(host.querySelector('tbody')).toBeNull();  // built only when the table is opened
+  const details = host.querySelector('details.analysis-data');
+  await act(async () => { details.open = true; details.dispatchEvent(new Event('toggle')); });
   expect(host.querySelectorAll('tbody td')[0].textContent).toBe('—');
   expect(host.querySelectorAll('tbody td')[1].textContent).toBe('0');
 });

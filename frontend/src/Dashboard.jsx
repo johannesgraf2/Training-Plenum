@@ -7,10 +7,15 @@ import './Dashboard.css';
 const SPORTS = { ride: ['Radfahren', 'var(--sport-ride)'], run: ['Laufen', 'var(--sport-run)'], swim: ['Schwimmen', 'var(--sport-swim)'], walking: ['Gehen', 'var(--ochre)'], hiking: ['Wandern', 'var(--muted)'], multisport: ['Multisport', 'var(--ink-2)'] };
 // One brick ramp, lighter to darker with rising intensity.
 const ZONE_COLORS = ['#e8d9c6', '#e3b99a', '#d99670', '#cc6d43', '#c2410c', '#8f300a', '#5e2006'];
-const number = (value, digits = 0) => Number.isFinite(value) ? value.toLocaleString('de-DE', { maximumFractionDigits: digits }) : '—';
+// Formatters are created once: All-Time charts format tens of thousands of values, and
+// toLocaleString builds a new formatter on every call.
+const numberFormats = {};
+const number = (value, digits = 0) => Number.isFinite(value) ? (numberFormats[digits] ||= new Intl.NumberFormat('de-DE', { maximumFractionDigits: digits })).format(value) : '—';
 const hours = value => value == null ? '—' : `${number(value / 3600, 1)} h`;
-const dateLabel = key => new Date(`${key}T12:00:00`).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-const shortDate = key => new Date(`${key}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short' });
+const dayMonth = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' });
+const weekday = new Intl.DateTimeFormat('de-DE', { weekday: 'short' });
+const dateLabel = key => dayMonth.format(new Date(`${key}T12:00:00`));
+const shortDate = key => weekday.format(new Date(`${key}T12:00:00`));
 const range = week => week ? `${dateLabel(week.key)}–${dateLabel(week.end)}${week.key.slice(0, 4) === week.end.slice(0, 4) ? ` ${week.end.slice(0, 4)}` : ` (${week.key.slice(0, 4)}/${week.end.slice(0, 4)})`}` : '';
 const sum = values => values.reduce((total, value) => total + (value || 0), 0);
 const knownTotal = (rows, key) => rows.some(row => row.known[key]) || rows.every(row => !row.count) ? sum(rows.map(row => row[key])) : null;
@@ -28,6 +33,7 @@ function Card({ title, eyebrow, extra, children, className = '' }) {
 
 export function BarChart({ rows, series, unit, label, digits = 0, calendar, emptyText = 'Für diesen Zeitraum sind keine Messwerte vorhanden.' }) {
   const [hover, setHover] = useState(null);
+  const [tableOpen, setTableOpen] = useState(false);
   const totals = rows.map(row => sum(series.map(item => row[item.key])));
   const maximum = Math.max(1, ...totals) * 1.15;
   const step = 520 / Math.max(1, rows.length);
@@ -58,8 +64,9 @@ export function BarChart({ rows, series, unit, label, digits = 0, calendar, empt
         {rows.map((row, index) => {
           let offset = 0;
           const missing = series.every(item => !Number.isFinite(row[item.key]));
-          return <g key={row.key} tabIndex="0" aria-label={describe(row)} onClick={() => setHover(row.key)} onMouseEnter={() => setHover(row.key)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(row.key)} onBlur={() => setHover(null)}>
-            <title>{describe(row)}</title>
+          const text = describe(row);
+          return <g key={row.key} tabIndex="0" aria-label={text} onClick={() => setHover(row.key)} onMouseEnter={() => setHover(row.key)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(row.key)} onBlur={() => setHover(null)}>
+            <title>{text}</title>
             <rect x={60 + index * step} y="28" width={step} height="148" style={{ fill: hover === row.key ? 'var(--bg-e9eff7)' : row.future ? 'var(--bg-f3f5f8)' : 'transparent' }} rx={dense ? 0 : 5} />
             {series.map(item => {
               const value = row[item.key] || 0;
@@ -76,7 +83,8 @@ export function BarChart({ rows, series, unit, label, digits = 0, calendar, empt
       </svg>
       <div className="analysis-chart-caption" aria-live="polite">{hover && rows.some(row => row.key === hover) ? describe(rows.find(row => row.key === hover)) : 'Balken berühren oder auswählen für genaue Werte.'}</div>
       {(rows.some(row => row.future) || (dense && rows.some(row => row.partial))) && <div className="analysis-chart-legend">{rows.some(row => row.future) && <span><i className="analysis-future-key" />Noch ausstehend</span>}{dense && rows.some(row => row.partial) && <span><i className="analysis-partial-key" />Teildaten</span>}</div>}
-      <details className="analysis-data"><summary>Werte als Tabelle</summary><div className="analysis-table-scroll"><table><caption>{label}</caption><thead><tr><th>Zeitraum</th>{series.map(item => <th key={item.key}>{item.label} ({unit})</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.key}><th scope="row">{row.description || row.label}{row.partial ? ' *' : ''}</th>{series.map(item => <td key={item.key}>{row.future ? 'Ausstehend' : number(row[item.key], digits)}</td>)}</tr>)}</tbody></table></div></details>
+      {/* The table is built on opening: All-Time has hundreds of weeks per chart. */}
+      <details className="analysis-data" onToggle={event => setTableOpen(event.currentTarget.open)}><summary>Werte als Tabelle</summary>{tableOpen && <div className="analysis-table-scroll"><table><caption>{label}</caption><thead><tr><th>Zeitraum</th>{series.map(item => <th key={item.key}>{item.label} ({unit})</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.key}><th scope="row">{row.description || row.label}{row.partial ? ' *' : ''}</th>{series.map(item => <td key={item.key}>{row.future ? 'Ausstehend' : number(row[item.key], digits)}</td>)}</tr>)}</tbody></table></div>}</details>
     </>}
   </div>;
 }
@@ -118,7 +126,8 @@ function ZoneCard({ type, weeks, threshold, onSettings, year }) {
 
 const FITNESS_RANGES = [['30', '1 Monat', 'im letzten Monat'], ['91', '3 Monate', 'in den letzten 3 Monaten'], ['182', '6 Monate', 'in den letzten 6 Monaten'], ['365', '1 Jahr', 'im letzten Jahr'], ['730', '2 Jahre', 'in den letzten 2 Jahren']];
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
-const fullDate = key => new Date(`${key}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+const fullDateFormat = new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+const fullDate = key => fullDateFormat.format(new Date(`${key}T12:00:00`));
 
 export function FitnessChart({ days }) {
   const [hover, setHover] = useState(null);
