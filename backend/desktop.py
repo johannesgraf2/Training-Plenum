@@ -1,5 +1,6 @@
 """Training Plēnum as a Windows app: one process serves the built frontend and the API on 127.0.0.1:5000 and shows
-them in its own window (WebView2, the Edge engine built into Windows).
+them in its own window (WebView2, the Edge engine built into Windows). 127.0.0.1:5001 answers only Claude's MCP and
+OAuth requests, for Tailscale Funnel (remote_access.py, mcp_server.py).
 
 The data lives in %LOCALAPPDATA%\\Training Plenum (database, uploads, AI key file, window storage), not next to the
 program, so updates and uninstalling keep it. TRAINHUB_HOME moves it elsewhere.
@@ -87,10 +88,14 @@ def running():
 def start_server():
     from werkzeug.serving import make_server
     import app as backend
+    from remote_access import start_claude_port
     add_frontend(backend.app, frontend_dir())
+    # Page and API on one port: `tailscale serve --bg 5000` makes both reachable in the tailnet (remote_access.py).
+    backend.app.config['TRAINHUB_APP_PORT'] = PORT
     backend.initialize_database()
     server = make_server(HOST, PORT, backend.app, threaded=True)  # raises OSError while the port is taken
     threading.Thread(target=server.serve_forever, name='http', daemon=True).start()
+    start_claude_port(backend.app)
     backend.start_whoop_worker(backend.app)
     backend.start_garmin_worker(backend.app)
     return server

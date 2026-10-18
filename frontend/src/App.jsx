@@ -15,10 +15,12 @@ import { localDate, summary as workoutSummary, workoutTotals } from './workoutMo
 import './Calendar.css';
 import { collectDroppedFiles } from './importQueue';
 import { SportMark, sportColor, sportLabels } from './sports';
+import RemoteAccess from './RemoteAccess';
+import { resolveApiBase } from './apiBase';
 import './App.css';
 
 // ─── API HELPER ───
-const API = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API = resolveApiBase();
 // Drag payload for moving a planned workout between calendar days (distinct from file drops).
 const WORKOUT_DRAG_TYPE = 'application/x-training-plenum-workout';
 
@@ -64,6 +66,7 @@ export default function App() {
   const [hub, setHub] = useState(null);
   const [garmin, setGarmin] = useState(null);
   const [showWhoop, setShowWhoop] = useState(false);
+  const [showRemote, setShowRemote] = useState(false);
   const [whoopDays, setWhoopDays] = useState({});
   const whoopStamp = useRef(null);
   const [workoutEditor, setWorkoutEditor] = useState(null);
@@ -344,7 +347,8 @@ export default function App() {
           </button>
           <UserMenu apiBase={API} user={user}
             onSaved={(saved, changed) => { setUser(saved); if (changed) { setProfileVersion(v => v + 1); setToast('Profil gespeichert.'); setTimeout(() => setToast(null), 3000); } }}
-            onOpenCoachProfile={() => openCoachSettings('events')} onOpenWhoop={() => setShowWhoop(true)} onOpenGarmin={() => openHub('garmin')} />
+            onOpenCoachProfile={() => openCoachSettings('events')} onOpenWhoop={() => setShowWhoop(true)} onOpenGarmin={() => openHub('garmin')}
+            onOpenRemote={() => setShowRemote(true)} />
         </div>
       </header>
 
@@ -550,6 +554,7 @@ export default function App() {
         onOpen={id => { setHub(null); loadGarmin(); openActivity({ id }); }} />}
       {checkInOpen && today && <CheckInDialog apiBase={API} today={today} onClose={() => setCheckInOpen(false)} onSaved={checkInSaved} onAdjust={adjustAfterCheckIn} />}
       {showWhoop && <WhoopSync apiBase={API} onClose={() => { setShowWhoop(false); loadWhoop(); }} />}
+      {showRemote && <RemoteAccess apiBase={API} onClose={() => setShowRemote(false)} />}
 
       {/* Toast */}
       {toast && (

@@ -44,7 +44,7 @@ function BackgroundSetting({ apiBase }) {
   </div>;
 }
 
-export default function UserMenu({ apiBase = '', user, onSaved, onOpenCoachProfile, onOpenWhoop, onOpenGarmin }) {
+export default function UserMenu({ apiBase = '', user, onSaved, onOpenCoachProfile, onOpenWhoop, onOpenGarmin, onOpenRemote }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(() => draftFrom(user));
   const [saving, setSaving] = useState(false);
@@ -116,6 +116,7 @@ export default function UserMenu({ apiBase = '', user, onSaved, onOpenCoachProfi
       {onOpenCoachProfile && <button type="button" className="user-menu-link" onClick={() => { setOpen(false); onOpenCoachProfile(); }}>Ziele &amp; Verfügbarkeit im AI Coach <span aria-hidden="true">→</span></button>}
       {onOpenWhoop && <button type="button" className="user-menu-link" onClick={() => { setOpen(false); onOpenWhoop(); }}>WHOOP-Strap verbinden <span aria-hidden="true">→</span></button>}
       {onOpenGarmin && <button type="button" className="user-menu-link" onClick={() => { setOpen(false); onOpenGarmin(); }}>Garmin Connect verbinden <span aria-hidden="true">→</span></button>}
+      {onOpenRemote && <button type="button" className="user-menu-link" onClick={() => { setOpen(false); onOpenRemote(); }}>Claude &amp; Fernzugriff <span aria-hidden="true">→</span></button>}
     </div>}
   </div>;
 }

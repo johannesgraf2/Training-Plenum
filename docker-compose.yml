@@ -21,6 +21,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5000:5000"
+      # Claude port (MCP and OAuth only) for `tailscale funnel`; on the host only, see CLAUDE-UND-TAILSCALE.md.
+      - "127.0.0.1:5001:5001"
     volumes:
       - ./backend:/app
       - upload_data:/app/uploads
@@ -34,6 +36,11 @@ services:
       - WHOOP_RAW_RETENTION_DAYS=30
       # Local day boundary for WHOOP nights and strain.
       - TRAINHUB_TIMEZONE=Europe/Berlin
+      # nginx serves page and API together on port 80: `tailscale serve --bg 80` on the host.
+      - TRAINHUB_APP_PORT=80
+      - TRAINHUB_CLAUDE_HOST=0.0.0.0
+      # The container has no tailscale CLI: enter this machine's tailnet address (with :8443 for Claude's apps).
+      # - TRAINHUB_REMOTE_URL=https://rechner.tailXXXX.ts.net,https://rechner.tailXXXX.ts.net:8443
 
   nginx:
     image: nginx:alpine

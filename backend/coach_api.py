@@ -39,10 +39,15 @@ from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as 
                           check_season, first_monday, new_season, public_season, season_frame, typical_season, with_fixed)
 from coach_runs import long_run_excess, run_week
 from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, flat_steps, render_session, template_catalog
+from remote_access import allowed_origins
 from workout_export import WorkoutError, validate_workout
 from coach_wellness import (SPORT_NOUNS, blocked_sports, check_in_averages, heal, injury_label, public_injury, readiness,
                             record_check_in)
 
+
+
+# Paths behind the origin guard, answered with Cache-Control: no-store.
+SENSITIVE = ('/api/coach/', '/api/ai-provider', '/api/athlete-', '/api/whoop', '/api/garmin', '/api/mcp', '/api/remote-access')
 
 
 class JobStopped(Exception):
@@ -149,15 +154,15 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
     @app.before_request
     def protect_coach():
-        sensitive = request.path.startswith(('/api/coach/', '/api/ai-provider', '/api/athlete-', '/api/whoop', '/api/garmin')) or request.path.endswith('/lock')
+        sensitive = request.path.startswith(SENSITIVE) or request.path.endswith('/lock')
         if not sensitive:
             return None
-        allowed = {'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5000', 'http://127.0.0.1:5000',
-                   'http://localhost', 'http://127.0.0.1'}
-        allowed.update(filter(None, os.environ.get('TRAINHUB_COACH_ORIGINS', '').split(',')))
+        # Local addresses, this machine's tailnet address and TRAINHUB_REMOTE_URL / TRAINHUB_COACH_ORIGINS.
+        allowed = allowed_origins(request.host.split(':')[0])
         hosts = {urlparse(origin).hostname for origin in allowed}
         if request.host.split(':')[0] not in hosts or (request.headers.get('Origin') and request.headers['Origin'] not in allowed):
-            return jsonify(error='Dieser Ursprung ist für den AI Coach nicht freigegeben.'), 403
+            return jsonify(error='Diese Adresse ist hier nicht freigegeben. Von unterwegs: Training Plēnum über '
+                                 'Tailscale öffnen, siehe CLAUDE-UND-TAILSCALE.md.'), 403
         if request.path.startswith('/api/whoop/bridge/'):
             return None  # gzip uploads with their own size limit and bearer-token auth (whoop_sync.py)
         if request.method in ('POST', 'PUT', 'PATCH') and not request.is_json:
@@ -167,7 +172,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
 
     @app.after_request
     def private_coach_response(response):
-        if request.path.startswith(('/api/coach/', '/api/ai-provider', '/api/athlete-', '/api/whoop', '/api/garmin')):
+        if request.path.startswith(SENSITIVE):
             response.headers['Cache-Control'] = 'no-store'
         return response
 

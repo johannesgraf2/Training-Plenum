@@ -1,0 +1,25 @@
+.remote-dialog .batch-content { display: flex; flex-direction: column; gap: 22px; }
+.remote-section { display: flex; flex-direction: column; gap: 10px; }
+.remote-section + .remote-section { padding-top: 20px; border-top: 1px solid var(--bd-e2e8f0); }
+.remote-section h3 { font-size: 15px; font-weight: 600; }
+.remote-section .batch-help { margin-top: 0; }
+.remote-section .batch-help code { font-size: 12px; }
+.remote-section a { color: var(--accent-text); }
+.remote-section .whoop-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.remote-block > div { align-items: flex-start; }
+.remote-block pre { flex: 1; min-width: 0; margin: 0; overflow-x: auto; padding: 9px 10px; border: 1px solid var(--bd-e2e8f0); border-radius: 2px; background: var(--bg-f8fafc); font-size: 12px; line-height: 1.5; }
+.remote-block pre code { padding: 0; border: 0; background: none; white-space: pre; }
+.remote-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.remote-dialog .remote-refresh { align-self: flex-start; padding: 6px 10px; font-size: 12px; }
+.remote-steps { gap: 12px; }
+.remote-steps .batch-help { margin-bottom: 8px; }
+.remote-code { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.remote-code strong { font: 600 24px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; color: var(--fg-243248); }
+.remote-code small { font-size: 12px; color: var(--fg-64748b); }
+.remote-connections { list-style: none; border: 1px solid var(--bd-e2e8f0); border-radius: 2px; }
+.remote-connections li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
+.remote-connections li + li { border-top: 1px solid var(--bd-edf0f4); }
+.remote-connections strong { display: block; font-size: 13px; }
+.remote-connections small { display: block; font-size: 11px; color: var(--fg-64748b); margin-top: 2px; }
+.remote-dialog .whoop-warning p { margin-bottom: 8px; }
+@media(max-width: 480px) { .remote-code strong { font-size: 20px; } .remote-section .whoop-status { grid-template-columns: 1fr; } }

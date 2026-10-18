@@ -1036,18 +1036,25 @@ def load_effort_rows():
     return result
 
 
+from remote_access import register_remote_access, start_claude_port
 from coach_api import register_coach
 from appearance import register_appearance
 from whoop_sync import register_whoop, start_whoop_worker
 from garmin_sync import register_garmin, start_garmin_worker, upgrade_garmin_tables
+from mcp_server import register_mcp
+register_remote_access(app)
 register_coach(app, db, User, Activity, PlannedWorkout, DEMO_USER_ID, load_analytics_rows, load_effort_rows)
 register_appearance(app)
 register_whoop(app, db, User, DEMO_USER_ID)
 register_garmin(app, db, Activity, PlannedWorkout, DEMO_USER_ID, import_recording, ImportRejected)
+register_mcp(app, db, DEMO_USER_ID)
 
 
 if __name__ == '__main__':
     initialize_database()
     start_whoop_worker(app)
     start_garmin_worker(app)
+    # The reloader would start the Claude port a second time in its child process.
+    if os.environ.get('FLASK_DEBUG') != '1' or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        start_claude_port(app)
     app.run(host='0.0.0.0', port=5000, debug=os.environ.get('FLASK_DEBUG') == '1')

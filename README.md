@@ -13,6 +13,7 @@ Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und
 | 📦 **Umzug von TrainingPeaks oder Garmin Connect in Minuten** | Den entpackten Export als ganzen Ordner per Drag & Drop importieren. FIT, FIT.GZ, GPX und TCX werden nacheinander verarbeitet, Duplikate übersprungen und fehlerhafte Dateien einzeln gemeldet, ohne dass der Import abbricht. |
 | 📈 **Die Kennzahlen, die du kennst** | Bestwerte (Leistung 30 s bis 60 min, Laufzeiten 400 m bis 21 km), Normalized Power und TSS, Zeit in HF- und Leistungszonen, Wochenumfänge, Sportarten-Mix und Jahresvergleiche. Jedes Diagramm zeigt exakte Werte und eine aufklappbare Tabelle. |
 | ⚡ **Schnell, auch mit Jahren an Daten** | Berechnungen werden pro Aktivität zwischengespeichert. Filter und Jahreswechsel reagieren sofort. Nach einer FTP-Änderung werden nur die Zonen neu berechnet, ohne alle Dateien erneut einzulesen. |
+| 📱 **Von unterwegs und mit Claude** | Über [Tailscale](https://tailscale.com) öffnest du Training Plēnum auch auf dem Handy, ohne die App ins Internet zu stellen. Als MCP-Server liefert sie Claude Trainingsdaten (ohne GPS); auf Wunsch plant Claude auch Einheiten. Siehe [Claude & Fernzugriff](CLAUDE-UND-TAILSCALE.md). |
 | 🧪 **Nachvollziehbar und getestet** | Alle Formeln sind offen und mit Quellen belegt. Automatische Tests prüfen Backend und Frontend, und jede exportierte FIT-Datei wird vor dem Download noch einmal eingelesen und geprüft. |
 
 ### Für wen?
@@ -21,9 +22,9 @@ Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und
 - **Umsteiger:innen von TrainingPeaks & Co.**, die ihre komplette Historie mitnehmen möchten.
 - **Garmin-Nutzer:innen**, die strukturierte Workouts ohne Umweg über eine Cloud aufs Gerät bringen wollen.
 
-> **Hinweis:** Training Plēnum ist aktuell eine lokale Anwendung für eine:n Athlet:in. Für den Betrieb auf einem entfernten oder geteilten Server fehlen noch Authentifizierung und Härtung (siehe [Geplante Features](#geplante-features-v2)).
+> **Hinweis:** Training Plēnum ist aktuell eine lokale Anwendung für eine:n Athlet:in. Für den Betrieb auf einem entfernten oder geteilten Server fehlen noch Authentifizierung und Härtung (siehe [Geplante Features](#geplante-features-v2)). Für den Zugriff von unterwegs gibt es deshalb [Tailscale](CLAUDE-UND-TAILSCALE.md): Die App bleibt in deinem privaten Netz.
 
-**Schnell loslegen:** [Windows-App](#windows-app) · [Start mit Docker](#mit-docker-empfohlen) · [AI Coach einrichten](AI-COACH.md)
+**Schnell loslegen:** [Windows-App](#windows-app) · [Start mit Docker](#mit-docker-empfohlen) · [AI Coach einrichten](AI-COACH.md) · [Claude & Fernzugriff](CLAUDE-UND-TAILSCALE.md)
 
 ## So sieht es aus
 
@@ -169,6 +170,17 @@ Der API-Key wird verschlüsselt gespeichert. Den Schlüssel dafür legt das Prog
 
 Alle Details zur Einrichtung: [AI-COACH.md](AI-COACH.md)
 
+## Von unterwegs und mit Claude
+
+Im Menü oben rechts (dein Name) unter **Claude & Fernzugriff** steht alles, was dafür nötig ist: der Tailscale-Status, die Befehle zum Kopieren, das Token und der Freigabecode.
+
+- **Von unterwegs:** Tailscale auf Rechner und Handy installieren, einmal `tailscale serve --bg 5000` (Windows-App) oder `tailscale serve --bg 80` (Docker) ausführen und auf dem Handy `https://<rechner>.<tailnet>.ts.net` öffnen. Die App ist nur in deinem Tailnet sichtbar.
+- **Claude Code und Claude Desktop** verbinden sich mit einem Token, das im Dialog erzeugt wird. Der Dialog zeigt dazu den fertigen Befehl bzw. die Konfiguration.
+- **claude.ai und die Claude-App auf dem Handy** verbinden sich aus der Cloud von Anthropic. Dafür kommt per `tailscale funnel --bg --https=8443 5001` nur der Claude-Port ins Internet, der ausschließlich MCP und die Anmeldung beantwortet. Die Verbindung bestätigst du mit einem Freigabecode aus der App.
+- Claude darf standardmäßig **nur lesen**. „Lesen und Einheiten planen“ erlaubt zusätzlich, Workouts anzulegen, zu ändern und zu löschen. GPS-Positionen gehen nie an Claude.
+
+Einrichtung, Sicherheit, Docker und Fehlersuche: [CLAUDE-UND-TAILSCALE.md](CLAUDE-UND-TAILSCALE.md)
+
 ## WHOOP 4.0 (in Arbeit)
 
 Training Plēnum liest einen **WHOOP 4.0** direkt aus, ohne WHOOP-App. Eine kleine Bridge auf dem Mac hält die Bluetooth-Verbindung und schickt die Rohdaten an Training Plēnum; Einrichtung und Status findest du im Menü oben rechts unter **WHOOP-Strap verbinden**.
@@ -310,6 +322,14 @@ Die Tests nutzen eine temporäre Datenbank und verändern keine eigenen Aktivit�
 | POST | `/api/garmin/login`, `/api/garmin/mfa` | Mit Garmin anmelden, ggf. Zwei-Faktor-Code bestätigen |
 | POST | `/api/garmin/sync` | Abgleich sofort starten (Aktivitäten holen, Einheiten senden) |
 | PUT | `/api/garmin/settings` | Senden geplanter Einheiten an/aus (`removeWorkouts` löscht gesendete) |
+| POST | `/mcp` | MCP-Server für Claude (Streamable HTTP, Bearer-Token oder OAuth) |
+| GET | `/api/mcp` | Claude-Zugang: Token-Status, Schreibrecht, verbundene Apps |
+| POST / DELETE | `/api/mcp/token` | Persönliches Token erzeugen (wird nur einmal angezeigt) oder löschen |
+| PUT | `/api/mcp/settings` | `allowWrite`: Claude darf Einheiten planen |
+| POST | `/api/mcp/pairing` | Freigabecode für die Anmeldung der Claude-Apps (10 min, einmal) |
+| DELETE | `/api/mcp/connections[/:id]` | Verbundene Claude-Apps trennen |
+| GET | `/api/remote-access` | Tailscale-Status, Freigaben und Befehle (`?refresh=1` prüft neu) |
+| GET / POST | `/.well-known/oauth-*`, `/oauth/register`, `/oauth/authorize`, `/oauth/token` | OAuth 2.1 für Claudes Connectors |
 
 Die Endpunkte des KI-Coachs stehen in [AI-COACH.md](AI-COACH.md).
 
