@@ -30,7 +30,7 @@ Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und
 
 > Alle Screenshots zeigen erfundene Demo-Daten („Demo Athlet“), keine echten Aufzeichnungen. Zum Vergrößern ein Bild anklicken.
 
-**Startseite:** Datum, Wettkampfziel mit Countdown, das heutige Workout als Leistungsprofil, Wochenumfang, Bestwerte und die letzten Aktivitäten.
+**Startseite:** Begrüßung mit Datum, Wettkampfziel mit Countdown, das heutige Workout als Leistungsprofil, die Woche im Überblick, Events, Wochenumfang und Bestwerte.
 
 [![Startseite mit Wettkampfziel, heutigem Workout, Wochenumfang und Bestwerten](docs/screenshots/startseite.png)](docs/screenshots/startseite.png)
 
