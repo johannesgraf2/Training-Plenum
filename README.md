@@ -349,4 +349,4 @@ Die Endpunkte des KI-Coachs stehen in [AI-COACH.md](AI-COACH.md).
 
 ## Lizenz
 
-Private Nutzung — Internes Projekt
+[MIT](LICENSE): Du darfst Training Plēnum kostenlos nutzen, verändern und weitergeben, auch kommerziell, solange der Lizenzhinweis erhalten bleibt. Verwendete Bibliotheken wie das Garmin FIT SDK stehen unter ihren eigenen Lizenzen.
