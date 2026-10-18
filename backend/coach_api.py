@@ -18,7 +18,7 @@ from ai_provider import (DEFAULT_MODEL, REASONING_EFFORTS, ProviderError, decryp
                          get_provider, key_file, usage_cost, validate_model, validate_reasoning_effort)
 from athlete_context import build_snapshot, run_threshold_pace, session_pattern, summarize_period, training_background
 from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, DELOAD_PHASES, GROUPS, SECONDARY_FOCUS, SITUATIONS, block_for_week,
-                          LONG_RUNS, block_guidance, block_status, easy_runs_over_long_run, easy_runs_too_long, block_type, catalog as block_catalog, check_block, check_choice, check_event_rules, check_formats,
+                          LONG_RUNS, block_guidance, block_status, easy_runs_too_long, runs_over_long_run, block_type, catalog as block_catalog, check_block, check_choice, check_event_rules, check_formats,
                           check_options, check_week_rules,
                           interval_formats, migrate_plan, new_block, place_block, public_blocks, rule_texts, run_focus)
 from coach_domain import (CoachError, DAYS, DAY_NAMES, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
@@ -803,11 +803,10 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         # The long run is the longest run of its week. A week planned before only fails for new or changed runs.
         if not removal:
             changed_ids = {s['id'] for s in changed}
-            longer = easy_runs_over_long_run(value['sessions']) - \
-                (easy_runs_over_long_run(list(previous.values())) - changed_ids)
+            longer = runs_over_long_run(value['sessions']) - (runs_over_long_run(list(previous.values())) - changed_ids)
             if longer:
                 names = ', '.join(DAY_NAMES[s['day']] for s in value['sessions'] if s['id'] in longer)
-                raise CoachError(f'Kein lockerer Lauf ist länger als der lange Lauf der Woche ({names}).')
+                raise CoachError(f'Kein Lauf ist länger als der lange Lauf der Woche ({names}).')
             if run_focus(current_profile['goal']['sports']):
                 longer = easy_runs_too_long(value['sessions']) - (easy_runs_too_long(list(previous.values())) - changed_ids)
                 if longer:
@@ -1055,8 +1054,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'Choose only supplied templates and supported params; use null for unused params. Follow exact duration rules including warmup/cooldown. '
         'targetHours must equal total duration including fixed sessions, within 15 minutes. Never change fixed or locked sessions. '
         'block.guidance in workedOutWeeks holds for every new or changed session; when the athlete asks to work a week '
-        'out anew, rebuild it like a freshly planned week. No easy run (run_easy, run_strides, run_hill_sprints, run_drills) is longer '
-        'than the long run of its week; the server rejects it. '
+        'out anew, rebuild it like a freshly planned week. No run, easy run or key session, is longer than the long run '
+        'of its week; the server rejects it. '
         'runWeek (running plans) is the week TrainHub lays out from the block, its progression and the week\'s hours: '
         'run days, the key session, the long run and the easy runs with templates, params and durations (role and minutes '
         'only explain them); racePaceIntensity is the race pace as run intensity. Take its sessions over as the week (same '
@@ -1131,7 +1130,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'weeklyLimits[].maxHours, follow preferredHours and build up gradually from recent training. typicalBuildUp shows '
         'usual phase lengths up to the first A event; for a running goal it is the running build-up (half marathon and '
         'marathon: grundlage, schwelle, wettkampfspezifisch; 5 and 10 km also vo2max): keep its phases and lengths unless '
-        'the training so far argues against them. B and C events are handled week by week. purpose is one short German '
+        'the training so far argues against them; trainingBase.longestMinutes.run is the longest run of the last six weeks '
+        '(0: none), and a short one argues for a longer grundlage, never for a longer wettkampfspezifisch. One block type '
+        'lasts at most its maxWeeks also over consecutive blocks (only grundlage may run longer). B and C events are handled week by week. purpose is one short German '
         'sentence per phase, focus a short German phrase per week, rationale one or two German sentences. '
         'requiredTests lists threshold tests the athlete asked for (bike_ftp_test, run_test_30): in the week task plan each '
         'exactly once on a rested day without a hard session the day before; until then targets of that sport are open. '
@@ -1842,7 +1843,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                    'thresholds': {'source': 'athlete', 'ftp': user().ftp, 'thresholdPaceSecPerKm': threshold_pace(current_profile),
                                   'tenKPaceSecPerKm': ten_k_pace(current_profile)},
                    'trainingBase': {'source': current_profile['background']['source'] or 'athlete',
-                                    **{key: current_profile['background'][key] for key in ('type', 'weeklyHours', 'intervals')}},
+                                    **{key: current_profile['background'][key] for key in ('type', 'weeklyHours', 'intervals')},
+                                    'longestMinutes': current_profile['background'].get('longest') or {}},
                    'periodization': {'source': 'athlete', 'backwardsFromEvent': True, 'loadWeeks': 3, 'deloadWeeks': 1,
                                      'taperWeeks': settings.get('taperWeeks'),
                                      'cycles': frame_cycles(settings, current_profile),

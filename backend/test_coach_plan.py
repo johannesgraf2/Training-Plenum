@@ -68,6 +68,13 @@ class PlanFrameTests(unittest.TestCase):
         with self.assertRaisesRegex(CoachError, 'nur vor einem A-Event'):
             check_frame([phase('grundlage', 8), phase('wettkampfspezifisch', 4)], settings, self.profile)
 
+    def test_a_block_type_split_into_consecutive_phases_keeps_its_maximum(self):
+        # A run of 18 weeks wettkampfspezifisch came about as 12 + 6; only the base may run on like that.
+        self.profile['events'] = []
+        with self.assertRaisesRegex(CoachError, 'Phase 2: „Schwelle“ dauert auch über mehrere Phasen höchstens 12 Wochen'):
+            check_frame([phase('schwelle', 8), phase('schwelle', 7)], self.settings, self.profile)
+        check_frame([phase('grundlage', 8), phase('grundlage', 7)], self.settings, self.profile)
+
     def test_a_chosen_taper_length_is_enforced(self):
         phases = [phase('grundlage', 6), phase('vo2max', 3), phase('wettkampfspezifisch', 3), phase('taper', 1, 4), phase('uebergang', 2, 3)]
         check_frame(phases, {**self.settings, 'taperWeeks': 1}, self.profile)

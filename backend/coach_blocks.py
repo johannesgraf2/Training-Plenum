@@ -158,12 +158,13 @@ def easy_runs_too_long(sessions):
     return {s['id'] for s in sessions if s['template'] in EASY_RUNS and (s['rendered']['durationMin'] or 0) > EASY_RUN_MINUTES + 0.01}
 
 
-def easy_runs_over_long_run(sessions):
-    """Ids of easy runs longer than the week's longest long run (none without a long run)."""
+def runs_over_long_run(sessions):
+    """Ids of runs (easy runs and key sessions) longer than the week's longest long run (none without a long run)."""
     longest = max((s['rendered']['durationMin'] or 0 for s in sessions if s['template'] in LONG_RUNS), default=None)
     if longest is None:
         return set()
-    return {s['id'] for s in sessions if s['template'] in EASY_RUNS and (s['rendered']['durationMin'] or 0) > longest + 0.01}
+    return {s['id'] for s in sessions if s['template'] in GROUPS['run'] - LONG_RUNS
+            and (s['rendered']['durationMin'] or 0) > longest + 0.01}
 
 
 def run_focus(sports):

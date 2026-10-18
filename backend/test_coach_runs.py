@@ -83,6 +83,15 @@ class RunWeekTests(unittest.TestCase):
             previous = by_role(week, 'long')['minutes']
         self.assertEqual([by_role(w, 'long')['minutes'] for w in weeks], [100, 115, 130, 135])
         self.assertTrue(all(s['minutes'] <= 60 for w in weeks for s in w['sessions'] if s['role'] == 'easy'))
+        # The key session is never longer than the long run, and a short long run grows by about a fifth.
+        short, previous = [], None
+        for number in range(1, 4):
+            short.append(run_week('grundlage', [{'phase': 'build'}] * 4, number, 5.5, days, training_days=4, long_days=['sun'],
+                                  event=MARATHON, recent_long=40, intervals_known=False, previous_long=previous,
+                                  longest_long=previous))
+            previous = by_role(short[-1], 'long')['minutes']
+        self.assertEqual([by_role(w, 'long')['minutes'] for w in short], [50, 60, 70])
+        self.assertTrue(all(by_role(w, 'key')['minutes'] <= by_role(w, 'long')['minutes'] for w in short))
         # With the longest run of the last weeks known, the first long run lies a little beyond it.
         first = lambda recent: by_role(run_week('grundlage', [{'phase': 'build'}] * 4, 1, 6.1, days, training_days=4,
                                                 long_days=['sun'], event=MARATHON, recent_long=recent), 'long')['minutes']

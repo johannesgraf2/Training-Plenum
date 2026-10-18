@@ -95,9 +95,15 @@ def check_frame(phases, settings, profile):
     events = a_events(profile)
     maximum = profile['availability']['absoluteMaxWeeklyHours']
     start, rank, previous, seen = first, -1, None, set()
+    streak = (None, 0)  # Weeks of the block type running on over consecutive phases.
     for index, phase in enumerate(phases, start=1):
         identity = phase['blockType']
         name = BLOCK_TYPES[identity]['name']
+        streak = (identity, (streak[1] if streak[0] == identity else 0) + len(phase['weeks']))
+        # Splitting a block type into consecutive phases does not lengthen it beyond its maximum; only the base may run on.
+        if identity not in ('grundlage', 'custom') and streak[1] > BLOCK_TYPES[identity]['maxWeeks']:
+            raise CoachError(f'Phase {index}: „{name}“ dauert auch über mehrere Phasen höchstens '
+                             f'{BLOCK_TYPES[identity]["maxWeeks"]} Wochen.')
         if [w['week'] for w in phase['weeks']] != list(range(1, len(phase['weeks']) + 1)):
             raise CoachError(f'Phase {index}: Die Wochen müssen lückenlos ab 1 zählen.')
         end = start + timedelta(weeks=len(phase['weeks'])) - timedelta(days=1)

@@ -135,6 +135,11 @@ def minimum_minutes(session):
         (20 if session['template'] == 'run_long_mp' else 0)
 
 
+def long_rise(previous_long):
+    """How much a load week's long run grows: about a fifth while it is short, at most LONG_RISE."""
+    return max(5, min(LONG_RISE, _round5(previous_long * .2)))
+
+
 def first_long(recent_long):
     """The most the first long run of a plan lasts: a little beyond the athlete's longest run of the last weeks."""
     if recent_long is None:
@@ -262,7 +267,7 @@ def _durations(chosen, key, total, days, available, *, cap, deload, block_type, 
                 and total >= 2 * LONG_MIN:
             long_minutes = max(long_minutes, LONG_MIN)
         if previous_long:
-            long_minutes = min(long_minutes, _round5(previous_long * DELOAD_LONG) if deload else previous_long + LONG_RISE)
+            long_minutes = min(long_minutes, _round5(previous_long * DELOAD_LONG) if deload else previous_long + long_rise(previous_long))
         elif not longest_long:
             long_minutes = min(long_minutes, first_long(recent_long))
         if block_type == 'taper' and longest_long:
@@ -276,7 +281,9 @@ def _durations(chosen, key, total, days, available, *, cap, deload, block_type, 
     if chosen['key'] and key:
         floor = -(-minimum_minutes(key) // 5) * 5
         share = rest if not easy_days else rest * KEY_WEIGHT / (KEY_WEIGHT + len(easy_days))
-        key_minutes = max(floor, min(_round5(share), RACE_WEEK_KEY if race_week else KEY_MAX, available[chosen['key']]))
+        # The long run stays the longest run of the week, also against the key session.
+        key_minutes = max(floor, min(_round5(share), RACE_WEEK_KEY if race_week else KEY_MAX, available[chosen['key']],
+                                     long_minutes or KEY_MAX))
         if floor > available[chosen['key']]:
             return None
     easy_limit = EASY_MAX
