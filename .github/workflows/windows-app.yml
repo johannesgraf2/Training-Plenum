@@ -1,0 +1,47 @@
+# Builds the Windows installer. A tag v1.2.3 also publishes it as a GitHub release.
+name: Windows-App
+
+on:
+  push:
+    tags: ['v*']
+    branches: ['**']
+    paths: ['desktop/**', 'backend/desktop.py', '.github/workflows/windows-app.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Inno Setup
+        run: if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: Version
+        id: version
+        run: |
+          $version = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}'.TrimStart('v') } else { "1.0.0-$('${{ github.sha }}'.Substring(0, 7))" }
+          "value=$version" >> $env:GITHUB_OUTPUT
+      - name: Desktop tests
+        working-directory: backend
+        run: |
+          python -m pip install --quiet -r requirements.txt
+          python -m unittest -v test_desktop
+      - name: Build
+        run: .\desktop\build-windows.ps1 -Version '${{ steps.version.outputs.value }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TrainingPlenum-Setup-${{ steps.version.outputs.value }}
+          path: dist/TrainingPlenum-Setup-*.exe
+      - name: Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/TrainingPlenum-Setup-*.exe

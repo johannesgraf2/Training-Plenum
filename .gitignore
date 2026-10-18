@@ -1,8 +1,10 @@
 .venv/
+.venv-desktop/
 __pycache__/
 node_modules/
 .npm-cache/
 build/
+dist/
 data/
 uploads/
 *.log

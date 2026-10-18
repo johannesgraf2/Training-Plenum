@@ -23,7 +23,7 @@ Training Plēnum ist eine selbst gehostete Trainingsplattform für Radfahren und
 
 > **Hinweis:** Training Plēnum ist aktuell eine lokale Anwendung für eine:n Athlet:in. Für den Betrieb auf einem entfernten oder geteilten Server fehlen noch Authentifizierung und Härtung (siehe [Geplante Features](#geplante-features-v2)).
 
-**Schnell loslegen:** [Start unter Windows](#start-unter-windows) · [Start mit Docker](#mit-docker-empfohlen) · [AI Coach einrichten](AI-COACH.md)
+**Schnell loslegen:** [Windows-App](#windows-app) · [Start mit Docker](#mit-docker-empfohlen) · [AI Coach einrichten](AI-COACH.md)
 
 ## So sieht es aus
 
@@ -186,7 +186,19 @@ Im Menü oben rechts (dein Name) unter **Hintergrund** wählst du **Landschaft**
 
 ## Installation
 
-### Start unter Windows
+### Windows-App
+
+Am einfachsten: `TrainingPlenum-Setup-<Version>.exe` von der [Releases-Seite](../../releases) laden und ausführen. Admin-Rechte sind nicht nötig. Danach startet Training Plēnum über das Startmenü in einem eigenen Fenster, ohne Python, Node.js oder Browser-Tab.
+
+- **Daten** liegen in `%LOCALAPPDATA%\Training Plenum`: Datenbank, Originaldateien, der AI-Key-Schlüssel (`data\ai-encryption-key.txt`) und ein Log der letzten Sitzung. Updates und Deinstallieren lassen sie stehen. Zum Sichern diesen Ordner kopieren.
+- **Update:** neuen Installer einfach drüber installieren.
+- **Voraussetzung:** Windows 10 oder 11 (64 Bit) mit der Microsoft Edge WebView2-Runtime, die dort normalerweise schon installiert ist. Die App nutzt Port 5000 auf `127.0.0.1`; die Version per `start-local.ps1` darf nicht gleichzeitig laufen.
+- **Bisherige Daten übernehmen** (vorher per `start-local.ps1` genutzt): beide Versionen beenden, dann nach `%LOCALAPPDATA%\Training Plenum` kopieren: `backend\data\trainhub.db` und `.run\ai-encryption-key.txt` in den Unterordner `data`, den Inhalt von `backend\uploads` in den Unterordner `uploads`.
+- Windows SmartScreen kann beim ersten Start warnen, weil der Installer nicht signiert ist: **Weitere Informationen → Trotzdem ausführen**.
+
+**Installer selbst bauen** (Python 3.12, Node.js und [Inno Setup 6](https://jrsoftware.org/isdl.php)): `.\desktop\build-windows.ps1 -Version 1.2.3`, das Ergebnis liegt in `dist/`. GitHub Actions baut ihn bei jedem Tag `v*` und hängt ihn an das Release (`.github/workflows/windows-app.yml`).
+
+### Start unter Windows (aus dem Quellcode)
 
 **Einmalig einrichten** (im Projektordner, mit Python 3.12 oder neuer für Garmin Connect):
 
