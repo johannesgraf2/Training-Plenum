@@ -1,10 +1,12 @@
 """The Windows app's server: the frontend build next to the API, and the data folder outside the program."""
 import importlib.util
+from io import BytesIO
 import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from cryptography.fernet import Fernet
@@ -73,6 +75,21 @@ class DesktopTests(unittest.TestCase):
             response = self.client.get(path)
             self.assertEqual(response.data, body)
             response.close()
+
+    def test_existing_server_tells_the_app_from_a_bare_backend(self):
+        def answers(page):
+            def urlopen(url, timeout):
+                if url.endswith('/api/health'):
+                    return BytesIO(b'{"status": "ok"}')
+                if page is None:
+                    raise HTTPError(url, 404, 'Not Found', {}, None)
+                return BytesIO(page)
+            return urlopen
+        for page, expected in ((b'<div id="root"></div>', 'app'), (None, 'backend'), (b'<h1>Other</h1>', 'backend')):
+            with patch('desktop.urllib.request.urlopen', answers(page)):
+                self.assertEqual(desktop.existing_server(), expected)
+        with patch('desktop.urllib.request.urlopen', side_effect=URLError('refused')):
+            self.assertIsNone(desktop.existing_server())
 
     def test_api_stays_the_api(self):
         self.assertEqual(self.client.get('/api/health').get_json()['status'], 'ok')

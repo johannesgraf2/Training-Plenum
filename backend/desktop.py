@@ -75,13 +75,21 @@ def add_frontend(app, root):
         return response
 
 
-def running():
-    """Whether Training Plēnum already answers on the port (a second start then only opens a window)."""
+def existing_server():
+    """What already answers on the port: 'app' (this program, page and API; a second start only opens a window),
+    'backend' (only the API, from start-local.ps1 or Docker, without the page) or None."""
     try:
         with urllib.request.urlopen(f'{URL}/api/health', timeout=2) as response:
-            return json.load(response).get('status') == 'ok'
+            if json.load(response).get('status') != 'ok':
+                return None
     except (OSError, ValueError):
-        return False
+        return None
+    try:
+        with urllib.request.urlopen(f'{URL}/', timeout=2) as response:
+            page = response.read().decode('utf-8', 'replace')
+    except OSError:  # 404 without the frontend
+        return 'backend'
+    return 'app' if 'id="root"' in page else 'backend'
 
 
 def start_server():
@@ -138,7 +146,13 @@ def main(arguments):
             traceback.print_exc()
             return 1
     server = None
-    if not running():
+    existing = existing_server()
+    if existing == 'backend':
+        message(f'Auf Port {PORT} läuft schon Training Plēnum aus start-local.ps1 oder Docker. Bitte zuerst beenden '
+                '(start-local.ps1: im Projektordner Stop-Process -Id (Get-Content .run\\backend.pid), Docker: '
+                f'docker compose down) und {TITLE} dann erneut starten.')
+        return 1
+    if existing is None:
         try:
             server = start_server()
         except OSError:
