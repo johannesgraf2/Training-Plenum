@@ -1257,8 +1257,9 @@ class CoachAPITests(unittest.TestCase):
         return response.get_json()
 
     @staticmethod
-    def reply(text='Alles klar.', weeks=(), settings=None, summary='Kürzer'):
-        change = {'summary': summary, 'weeks': list(weeks), 'settings': settings} if weeks or settings else None
+    def reply(text='Alles klar.', weeks=(), settings=None, summary='Kürzer', week_hours=None):
+        change = {'summary': summary, 'weeks': list(weeks), 'settings': settings, 'weekHours': week_hours} \
+            if weeks or settings or week_hours else None
         return {'reply': text, 'change': change}
 
     @staticmethod
@@ -1412,6 +1413,28 @@ class CoachAPITests(unittest.TestCase):
         provider, calls = self.coach(self.reply('Ok.', settings=past))
         self.assertIsNone(self.chat(provider, {'message': 'Damals'})['messages'][-1]['change'])
         self.assertIn('heute oder später', calls[1]['systemNote']['rejectedChange'])
+
+    def test_hours_for_a_span_of_weeks_from_the_chat_work_like_the_weekly_chart(self):
+        plan = self.planned()
+        weeks = sorted(plan['weeks'])
+        provider, calls = self.coach(self.reply('Bis Woche 5 je 1,5 h; dein langer Lauf bleibt damit kurz.',
+                                                week_hours={'fromWeek': 1, 'toWeek': 5, 'hours': 1.5}, summary='Weniger Stunden'))
+        change = self.chat(provider, {'message': 'Die ersten 5 Wochen will ich höchstens 1,5 h trainieren.'})['messages'][-1]['change']
+        # The coach sees every plan week with its number, hours and whether it is worked out.
+        self.assertEqual([(w['number'], w['workedOut']) for w in calls[0]['planWeeks'][:4]], [(1, True), (2, True), (3, True), (4, False)])
+        self.assertEqual((change['weeks'], change['settings'][0][:24]), ([], 'Woche 1–5: je 1,5 h (bis'))
+        self.assertIsNone(self.client.get('/api/coach/plan/weeks').get_json()['adapt'])  # Nothing changes before the confirmation.
+        confirmed = self.client.post(f"/api/coach/proposals/{change['proposalId']}/confirm", json={'confirm': True})
+        self.assertEqual(confirmed.status_code, 200, confirmed.get_json())
+        overview = self.client.get('/api/coach/plan/weeks').get_json()
+        self.assertEqual([w['athleteHours'] for w in overview['weeks'][:6]], [1.5] * 5 + [None])
+        self.assertEqual(overview['weeks'][3]['targetHours'], 1.5)  # Weeks not worked out yet follow at once.
+        # The worked-out weeks are noted to be worked out anew with „Plan anpassen“.
+        self.assertEqual(overview['adapt']['weeks'], weeks)
+        # Weeks outside the plan or more hours than the time of a week go back to the coach.
+        provider, calls = self.coach(self.reply('Ok.', week_hours={'fromWeek': 1, 'toWeek': 40, 'hours': 1}))
+        self.assertIsNone(self.chat(provider, {'message': 'Alles weniger'})['messages'][-1]['change'])
+        self.assertIn('Wochen 1 bis 12', calls[1]['systemNote']['rejectedChange'])
 
     def test_ending_the_plan_also_ends_its_chat(self):
         plan = self.planned()

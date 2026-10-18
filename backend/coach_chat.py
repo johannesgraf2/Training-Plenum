@@ -42,9 +42,15 @@ SETTINGS_SCHEMA = obj({
 })
 
 
+# The athlete's own hours for a span of plan weeks (numbered from 1 like the weekly chart), worked out or not yet.
+WEEK_HOURS_SCHEMA = obj({'fromWeek': {'type': 'integer', 'minimum': 1, 'maximum': 520},
+                         'toWeek': {'type': 'integer', 'minimum': 1, 'maximum': 520},
+                         'hours': {'type': 'number', 'minimum': 0, 'maximum': 80}})
+
+
 def response_schema(patch_schema):
     change = obj({'summary': text(200), 'weeks': {'type': 'array', 'maxItems': 3, 'items': patch_schema},
-                  'settings': nullable(SETTINGS_SCHEMA)})
+                  'settings': nullable(SETTINGS_SCHEMA), 'weekHours': nullable(WEEK_HOURS_SCHEMA)})
     return obj({'reply': text(2000), 'change': nullable(change)})
 
 

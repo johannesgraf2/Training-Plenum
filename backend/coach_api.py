@@ -1155,7 +1155,12 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'changes go into change.settings: a period with less or no time (exception), a new recurring availability window, '
         'maxWeeklyHours, a new event or a new FTP or threshold pace; unused fields are null. An exception that reaches '
         'weeks not yet worked out goes into settings and acts when they are worked out; patch the worked-out weeks inside '
-        'the period as well. change.summary is one short German line for the change card. systemNote.rejectedChange is '
+        'the period as well. change.weekHours sets the athlete\'s own hours for the plan weeks fromWeek to toWeek '
+        '(planWeeks numbers, as in the weekly chart; at most maxHours): use it when the athlete wants a volume for a span of '
+        'weeks, also weeks not worked out yet, and do not patch those weeks in change.weeks; TrainHub works them out anew '
+        'after the confirmation. „Unter 3 h“ means hours 3 or a little less. In reply then say in one sentence what this '
+        'means for the long run (about a third of the week in a running plan) and for the weeks after the span. '
+        'change.summary is one short German line for the change card. systemNote.rejectedChange is '
         'why the server rejected your previous change: say in one sentence why it does not work and offer an alternative '
         'change that keeps the rules. '
         'replan in a frame task means the plan already runs and the athlete changed its events or end (replan.changes): lay '
@@ -1605,6 +1610,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                 value.profile = packed(changed)
                 if ftp:
                     user().ftp = ftp
+            if definition.get('weekHours'):
+                # Hours for a span of weeks, as in the weekly chart: later weeks follow at once, worked-out ones are noted
+                # for „Plan anpassen“.
+                plan['volume'], _ = week_hours_volume(plan, profile(), definition['weekHours'], today)
+                note_stale(plan, reshape(plan, profile(), today), today)
         save_plan(plan)
         proposal.status = 'confirmed'
         db.session.commit()
@@ -2566,13 +2576,25 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                                         'status': proposal_status(changes[row.proposal_id])}} if changes.get(row.proposal_id) else {})}
                         for row in reversed(history)],
             **plan_context(plan, current_profile, today),
-            'workedOutWeeks': worked, 'pastWeeks': past,
+            'workedOutWeeks': worked, 'pastWeeks': past, 'planWeeks': plan_week_hours(plan, current_profile, today),
             'snapshot': snapshot()}
         context['snapshot']['selfReported']['checkIns'] = current_profile['checkIns'][-7:]
         context['snapshot']['selfReported']['dailyOverrides'] = []
         context['snapshot']['selfReported']['weeklyOverrides'] = []
         context['snapshot']['selfReported'].update(wellness_context(current_profile, today))
         return context
+
+    def plan_week_hours(plan, current_profile, today):
+        """Every plan week with its number, phase and hours (the athlete's own or the suggestion), for weekHours."""
+        view = volume_view(plan, current_profile, today) if active_frame(plan) else None
+        if view is None:
+            return []
+        keys = plan_weeks(plan['settings'])
+        first, _ = plan_span(plan['settings'])
+        return [{'number': index + 1, 'week': key, 'startDate': (first + timedelta(weeks=index)).isoformat(), 'kind': item['kind'],
+                 'hours': item['athleteHours'] if item['athleteHours'] is not None else item['suggestedHours'],
+                 'own': item['athleteHours'] is not None, 'maxHours': item['maxHours'], 'workedOut': key in plan['weeks']}
+                for index, (key, item) in enumerate(zip(keys, view['weeks']))]
 
     def chat_change(change, today):
         """The checked chat change: week patches through the week check and settings like their editors, or None."""
@@ -2598,10 +2620,41 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         if change['settings']:
             _, settings_lines, _ = apply_settings(current_profile, change['settings'], 'check', today)
             settings = change['settings'] if settings_lines else None
-        if not afters and not settings:
+        week_hours = change.get('weekHours')
+        if week_hours:
+            _, hours_lines = week_hours_volume(plan, current_profile, week_hours, today)
+            settings_lines = settings_lines + hours_lines
+        if not afters and not settings and not week_hours:
             return None
         return {'summary': change['summary'].strip() or 'Änderung prüfen', 'before': befores, 'after': afters, 'lines': lines,
-                'settings': settings, 'settingsLines': settings_lines, 'hinweise': hinweise}
+                'settings': settings, 'settingsLines': settings_lines, 'weekHours': week_hours, 'hinweise': hinweise}
+
+    def week_hours_volume(plan, current_profile, item, today):
+        """The plan volume with the athlete's own hours for plan weeks fromWeek–toWeek (as set in the weekly chart) and a
+        German line for the change card; checked like the chart."""
+        view = volume_view(plan, current_profile, today) if active_frame(plan) else None
+        if view is None:
+            raise CoachError('Es gibt noch keinen Plan, dessen Wochenstunden sich ändern ließen.')
+        keys = plan_weeks(plan['settings'])
+        first, last = item['fromWeek'], item['toWeek']
+        if not 1 <= first <= last <= len(keys):
+            raise CoachError(f'Der Plan hat die Wochen 1 bis {len(keys)}.')
+        current = keys.index(iso_week(today)) + 1 if iso_week(today) in keys else 1
+        if last < current:
+            raise CoachError('Vergangene Wochen bleiben, wie sie waren.')
+        first = max(first, current)
+        own = {key: value for key, value in ((plan.get('volume') or {}).get('weeks') or {}).items() if key in keys}
+        for index in range(first - 1, last):
+            own[keys[index]] = {'kind': (own.get(keys[index]) or {}).get('kind'), 'hours': item['hours']}
+        data = {'scale': view['scale'], 'weeks': [{'week': key, **value} for key, value in own.items()]}
+        _, total = plan_span(plan['settings'])
+        keep = max(0, min(total, current - 1))
+        volume = check_volume(data, plan.get('volume'), plan['settings'], keep, [w['defaultKind'] for w in view['weeks']],
+                              [w['maxHours'] for w in view['weeks']])
+        before = [w['athleteHours'] if w['athleteHours'] is not None else w['suggestedHours'] for w in view['weeks'][first - 1:last]]
+        span = f'Woche {first}' if first == last else f'Woche {first}–{last}'
+        was = f'{min(before):g}' if min(before) == max(before) else f'{min(before):g}–{max(before):g}'
+        return volume, [f"{span}: je {item['hours']:g} h (bisher {was} h)".replace('.', ',')]
 
     @app.route('/api/coach/chat', methods=['GET', 'POST', 'DELETE'])
     def chat():
