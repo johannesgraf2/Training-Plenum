@@ -102,6 +102,13 @@ TEMPLATES = {
                     'hint': 'Easy run with 4-10 strides of 15-30 s (fast but relaxed, not a sprint), full easy jogging between.',
                     'defaults': {'durationMin': 50, 'intensity': .70, 'reps': 6, 'workSec': 20},
                     'params': {'durationMin': [30, 120], 'intensity': [.60, .78], 'reps': [4, 10], 'workSec': [10, 30]}},
+    # Lauf-ABC: running drills after warming up, each over a short distance, then a few strides.
+    'run_drills': {'name': 'Lockerer Lauf mit Lauf-ABC', 'sport': 'run', 'kind': 'drills', 'fuel': 'easy',
+                   'hint': 'Easy run with running drills (Lauf-ABC: skipping, high knees, butt kicks, bounding ...) after '
+                           'warming up, reps drills of workSec each with walking or jogging back, then 3 strides; technique '
+                           'work for base blocks.',
+                   'defaults': {'durationMin': 45, 'intensity': .70, 'reps': 6, 'workSec': 20},
+                   'params': {'durationMin': [30, 90], 'intensity': [.60, .78], 'reps': [4, 8], 'workSec': [15, 30]}},
     'run_hill_sprints': {'name': 'Lockerer Lauf mit Bergsprints', 'sport': 'run', 'kind': 'sprints', 'fuel': 'easy', 'pick': 'Bergsprint',
                          'hint': 'Easy run with 4-10 short controlled-fast hill sprints of 8-15 s, walk or jog down about 90 s; '
                                  'builds strength and running economy in base phases.',
@@ -141,6 +148,9 @@ TEMPLATES['run_tempo']['params'].update(intervals=[1, 12], workMin=[1, 60])  # M
 # Easy rides and runs are named by their duration: a run over an hour is a long run, a ride over three hours.
 LONG_SESSION = {'run': (60, 'Lockerer Lauf', 'Langer Lauf'), 'ride': (180, 'Grundlagenausdauer Rad', 'Lange Ausfahrt')}
 
+# The Lauf-ABC drills in their usual order.
+DRILLS = ('Fußgelenkarbeit', 'Skippings', 'Kniehebelauf', 'Anfersen', 'Hopserlauf', 'Seitgalopp', 'Überkreuzlauf', 'Sprunglauf')
+
 PARAM_NAMES = ('durationMin', 'intervals', 'workMin', 'recoveryMin', 'intensity',
                'sets', 'reps', 'workSec', 'restSec', 'setRestMin', 'cadence')
 SESSION_SCHEMA = {
@@ -161,6 +171,8 @@ DURATION_RULES = {
     ('micro', 'run'): '10 min warmup + sets x reps x (workSec + restSec) + setRestMin between sets + 5 min cooldown',
     ('sprints', 'ride'): 'durationMin includes warmup and cooldown; reps sprints of workSec spread evenly through the easy part',
     ('sprints', 'run'): 'durationMin includes warmup and cooldown; reps of workSec spread evenly through the easy part',
+    ('drills', 'run'): 'durationMin includes 10 min warmup, reps drills of workSec with 45 s back, 3 strides, easy running '
+                       'and 5 min cooldown',
     ('test', 'ride'): 'fixed 55 min protocol including warmup and cooldown; all params null',
     ('test', 'run'): 'fixed 55 min protocol including warmup and cooldown; all params null',
 }
@@ -322,7 +334,7 @@ def render_session(template, params, date, ftp=None, max_hr=None, threshold_pace
     easy_name, easy_steady = ('Grundlage', .65) if spec['sport'] == 'ride' else ('Locker', .70)
     long_mp = spec.get('embed') == 'before'
     hard = spec['kind'] in ('intervals', 'micro')
-    warmup = 10 if hard or spec['sport'] == 'ride' else 5
+    warmup = 10 if hard or spec['sport'] == 'ride' or spec['kind'] == 'drills' else 5
     cooldown = 10 if hard and (spec['sport'] == 'ride' or long_mp) else 5
     cadence = f" · {effective['cadence']} U/min" if effective.get('cadence') else ''
     if spec['kind'] == 'test':
@@ -354,6 +366,18 @@ def render_session(template, params, date, ftp=None, max_hr=None, threshold_pace
                 step(f'{prefix}Locker', effective['restSec'], 'recovery', easy_fraction)]})
             if number < effective['sets'] - 1:
                 steps.append(step('Satzpause', effective['setRestMin'] * 60, 'recovery', easy_fraction))
+    elif spec['kind'] == 'drills':
+        # Lauf-ABC after warming up: each drill over a short distance, back walking or jogging, then three strides.
+        for name in DRILLS[:effective['reps']]:
+            steps.append(step(name, effective['workSec'], 'active', None))
+            steps.append(step('Zurückgehen', 45, 'recovery', None))
+        steps.append({'kind': 'repeat', 'count': 3, 'steps': [step('Steigerung', 20, 'interval', None),
+                                                               step(easy_name, 60, 'recovery', easy_fraction)]})
+        remainder = effective['durationMin'] * 60 - _seconds(steps) - cooldown * 60
+        if remainder < 0:
+            raise TemplateError('Die Gesamtdauer ist kürzer als Aufwärmen, Lauf-ABC und Abwärmen.')
+        if remainder:
+            steps.append(step(easy_name, remainder, 'active', effective['intensity']))
     else:  # sprints: easy riding with maximal sprints spread evenly
         # Parameter bounds leave at least 90 s of easy riding between sprints.
         main = (effective['durationMin'] - warmup - cooldown) * 60 - effective['reps'] * effective['workSec']

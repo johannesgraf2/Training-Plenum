@@ -29,7 +29,7 @@ _THRESHOLD = {'bike_threshold', 'bike_threshold_intervals', 'run_threshold'}
 _VO2 = {'bike_vo2', 'bike_vo2_micro', 'run_vo2', 'run_vo2_short'}
 GROUPS = {
     'easy': {'bike_recovery', 'bike_z2', 'bike_z2_short', 'bike_z2_long', 'bike_z2_sprints', 'bike_long', 'run_easy', 'run_long',
-             'run_strides', 'run_hill_sprints'},
+             'run_strides', 'run_hill_sprints', 'run_drills'},
     'tempo': _TEMPO,
     'threshold': _THRESHOLD,
     'thresholdWork': _TEMPO | _THRESHOLD,
@@ -122,14 +122,16 @@ RUN_GUIDANCE = {
     'general': 'Running plan: runWeek is the week TrainHub lays out for it (days, the key session along its progression, '
                'the long run and the easy runs with their durations). One key session per week, the long run at the '
                'weekend as the longest run (with three run days about 40 % of the week), the other runs easy and short '
-               '(30-60 min), one of them with strides or hill sprints. No easy run is longer than 60 minutes or the long '
-               'run. Deload weeks keep this shape with an easier key session and a shorter long run. Jogging recoveries: '
-               'threshold 1-2 min, VO2 2-3 min. Strides (run_strides) and hill sprints (run_hill_sprints) are easy runs, '
-               'not quality.',
+               '(30-60 min), one of them with strides, in base blocks with Lauf-ABC (run_drills) in turn and hill sprints '
+               'only about every fourth week. The long run follows runWeek: it grows by at most 15 min per load week and '
+               'never takes up hours the other runs cannot hold (the server rejects a longer one). No easy run is longer '
+               'than 60 minutes or the long run. Deload weeks keep this shape with an easier key session and a shorter long '
+               'run. Jogging recoveries: threshold 1-2 min, VO2 2-3 min. Strides (run_strides), Lauf-ABC (run_drills) and '
+               'hill sprints (run_hill_sprints) are easy runs, not quality.',
     'wiedereinstieg': 'Easy runs only, strides from the second week; lengthen the long run gradually.',
     'grundlage': 'Key session: short reps just below threshold pace (run_threshold, for example 6x2 -> 5x3 -> 5x4 -> 4x5 min '
-                 'with 1-2 min jog), so the threshold block can start at 3x8 min; one easy run with strides or hill sprints '
-                 'in turn; the long run grows week by week.',
+                 'with 1-2 min jog), so the threshold block can start at 3x8 min; one easy run with Lauf-ABC or strides in '
+                 'turn, hill sprints about every fourth week; the long run grows week by week.',
     'aufbau': 'Key session alternating threshold (3x8 -> 3x10 min) and VO2 (5x3 -> 5x4 min).',
     'vo2max': 'Key session run_vo2 with 800-1000 m reps (about 3-4 min) and 2-3 min jog, progressing 5x3 -> 6x3 -> 5x4 -> '
               '6x4 min; deload weeks keep a shorter VO2 session.',
@@ -145,7 +147,7 @@ RUN_GUIDANCE = {
 }
 
 
-EASY_RUNS = {'run_easy', 'run_strides', 'run_hill_sprints'}
+EASY_RUNS = {'run_easy', 'run_strides', 'run_hill_sprints', 'run_drills'}
 LONG_RUNS = {'run_long', 'run_long_mp'}
 # An easy run lasts up to an hour; a longer one is the long run of its week (and is named so).
 EASY_RUN_MINUTES = 60

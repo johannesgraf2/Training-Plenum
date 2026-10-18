@@ -255,6 +255,17 @@ class UltraAndPaceTests(unittest.TestCase):
         with self.assertRaises(TemplateError):
             render_session('bike_vo2', {'intervals': 1}, DAY)  # A single interval stays a running tempo run.
 
+    def test_lauf_abc_is_an_easy_run_with_drills_and_strides(self):
+        session = render_session('run_drills', {}, DAY, max_hr=190, threshold_pace=270)
+        steps = session['workout']['steps']
+        self.assertEqual((session['name'], session['durationMin']), ('Lockerer Lauf mit Lauf-ABC', 45))
+        self.assertEqual([s['name'] for s in steps if s['kind'] == 'step' and s['intensity'] == 'active'][:6],
+                         ['Fußgelenkarbeit', 'Skippings', 'Kniehebelauf', 'Anfersen', 'Hopserlauf', 'Seitgalopp'])
+        self.assertTrue(all(s['target'] == {'type': 'none'} for s in steps
+                            if s['kind'] == 'step' and s['name'] in ('Skippings', 'Zurückgehen')))  # By feel, not by pace.
+        self.assertEqual(next(s for s in steps if s['kind'] == 'repeat')['steps'][0]['name'], 'Steigerung')
+        self.assertEqual(render_session('run_drills', {'durationMin': 30, 'reps': 8, 'workSec': 30}, DAY)['durationMin'], 30)
+
     def test_pace_targets_export_as_speed_ranges(self):
         workout = render_session('run_threshold', {}, DAY, max_hr=190, threshold_pace=270)['workout']
         self.assertTrue(export_workout(workout).startswith(bytes([14])))

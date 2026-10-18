@@ -46,6 +46,7 @@ export const PURPOSES = {
   run_tempo: 'Lockerer Lauf mit einem Block im Renntempo: gewöhnt dich an dein Zieltempo.',
   run_strides: 'Lockerer Lauf mit kurzen Steigerungen: hält die Beine spritzig und den Laufstil sauber, ohne zu ermüden.',
   run_hill_sprints: 'Lockerer Lauf mit kurzen Bergsprints: Kraft und Laufökonomie bei sehr wenig Ermüdung.',
+  run_drills: 'Lockerer Lauf mit Lauf-ABC: Technikübungen für einen ökonomischen, verletzungsarmen Laufstil.',
   strength_general: 'Kraft und Stabilität beugen Verletzungen vor und stützen die Leistung.',
   rest: 'Ruhe gehört zum Training: Jetzt passt sich dein Körper an.',
   bike_ftp_test: 'Misst deine FTP, damit alle Radziele stimmen.',

@@ -37,7 +37,7 @@ from coach_volume import (INSTRUCTIONS as VOLUME_INSTRUCTIONS, RECOMMENDATION_SC
                           recommendation_input, rule_recommendation)
 from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_order,
                           check_season, first_monday, new_season, public_season, season_frame, typical_season, with_fixed)
-from coach_runs import run_week
+from coach_runs import long_run_excess, run_week
 from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, flat_steps, render_session, template_catalog
 from workout_export import WorkoutError, validate_workout
 from coach_wellness import (SPORT_NOUNS, blocked_sports, check_in_averages, heal, injury_label, public_injury, readiness,
@@ -1055,7 +1055,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'Choose only supplied templates and supported params; use null for unused params. Follow exact duration rules including warmup/cooldown. '
         'targetHours must equal total duration including fixed sessions, within 15 minutes. Never change fixed or locked sessions. '
         'block.guidance in workedOutWeeks holds for every new or changed session; when the athlete asks to work a week '
-        'out anew, rebuild it like a freshly planned week. No easy run (run_easy, run_strides, run_hill_sprints) is longer '
+        'out anew, rebuild it like a freshly planned week. No easy run (run_easy, run_strides, run_hill_sprints, run_drills) is longer '
         'than the long run of its week; the server rejects it. '
         'runWeek (running plans) is the week TrainHub lays out from the block, its progression and the week\'s hours: '
         'run days, the key session, the long run and the easy runs with templates, params and durations (role and minutes '
@@ -1917,6 +1917,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                     raise CoachError(f'Die Woche hat {decision["targetHours"]:g} h, du hast {wanted:g} h für sie festgelegt.')
                 after = finish_week(copy.deepcopy(decision), None, week, 'week', current_profile, plan, first_day)
                 check_tests(after['sessions'], tests)
+                excess = context.get('runWeek') and long_run_excess(after['sessions'], context['runWeek'])
+                if excess:
+                    raise CoachError(excess)
                 break
             except (CoachError, TemplateError) as error:
                 if attempt:
@@ -2195,6 +2198,7 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                            worked_week(plan, current_profile, key, first_day, key in rebuild) for key in keys]}
             schema = adapt_response_schema(response_schemas(SESSION_SCHEMA)['patch'], len(keys))
             decision = generate('adapt', context, schema)
+            patterns = {w['week']: w['runWeek'] for w in context['workedOutWeeks'] if w.get('runWeek')}
             current_profile, plan = profile(), current_plan()  # Re-read after the provider call.
             hinweise = [h.strip() for h in decision['hinweise'] if h.strip()]
             for item in decision['adjustments']:
@@ -2203,6 +2207,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                     if key not in keys or key in afters:
                         raise CoachError('Anpassungen gibt es nur für die schon ausgearbeiteten Wochen.')
                     after = finish_week(item, plan['weeks'][key], key, 'patch', current_profile, plan, first_day)
+                    excess = patterns.get(key) and long_run_excess(after['sessions'], patterns[key])
+                    if excess:
+                        raise CoachError(excess)
                 except (CoachError, TemplateError) as error:
                     rejected.append({'week': key, 'reason': str(error)})  # The other weeks still count.
                     continue

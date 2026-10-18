@@ -1429,7 +1429,8 @@ class CoachAPITests(unittest.TestCase):
         view = self.client.get('/api/coach/today').get_json()
         self.assertEqual(view['period']['planWeek'], {'number': 1, 'total': 12})
         self.assertEqual([o['date'] for o in view['outlook']], [(today + timedelta(days=n)).isoformat() for n in (1, 2, 3)])
-        self.assertEqual([(h['kind'], h.get('days')) for h in view['hints']], [('event', 4)])
+        # On a Sunday the review of the week shows as well; it is checked below.
+        self.assertEqual([(h['kind'], h.get('days')) for h in view['hints'] if h['kind'] != 'review'], [('event', 4)])
         sunday = today + timedelta(days=6 - today.weekday())
         hints = self.client.get(f'/api/coach/today?date={sunday.isoformat()}').get_json()['hints']
         self.assertEqual(hints[0], {'kind': 'review', 'week': iso_week(today)})

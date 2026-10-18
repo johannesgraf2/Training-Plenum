@@ -9,7 +9,7 @@ at threshold.
 """
 from itertools import combinations
 
-from coach_blocks import DELOAD_PHASES
+from coach_blocks import DELOAD_PHASES, LONG_RUNS
 from coach_domain import DAYS
 from coach_templates import PACE_SLOPE, PARAM_NAMES, THRESHOLD_HR_FRACTION
 
@@ -20,6 +20,8 @@ LONG_CAP = {'short': 90, 'half': 120, 'marathon': 180, 'ultra': 210}
 LONG_SHARE = {1: 1, 2: .55, 3: .44, 4: .37, 5: .32, 6: .28, 7: .25}
 LONG_MIN = 60          # A long run in a load week lasts at least an hour (from half-marathon distance on).
 LONG_RISE = 15         # Most a load week's long run grows over the one before.
+LONG_START = 100       # The first long run of a plan lasts at most 1:40 h and grows from there.
+LONG_TOLERANCE = 10    # How far the coach may lengthen the laid-out long run.
 DELOAD_LONG = .8       # A deload week's long run against the last load week's.
 TAPER_LONG = (.75, .6)  # Long runs of the taper weeks before race week against the longest long run.
 EASY_MIN, EASY_MAX = 30, 60  # An easy run over an hour would be a second long run.
@@ -131,6 +133,26 @@ def minimum_minutes(session):
         (20 if session['template'] == 'run_long_mp' else 0)
 
 
+def easy_touch(block_type, number, deload, race_week, key_template=None):
+    """The fast touch of the special easy run: in base blocks Lauf-ABC and strides in turn, hill sprints about every
+    fourth week (never twice in a week); elsewhere strides."""
+    if race_week or block_type not in ('grundlage', 'wiedereinstieg'):
+        return 'run_strides'
+    if number % 4 == 0 and not deload and key_template != 'run_hill_sprints':
+        return 'run_hill_sprints'
+    return 'run_drills' if number % 2 else 'run_strides'
+
+
+def long_run_excess(sessions, pattern):
+    """Why the week's long run is longer than the laid-out one allows, or None."""
+    planned = next((s['minutes'] for s in pattern['sessions'] if s['role'] == 'long'), None)
+    actual = max((s['rendered']['durationMin'] or 0 for s in sessions if s['template'] in LONG_RUNS), default=None)
+    if planned is None or actual is None or actual <= planned + LONG_TOLERANCE:
+        return None
+    return f'Der lange Lauf hat {round(actual)} min, vorgesehen sind {planned} min. Er wächst höchstens {LONG_RISE} min pro ' \
+           'Woche; fehlende Stunden bleiben weg statt in den langen Lauf zu wandern.'
+
+
 def _step(chain, index):
     return chain[max(0, min(index, len(chain) - 1))]
 
@@ -149,7 +171,7 @@ def key_session(block_type, load_index, deload, distance, race, *, taper_index=N
         chain = TAPER_KEY['short' if distance == 'short' else 'marathon' if distance in ('marathon', 'ultra') else 'half']
         return _intervals_session('run_tempo', _step(chain, taper_index or 0), race)
     if block_type == 'grundlage':
-        if not intervals_known and load_index <= 2 and not deload:
+        if not intervals_known and load_index == 1 and not deload:
             return {'template': 'run_hill_sprints', 'params': _params(reps=6, workSec=10)}
         return _intervals_session('run_threshold', pick(FARTLEK), FARTLEK_INTENSITY)
     if block_type == 'schwelle':
@@ -229,6 +251,8 @@ def _durations(chosen, key, total, days, available, *, cap, deload, block_type, 
             long_minutes = max(long_minutes, LONG_MIN)
         if previous_long:
             long_minutes = min(long_minutes, _round5(previous_long * DELOAD_LONG) if deload else previous_long + LONG_RISE)
+        elif not longest_long:
+            long_minutes = min(long_minutes, LONG_START)
         if block_type == 'taper' and longest_long:
             long_minutes = min(long_minutes, _round5(longest_long * TAPER_LONG[min(number, len(TAPER_LONG)) - 1]))
         if block_type == 'uebergang':
@@ -282,10 +306,10 @@ def _durations(chosen, key, total, days, available, *, cap, deload, block_type, 
                 session = _intervals_session('run_tempo', _step(tempo_chain, load_index - 1), race)
                 session['params']['durationMin'] = max(minutes, minimum_minutes(session))
             elif day == special and block_type != 'uebergang' and not (block_type == 'wiedereinstieg' and number == 1):
-                hills = block_type in ('grundlage', 'wiedereinstieg') and number % 2 == 1 and not race_week
-                session = {'template': 'run_hill_sprints' if hills else 'run_strides',
+                template = easy_touch(block_type, number, deload, race_week, key and key['template'])
+                session = {'template': template,
                            'params': _params(durationMin=max(EASY_MIN, minutes), reps=4 if deload or race_week else 6,
-                                             workSec=10 if hills else 20)}
+                                             workSec=10 if template == 'run_hill_sprints' else 20)}
             result.append({'id': f'easy-{day}', 'role': 'easy', 'day': day, **session})
     for session in result:
         session['minutes'] = session['params']['durationMin']

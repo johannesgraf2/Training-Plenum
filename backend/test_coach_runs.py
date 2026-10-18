@@ -1,7 +1,7 @@
 import unittest
 
 from coach_blocks import EASY_RUNS, LONG_RUNS
-from coach_runs import choose_days, distance_class, race_intensity, run_week
+from coach_runs import choose_days, distance_class, long_run_excess, race_intensity, run_week
 from coach_templates import render_session
 
 HALF = {'subtype': 'halfMarathon', 'distanceKm': 21.1, 'targetSeconds': 5990}  # 1:39:50
@@ -59,15 +59,34 @@ class RunWeekTests(unittest.TestCase):
         self.assertEqual((rendered['name'], rendered['durationMin']), ('Schwellenlauf 3×10 min', key['minutes']))
         self.assertEqual(render_session('run_long', by_role(weeks[0], 'long')['params'], '2026-10-25')['name'], 'Langer Lauf')
 
-    def test_base_block_has_short_reps_as_key_session_and_strides_or_hill_sprints(self):
+    def test_base_block_has_short_reps_as_key_session_lauf_abc_strides_and_rare_hill_sprints(self):
         weeks = block('grundlage')
         self.assertEqual([shape(by_role(w, 'key')) for w in weeks[:3]],
                          [('run_threshold', 6, 2), ('run_threshold', 5, 3), ('run_threshold', 6, 3)])
-        self.assertEqual([by_role(w, 'easy')['template'] for w in weeks],
-                         ['run_hill_sprints', 'run_strides', 'run_hill_sprints', 'run_strides'])
-        # Without interval experience the first weeks start with hill sprints instead.
-        first = block('grundlage', intervals_known=False)[0]
-        self.assertEqual(by_role(first, 'key')['template'], 'run_hill_sprints')
+        # Technique (Lauf-ABC) and strides in turn; hill sprints only about every fourth week, not in a deload week.
+        self.assertEqual([by_role(w, 'easy')['template'] for w in weeks], ['run_drills', 'run_strides', 'run_drills', 'run_strides'])
+        long = block('grundlage', hours=(4,) * 8, weeks=[{'phase': 'build'}] * 8)
+        self.assertEqual([n for n, w in enumerate(long, start=1) if by_role(w, 'easy')['template'] == 'run_hill_sprints'], [4, 8])
+        # Without interval experience the first week starts with hill sprints instead, and only that week has them.
+        first, second = block('grundlage', intervals_known=False)[:2]
+        self.assertEqual((by_role(first, 'key')['template'], by_role(first, 'easy')['template']), ('run_hill_sprints', 'run_drills'))
+        self.assertEqual(by_role(second, 'key')['template'], 'run_threshold')
+
+    def test_the_long_run_starts_moderately_and_grows_step_by_step(self):
+        # 6 h in four run days would put 2:15 h into the first long run; it starts at 1:40 h and grows by 15 min.
+        days = {'tue': 180, 'thu': 180, 'fri': 180, 'sun': 180}
+        weeks, previous = [], None
+        for number in range(1, 5):
+            week = run_week('grundlage', [{'phase': 'build'}] * 4, number, 6.1, days, training_days=4, long_days=['sun'],
+                            event=MARATHON, previous_long=previous, longest_long=previous)
+            weeks.append(week)
+            previous = by_role(week, 'long')['minutes']
+        self.assertEqual([by_role(w, 'long')['minutes'] for w in weeks], [100, 115, 130, 135])
+        self.assertTrue(all(s['minutes'] <= 60 for w in weeks for s in w['sessions'] if s['role'] == 'easy'))
+        # The coach may lengthen the laid-out long run a little, not fill the week's hours with it.
+        rendered = lambda minutes: [{'template': 'run_long', 'rendered': {'durationMin': minutes}}]
+        self.assertIsNone(long_run_excess(rendered(110), weeks[0]))
+        self.assertIn('vorgesehen sind 100 min', long_run_excess(rendered(155), weeks[0]))
 
     def test_race_specific_weeks_add_race_pace(self):
         weeks = block('wettkampfspezifisch')
