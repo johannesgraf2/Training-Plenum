@@ -233,6 +233,38 @@ class FitTests(unittest.TestCase):
         self.backend.initialize_database()
         self.assertEqual(self.upload(fit_fixture()).status_code, 201)
 
+    def test_older_table_gets_recordings_as_last_column_without_losing_data(self):
+        # Older databases kept fit_details and created_at behind time_series (see Activity.time_series).
+        created = self.upload(fit_fixture()).json
+        before = self.client.get(f'/api/activities/{created["id"]}').json
+        listed = self.client.get('/api/activities').json
+        self.assertEqual(self.client.get('/api/analytics?year=2006').status_code, 200)  # fills analytics_cache
+        with self.backend.app.app_context():
+            self.backend.db.session.remove()
+            self.backend.db.engine.dispose()
+        connection = sqlite3.connect(self.root / 'test.db')
+        old = [row[1] for row in connection.execute('PRAGMA table_info(activity)') if row[1] not in ('time_series', 'fit_details', 'created_at')]
+        order = old + ['time_series', 'fit_details', 'created_at']
+        connection.execute(f'CREATE TABLE activity_old AS SELECT {", ".join(order)} FROM activity')
+        connection.execute('DROP TABLE activity')
+        connection.execute('ALTER TABLE activity_old RENAME TO activity')
+        connection.commit()
+        connection.close()
+        self.backend.initialize_database()
+        self.backend.initialize_database()
+        connection = sqlite3.connect(self.root / 'test.db')
+        columns = [row[1] for row in connection.execute('PRAGMA table_info(activity)')]
+        primary = [row[1] for row in connection.execute('PRAGMA table_info(activity)') if row[5]]
+        caches = connection.execute('SELECT COUNT(*) FROM analytics_cache WHERE activity_id = ?', (created['id'],)).fetchone()[0]
+        connection.close()
+        self.assertEqual(columns[-1], 'time_series')
+        self.assertEqual(sorted(columns), sorted(order))
+        self.assertEqual(primary, ['id'])
+        self.assertEqual(caches, 1)
+        self.assertEqual(self.client.get(f'/api/activities/{created["id"]}').json, before)
+        self.assertEqual(self.client.get('/api/activities').json, listed)
+        self.assertEqual(self.client.delete(f'/api/activities/{created["id"]}').status_code, 200)
+
     def test_planned_workout_save_reload_edit_export_delete_keeps_activities_separate(self):
         from test_workout_export import example
         from garmin_fit_sdk import Decoder, Stream

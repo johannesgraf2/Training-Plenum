@@ -10,6 +10,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 from sqlalchemy import inspect, text
+from sqlalchemy.schema import CreateTable
 from sqlalchemy.orm import defer, load_only, selectinload
 from sqlalchemy.exc import IntegrityError
 from dateutil.tz import gettz
@@ -80,9 +81,11 @@ class Activity(db.Model):
     source_file = db.Column(db.String(255))
     source_type = db.Column(db.String(10))
     file_hash = db.Column(db.String(64))
-    time_series = db.Column(db.Text, default='[]') # JSON
     fit_details = db.Column(db.Text, default='{}')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Last on purpose: SQLite walks a column's whole overflow chain to reach the columns behind it,
+    # so anything after the recordings makes every activity list read every recording.
+    time_series = db.Column(db.Text, default='[]') # JSON
 
     def to_dict(self, include_ts=False):
         details = json.loads(self.fit_details or '{}')
@@ -182,6 +185,27 @@ def initialize_database():
                     column['name'] for column in inspect(connection).get_columns('ai_provider_settings')}:
                 connection.execute(text('ALTER TABLE ai_provider_settings ADD COLUMN reasoning_effort VARCHAR(20)'))
             upgrade_garmin_tables(connection)
+        move_recordings_last()
+
+
+def move_recordings_last():
+    """Rebuild an older activity table whose small columns sit behind the recordings (see Activity.time_series)."""
+    columns = [column['name'] for column in inspect(db.engine).get_columns('activity')]
+    if columns[-1] == 'time_series' or set(columns) != set(Activity.__table__.columns.keys()):
+        return
+    app.logger.warning('Aktivitäten-Tabelle wird einmalig umsortiert, damit Listen und Dashboard schneller laden …')
+    names = ', '.join(columns)
+    ddl = str(CreateTable(Activity.__table__).compile(db.engine)).replace('CREATE TABLE activity ', 'CREATE TABLE activity_rebuild ', 1)
+    with db.engine.begin() as connection:
+        connection.execute(text(ddl))
+        connection.execute(text(f'INSERT INTO activity_rebuild ({names}) SELECT {names} FROM activity'))
+        connection.execute(text('DROP TABLE activity'))
+        connection.execute(text('ALTER TABLE activity_rebuild RENAME TO activity'))
+        for index in Activity.__table__.indexes:
+            index.create(connection)
+    # Give the old copy's space back; otherwise the file keeps twice the size of all recordings.
+    with db.engine.connect().execution_options(isolation_level='AUTOCOMMIT') as connection:
+        connection.execute(text('VACUUM'))
 
 
 @app.errorhandler(413)
