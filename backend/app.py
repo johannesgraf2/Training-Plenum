@@ -30,8 +30,7 @@ app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', os.path.join(based
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-if 'DATABASE_URL' not in os.environ:
-    os.makedirs(os.path.join(basedir, 'data'), exist_ok=True)
+os.makedirs(os.path.join(basedir, 'data'), exist_ok=True)
 
 db = SQLAlchemy(app)
 
