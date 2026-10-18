@@ -19,6 +19,55 @@ import RemoteAccess from './RemoteAccess';
 import { resolveApiBase } from './apiBase';
 import './App.css';
 
+// ─── CALENDAR HELPERS ───
+const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const mondayOf = date => new Date(date.getFullYear(), date.getMonth(), date.getDate() - (date.getDay() + 6) % 7);
+const addDays = (date, days) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+function calendarCell(date, activities, plannedWorkouts) {
+  const key = localDate(date);
+  return { date, day: date.getDate(), activities: activities.filter(a => localDate(new Date(a.date)) === key), plans: plannedWorkouts.filter(workout => workout.date === key) };
+}
+// Completed and planned totals of one calendar week (null cells are days outside the month).
+function weekTotals(cells) {
+  const weekActs = cells.filter(Boolean).flatMap(c => c.activities);
+  const summary = {
+    count: weekActs.length,
+    duration: weekActs.reduce((s, a) => s + (a.duration || 0), 0),
+    distance: weekActs.reduce((s, a) => s + (a.distance || 0), 0),
+    elevation: weekActs.reduce((s, a) => s + (a.elevation || 0), 0),
+    calories: weekActs.reduce((s, a) => s + (a.calories || 0), 0),
+    bySport: {},
+  };
+  weekActs.forEach(a => {
+    if (!summary.bySport[a.sport]) summary.bySport[a.sport] = { duration: 0, distance: 0, count: 0 };
+    summary.bySport[a.sport].duration += a.duration || 0;
+    summary.bySport[a.sport].distance += a.distance || 0;
+    summary.bySport[a.sport].count += 1;
+  });
+  // Planned volume: time-based steps count as hours, distance-only steps are listed separately.
+  const planned = { count: 0, duration: 0, distance: 0, bySport: {} };
+  cells.filter(Boolean).flatMap(c => c.plans).forEach(workout => {
+    const totals = workoutTotals(workout);
+    planned.count += 1;
+    planned.duration += totals.time / 60;
+    planned.distance += totals.distance / 1000;
+    planned.bySport[workout.sport] = (planned.bySport[workout.sport] || 0) + totals.time / 60;
+  });
+  return { summary, planned };
+}
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => !!window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia?.(query);
+    if (!list) return undefined;
+    const change = () => setMatches(list.matches);
+    change();
+    list.addEventListener?.('change', change);
+    return () => list.removeEventListener?.('change', change);
+  }, [query]);
+  return matches;
+}
+
 // ─── API HELPER ───
 const API = resolveApiBase();
 // Drag payload for moving a planned workout between calendar days (distinct from file drops).
@@ -80,6 +129,11 @@ export default function App() {
   const [moveError, setMoveError] = useState('');
   const [toast, setToast] = useState(null);
   const [calMonth, setCalMonth] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1); });
+  // The phone shows one week at a time: a strip of its seven days, then the days one below the other.
+  const phoneCalendar = useMediaQuery('(max-width: 700px)');
+  const [calWeekStart, setCalWeekStart] = useState(() => mondayOf(new Date()));
+  const [calDay, setCalDay] = useState(() => localDate(new Date()));
+  const calSwipe = useRef(null);
   const [user, setUser] = useState(null);
   const [profileVersion, setProfileVersion] = useState(0);
   const [coachTab, setCoachTab] = useState({ tab: 'today', version: 0 });
@@ -255,44 +309,14 @@ export default function App() {
     // Build flat cells array
     const cells = [];
     for (let i = 0; i < firstDay; i++) cells.push(null);
-    for (let d = 1; d <= daysInMonth; d++) {
-      const date = new Date(y, m, d);
-      const dayActs = activities.filter(a => { const ad = new Date(a.date); return ad.getFullYear() === y && ad.getMonth() === m && ad.getDate() === d; });
-      const plans = plannedWorkouts.filter(workout => workout.date === localDate(date));
-      cells.push({ date, day: d, activities: dayActs, plans });
-    }
+    for (let d = 1; d <= daysInMonth; d++) cells.push(calendarCell(new Date(y, m, d), activities, plannedWorkouts));
     // Pad end to fill last week
     while (cells.length % 7 !== 0) cells.push(null);
 
-    // Split into weeks and compute summary per week
     const weeks = [];
     for (let w = 0; w < cells.length; w += 7) {
       const weekCells = cells.slice(w, w + 7);
-      const weekActs = weekCells.filter(Boolean).flatMap(c => c.activities);
-      const summary = {
-        count: weekActs.length,
-        duration: weekActs.reduce((s, a) => s + (a.duration || 0), 0),
-        distance: weekActs.reduce((s, a) => s + (a.distance || 0), 0),
-        elevation: weekActs.reduce((s, a) => s + (a.elevation || 0), 0),
-        calories: weekActs.reduce((s, a) => s + (a.calories || 0), 0),
-        bySport: {},
-      };
-      weekActs.forEach(a => {
-        if (!summary.bySport[a.sport]) summary.bySport[a.sport] = { duration: 0, distance: 0, count: 0 };
-        summary.bySport[a.sport].duration += a.duration || 0;
-        summary.bySport[a.sport].distance += a.distance || 0;
-        summary.bySport[a.sport].count += 1;
-      });
-      // Planned volume: time-based steps count as hours, distance-only steps are listed separately.
-      const planned = { count: 0, duration: 0, distance: 0, bySport: {} };
-      weekCells.filter(Boolean).flatMap(c => c.plans).forEach(workout => {
-        const totals = workoutTotals(workout);
-        planned.count += 1;
-        planned.duration += totals.time / 60;
-        planned.distance += totals.distance / 1000;
-        planned.bySport[workout.sport] = (planned.bySport[workout.sport] || 0) + totals.time / 60;
-      });
-      weeks.push({ cells: weekCells, summary, planned });
+      weeks.push({ cells: weekCells, ...weekTotals(weekCells) });
     }
     return weeks;
   }, [calMonth, activities, plannedWorkouts]);
@@ -304,19 +328,131 @@ export default function App() {
     const last = Math.max(now + 1, calMonth.getFullYear(), ...years);
     return Array.from({ length: last - first + 1 }, (_, i) => last - i);
   }, [activities, plannedWorkouts, calMonth]);
-  // On a phone the calendar is a list of weeks; opening the current month starts at this week,
-  // once the activities are in (they change the height above it), below the header if it stays on top.
-  useEffect(() => {
+  const phoneWeek = useMemo(() => {
+    const cells = Array.from({ length: 7 }, (_, i) => calendarCell(addDays(calWeekStart, i), activities, plannedWorkouts));
+    return { cells, ...weekTotals(cells) };
+  }, [calWeekStart, activities, plannedWorkouts]);
+  const showWeek = (date, day = null) => { setCalWeekStart(mondayOf(date)); setCalDay(day); };
+  const showToday = () => showWeek(new Date(), localDate(new Date()));
+  // Picking a month on the phone opens its first week with the Thursday in it (so the pickers keep
+  // showing that month), or this week for the current month.
+  const showMonth = (year, month) => {
     const now = new Date();
-    if (loading || page !== 'calendar' || selected || calMonth.getFullYear() !== now.getFullYear() || calMonth.getMonth() !== now.getMonth()) return;
-    if (!window.matchMedia?.('(max-width: 700px)').matches) return;
-    const week = document.querySelector('.calendar-day.today')?.closest('.calendar-week');
-    if (!week) return;
-    const bar = document.querySelector('.app-header');
-    const header = bar && getComputedStyle(bar).position === 'sticky' ? bar.getBoundingClientRect().height : 0;
-    window.scrollTo({ top: week.getBoundingClientRect().top + window.scrollY - header });
-  }, [loading, page, selected, calMonth]);
+    if (year === now.getFullYear() && month === now.getMonth()) { showToday(); return; }
+    const monday = mondayOf(new Date(year, month, 1));
+    showWeek(addDays(monday, 3).getMonth() === month ? monday : addDays(monday, 7));
+  };
+  const pickDay = date => {
+    setCalDay(date);
+    document.querySelector(`.calendar-phone .calendar-day[data-date="${date}"]`)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  };
+  const swipeWeek = event => {
+    const start = calSwipe.current; calSwipe.current = null;
+    const touch = event.changedTouches?.[0];
+    if (!start || !touch) return;
+    const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) showWeek(addDays(calWeekStart, dx < 0 ? 7 : -7));
+  };
   const maxSportDuration = Math.max(1, ...calWeeks.flatMap(w => Object.values(w.summary.bySport).map(sport => sport.duration)));
+
+  const renderDay = (cell, ci, key) => {
+    const isToday = cell.date.toDateString() === todayStr;
+    const cellDate = localDate(cell.date);
+    const carriesWorkout = event => Array.from(event.dataTransfer.types || []).includes(WORKOUT_DRAG_TYPE);
+    const free = !cell.plans.length && !cell.activities.length;
+    return (
+      <div key={key} className={`calendar-day${isToday ? ' today' : ''}${dropDate === cellDate ? ' calendar-drop-target' : ''}${phoneCalendar && calDay === cellDate ? ' selected' : ''}`}
+        data-date={cellDate} role="group" aria-label={`Kalendertag ${fmt.dateFull(cell.date)}`}
+        onDragOver={event => {
+          if (!carriesWorkout(event)) return;
+          event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+          if (dropDate !== cellDate) setDropDate(cellDate);
+        }}
+        onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDropDate(d => d === cellDate ? null : d); }}
+        onDrop={event => {
+          if (!carriesWorkout(event)) return;
+          event.preventDefault(); event.stopPropagation();
+          moveWorkout(event.dataTransfer.getData(WORKOUT_DRAG_TYPE), cellDate);
+        }}>
+        <div className="calendar-day-header">
+          <span className="calendar-day-weekday" aria-hidden="true">{WEEKDAYS[ci]}</span>
+          <span className="calendar-day-number">{isToday ? `Heute ${cell.day}` : cell.day === 1 ? `1. ${cell.date.toLocaleDateString('de-DE', { month: 'short' })}` : cell.day}</span>
+          {phoneCalendar && free && <span className="calendar-day-free">frei</span>}
+          <ReadinessBadge day={whoopDays[cellDate]} />
+          <button type="button" className="calendar-add-workout"
+            aria-label={`Workout am ${cell.date.toLocaleDateString('de-DE')} planen`}
+            title="Workout planen"
+            onClick={() => setWorkoutEditor({ date: localDate(cell.date) })}>+</button>
+        </div>
+
+        {cell.plans.map(workout => <button type="button" key={workout.id}
+          className={`calendar-planned-workout${draggedWorkout === workout.id ? ' dragging' : ''}`}
+          style={{ '--calendar-sport-color': sportColor(workout.sport) }}
+          aria-label={`${workout.name} am ${cell.date.toLocaleDateString('de-DE')} bearbeiten`}
+          draggable={!workout.locked}
+          title={workout.locked ? 'Wird behalten – im Plan des AI Coach lösen, um die Einheit zu verschieben' : 'Zum Verschieben auf einen anderen Tag ziehen'}
+          onDragStart={event => {
+            event.dataTransfer.setData(WORKOUT_DRAG_TYPE, workout.id);
+            event.dataTransfer.effectAllowed = 'move';
+            setDraggedWorkout(workout.id);
+          }}
+          onDragEnd={() => { setDraggedWorkout(null); setDropDate(null); }}
+          onClick={() => setWorkoutEditor(workout)}>
+          <span className="calendar-plan-heading">{sportLabels[workout.sport] || 'Training'} · <span className="calendar-plan-status">Geplant</span></span>
+          <strong>{workout.name}</strong><small>{workoutSummary(workout)}</small>
+        </button>)}
+
+        {cell.activities.map(a => (
+          <button type="button" key={a.id} className="calendar-activity" style={{ '--calendar-sport-color': sportColor(a.sport) }} onClick={() => openActivity(a)}>
+            <span className="calendar-plan-heading">{sportLabels[a.sport] || a.sport}</span>
+            <span className="calendar-activity-title">{a.title}</span>
+            <span className="calendar-activity-stats">{fmt.durHM(a.duration)} · {a.distance == null ? '—' : a.distance.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km</span>
+            {(a.hrAvg || a.power) && <small>{[a.hrAvg && `Ø ${a.hrAvg} bpm`, a.power && `${a.power} W`].filter(Boolean).join(' · ')}</small>}
+          </button>
+        ))}
+      </div>
+    );
+  };
+  const renderSummary = (week, maxDuration) => (
+    <div className="calendar-summary">
+      <WeekRecovery summary={weekRecovery(week.cells.filter(Boolean).map(cell => localDate(cell.date)), whoopDays)} />
+      {week.planned.count > 0 && (
+        <div className="calendar-summary-planned" aria-label="Geplante Wochenstunden">
+          <div className="calendar-summary-planned-total"><span>Geplant</span><strong>{fmt.hours(week.planned.duration)}</strong></div>
+          <div className="calendar-summary-planned-meta">
+            {week.planned.count} {week.planned.count === 1 ? 'Einheit' : 'Einheiten'}
+            {week.planned.distance > 0 && ` · + ${week.planned.distance.toLocaleString('de-DE', { maximumFractionDigits: 1 })} km`}
+          </div>
+          {Object.keys(week.planned.bySport).length > 1 && Object.entries(week.planned.bySport).map(([sport, minutes]) => (
+            <div key={sport} className="calendar-summary-planned-sport">
+              <span className="sport-mark"><i aria-hidden="true" style={{ background: sportColor(sport) }} />{sportLabels[sport] || sport}</span><span>{fmt.hours(minutes)}</span>
+            </div>
+          ))}
+          {week.summary.count > 0 && week.planned.duration > 0 && (
+            <div className="calendar-summary-progress" title={`${fmt.hours(week.summary.duration)} von ${fmt.hours(week.planned.duration)} absolviert`}>
+              <i style={{ width: `${Math.min(100, (week.summary.duration / week.planned.duration) * 100)}%` }} />
+            </div>
+          )}
+        </div>
+      )}
+      {week.summary.count > 0 ? (<>
+        {Object.entries(week.summary.bySport).map(([sport, data]) => (
+          <div key={sport} className="calendar-summary-sport">
+            <div><span className="sport-mark"><i aria-hidden="true" style={{ background: sportColor(sport) }} />{sportLabels[sport] || sport}</span><strong>{data.distance.toFixed(1)} km</strong></div>
+            <div className="calendar-summary-bar"><i style={{ width: `${(data.duration / maxDuration) * 100}%`, background: sportColor(sport) }} /></div>
+          </div>
+        ))}
+        <dl>
+          {[
+            ['Dauer', fmt.durHM(week.summary.duration)],
+            ['Distanz', `${week.summary.distance.toFixed(1)} km`],
+            ...(week.summary.elevation > 0 ? [['Höhenmeter', `${fmt.num(week.summary.elevation)} m`]] : []),
+            ['Kalorien', `${fmt.num(week.summary.calories)} kcal`],
+          ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+        </dl>
+      </>) : <p className="calendar-summary-empty">Keine Aktivitäten</p>}
+    </div>
+  );
 
   // ─── RENDER ───
   return (
@@ -370,7 +506,61 @@ export default function App() {
             onEditGoal={() => openCoachSettings('events')} bestEffortsYear={calMonth.getFullYear()}
             whoopDays={whoopDays} onOpenWhoop={() => setShowWhoop(true)} onOpenCoach={openCoachPlan} onStartOnboarding={startOnboarding}
             today={today} onOpenCheckIn={() => setCheckInOpen(true)} user={user} />
-        ) : page === 'calendar' ? (
+        ) : page === 'calendar' && phoneCalendar ? (() => {
+          const last = addDays(calWeekStart, 6), middle = addDays(calWeekStart, 3);
+          const month = date => date.toLocaleDateString('de-DE', { month: 'short' });
+          const span = `${calWeekStart.getDate()}. ${calWeekStart.getMonth() === last.getMonth() ? '' : `${month(calWeekStart)} `}– ${last.getDate()}. ${month(last)}`;
+          const weekMax = Math.max(1, ...Object.values(phoneWeek.summary.bySport).map(sport => sport.duration));
+          return (
+          <div className="calendar calendar-phone"
+            onTouchStart={event => { const touch = event.touches?.[0]; calSwipe.current = touch ? { x: touch.clientX, y: touch.clientY } : null; }}
+            onTouchEnd={swipeWeek}>
+            <div className="calendar-toolbar">
+              <h2>KW {Number(isoWeek(localDate(calWeekStart)).split('-W')[1])} <span>{span}</span></h2>
+              <div className="calendar-pickers">
+                <select aria-label="Monat wählen" value={middle.getMonth()} onChange={e => showMonth(middle.getFullYear(), +e.target.value)}>
+                  {Array.from({ length: 12 }, (_, i) => <option key={i} value={i}>{new Date(2026, i, 1).toLocaleDateString('de-DE', { month: 'long' })}</option>)}
+                </select>
+                <select aria-label="Jahr wählen" value={middle.getFullYear()} onChange={e => showMonth(+e.target.value, middle.getMonth())}>
+                  {calYears.map(year => <option key={year} value={year}>{year}</option>)}
+                </select>
+              </div>
+              <div className="calendar-nav">
+                <button type="button" onClick={showToday}>Heute</button>
+                <button type="button" aria-label="Vorherige Woche" onClick={() => showWeek(addDays(calWeekStart, -7))}>‹</button>
+                <button type="button" aria-label="Nächste Woche" onClick={() => showWeek(addDays(calWeekStart, 7))}>›</button>
+              </div>
+            </div>
+
+            {workoutLoadError && <p role="alert" className="calendar-error">{workoutLoadError} <button type="button" onClick={reloadWorkouts}>Erneut laden</button></p>}
+            {moveError && <p role="alert" className="calendar-error">{moveError} <button type="button" onClick={() => setMoveError('')}>Schließen</button></p>}
+
+            <div className="calendar-strip">
+              {phoneWeek.cells.map((cell, ci) => {
+                const cellDate = localDate(cell.date);
+                const sessions = [...cell.activities.map(a => ({ sport: a.sport, planned: false })), ...cell.plans.map(w => ({ sport: w.sport, planned: true }))];
+                return (
+                  <button type="button" key={cellDate} aria-pressed={calDay === cellDate}
+                    className={`calendar-chip${cell.date.toDateString() === todayStr ? ' today' : ''}${calDay === cellDate ? ' selected' : ''}`}
+                    aria-label={`${fmt.dateFull(cell.date)}${sessions.length ? `, ${sessions.length} ${sessions.length === 1 ? 'Einheit' : 'Einheiten'}` : ', frei'}`}
+                    onClick={() => pickDay(cellDate)}>
+                    <span className="calendar-chip-weekday">{WEEKDAYS[ci]}</span>
+                    <span className="calendar-chip-number">{cell.day}</span>
+                    <span className="calendar-chip-dots" aria-hidden="true">
+                      {sessions.slice(0, 3).map((session, i) => <i key={i} className={session.planned ? 'planned' : undefined} style={{ '--dot': sportColor(session.sport) }} />)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="calendar-week">
+              {phoneWeek.cells.map((cell, ci) => renderDay(cell, ci, localDate(cell.date)))}
+              {renderSummary(phoneWeek, weekMax)}
+            </div>
+          </div>
+          );
+        })() : page === 'calendar' ? (
           <div className="calendar">
             <div className="calendar-toolbar">
               <h2>{calMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</h2>
@@ -406,102 +596,8 @@ export default function App() {
               return (
               <div key={wi} className="calendar-week">
                 <div className="calendar-week-label">KW {Number(isoWeek(localDate(first)).split('-W')[1])} <span>{span}</span></div>
-                {week.cells.map((cell, ci) => {
-                  if (!cell) return <div key={`e${wi}-${ci}`} className="calendar-day-empty" />;
-                  const isToday = cell.date.toDateString() === todayStr;
-                  const cellDate = localDate(cell.date);
-                  const carriesWorkout = event => Array.from(event.dataTransfer.types || []).includes(WORKOUT_DRAG_TYPE);
-                  return (
-                    <div key={`${wi}-${ci}`} className={`calendar-day${isToday ? ' today' : ''}${dropDate === cellDate ? ' calendar-drop-target' : ''}`}
-                      data-date={cellDate} role="group" aria-label={`Kalendertag ${fmt.dateFull(cell.date)}`}
-                      onDragOver={event => {
-                        if (!carriesWorkout(event)) return;
-                        event.preventDefault(); event.dataTransfer.dropEffect = 'move';
-                        if (dropDate !== cellDate) setDropDate(cellDate);
-                      }}
-                      onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDropDate(d => d === cellDate ? null : d); }}
-                      onDrop={event => {
-                        if (!carriesWorkout(event)) return;
-                        event.preventDefault(); event.stopPropagation();
-                        moveWorkout(event.dataTransfer.getData(WORKOUT_DRAG_TYPE), cellDate);
-                      }}>
-                      <div className="calendar-day-header">
-                        <span className="calendar-day-weekday" aria-hidden="true">{['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][ci]}</span>
-                        <span className="calendar-day-number">{isToday ? `Heute ${cell.day}` : cell.day === 1 ? `1. ${calMonth.toLocaleDateString('de-DE', { month: 'short' })}` : cell.day}</span>
-                        <ReadinessBadge day={whoopDays[cellDate]} />
-                        <button type="button" className="calendar-add-workout"
-                          aria-label={`Workout am ${cell.date.toLocaleDateString('de-DE')} planen`}
-                          title="Workout planen"
-                          onClick={() => setWorkoutEditor({ date: localDate(cell.date) })}>+</button>
-                      </div>
-
-                      {cell.plans.map(workout => <button type="button" key={workout.id}
-                        className={`calendar-planned-workout${draggedWorkout === workout.id ? ' dragging' : ''}`}
-                        style={{ '--calendar-sport-color': sportColor(workout.sport) }}
-                        aria-label={`${workout.name} am ${cell.date.toLocaleDateString('de-DE')} bearbeiten`}
-                        draggable={!workout.locked}
-                        title={workout.locked ? 'Wird behalten – im Plan des AI Coach lösen, um die Einheit zu verschieben' : 'Zum Verschieben auf einen anderen Tag ziehen'}
-                        onDragStart={event => {
-                          event.dataTransfer.setData(WORKOUT_DRAG_TYPE, workout.id);
-                          event.dataTransfer.effectAllowed = 'move';
-                          setDraggedWorkout(workout.id);
-                        }}
-                        onDragEnd={() => { setDraggedWorkout(null); setDropDate(null); }}
-                        onClick={() => setWorkoutEditor(workout)}>
-                        <span className="calendar-plan-heading">{sportLabels[workout.sport] || 'Training'} · <span className="calendar-plan-status">Geplant</span></span>
-                        <strong>{workout.name}</strong><small>{workoutSummary(workout)}</small>
-                      </button>)}
-
-                      {cell.activities.map(a => (
-                        <button type="button" key={a.id} className="calendar-activity" style={{ '--calendar-sport-color': sportColor(a.sport) }} onClick={() => openActivity(a)}>
-                          <span className="calendar-plan-heading">{sportLabels[a.sport] || a.sport}</span>
-                          <span className="calendar-activity-title">{a.title}</span>
-                          <span className="calendar-activity-stats">{fmt.durHM(a.duration)} · {a.distance == null ? '—' : a.distance.toLocaleString('de-DE', { maximumFractionDigits: 2 })} km</span>
-                          {(a.hrAvg || a.power) && <small>{[a.hrAvg && `Ø ${a.hrAvg} bpm`, a.power && `${a.power} W`].filter(Boolean).join(' · ')}</small>}
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })}
-
-                <div className="calendar-summary">
-                  <WeekRecovery summary={weekRecovery(week.cells.filter(Boolean).map(cell => localDate(cell.date)), whoopDays)} />
-                  {week.planned.count > 0 && (
-                    <div className="calendar-summary-planned" aria-label="Geplante Wochenstunden">
-                      <div className="calendar-summary-planned-total"><span>Geplant</span><strong>{fmt.hours(week.planned.duration)}</strong></div>
-                      <div className="calendar-summary-planned-meta">
-                        {week.planned.count} {week.planned.count === 1 ? 'Einheit' : 'Einheiten'}
-                        {week.planned.distance > 0 && ` · + ${week.planned.distance.toLocaleString('de-DE', { maximumFractionDigits: 1 })} km`}
-                      </div>
-                      {Object.keys(week.planned.bySport).length > 1 && Object.entries(week.planned.bySport).map(([sport, minutes]) => (
-                        <div key={sport} className="calendar-summary-planned-sport">
-                          <span className="sport-mark"><i aria-hidden="true" style={{ background: sportColor(sport) }} />{sportLabels[sport] || sport}</span><span>{fmt.hours(minutes)}</span>
-                        </div>
-                      ))}
-                      {week.summary.count > 0 && week.planned.duration > 0 && (
-                        <div className="calendar-summary-progress" title={`${fmt.hours(week.summary.duration)} von ${fmt.hours(week.planned.duration)} absolviert`}>
-                          <i style={{ width: `${Math.min(100, (week.summary.duration / week.planned.duration) * 100)}%` }} />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {week.summary.count > 0 ? (<>
-                    {Object.entries(week.summary.bySport).map(([sport, data]) => (
-                      <div key={sport} className="calendar-summary-sport">
-                        <div><span className="sport-mark"><i aria-hidden="true" style={{ background: sportColor(sport) }} />{sportLabels[sport] || sport}</span><strong>{data.distance.toFixed(1)} km</strong></div>
-                        <div className="calendar-summary-bar"><i style={{ width: `${(data.duration / maxSportDuration) * 100}%`, background: sportColor(sport) }} /></div>
-                      </div>
-                    ))}
-                    <dl>
-                      {[
-                        ['Dauer', fmt.durHM(week.summary.duration)],
-                        ['Distanz', `${week.summary.distance.toFixed(1)} km`],
-                        ...(week.summary.elevation > 0 ? [['Höhenmeter', `${fmt.num(week.summary.elevation)} m`]] : []),
-                        ['Kalorien', `${fmt.num(week.summary.calories)} kcal`],
-                      ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-                    </dl>
-                  </>) : <p className="calendar-summary-empty">Keine Aktivitäten</p>}
-                </div>
+                {week.cells.map((cell, ci) => cell ? renderDay(cell, ci, `${wi}-${ci}`) : <div key={`e${wi}-${ci}`} className="calendar-day-empty" />)}
+                {renderSummary(week, maxSportDuration)}
               </div>
               );
             })}

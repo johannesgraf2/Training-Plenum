@@ -198,3 +198,57 @@ test('each week carries its number and dates and each day its weekday for the ph
   expect(day('2026-01-26').querySelector('.calendar-day-weekday').textContent).toBe('Mo');
   expect(day('2026-01-31').querySelector('.calendar-day-weekday').textContent).toBe('Sa');
 });
+
+describe('phone: one week at a time', () => {
+  beforeEach(() => { window.matchMedia = query => ({ matches: query === '(max-width: 700px)', addEventListener() {}, removeEventListener() {} }); });
+  afterEach(() => { delete window.matchMedia; });
+  const title = () => container.querySelector('.calendar-toolbar h2').textContent;
+  const chips = () => [...container.querySelectorAll('.calendar-chip')];
+
+  test('shows this week as a strip of seven days with dots and the days below', async () => {
+    saved = [{ ...newWorkout('2026-01-31'), id: 'sat', name: 'Samstagsrunde' }];
+    await renderCalendar();
+    expect(title()).toMatch(/^KW 5 26\. Jan\.? – 1\. Feb\.?$/);
+    expect(chips().map(chip => chip.textContent)).toEqual(['Mo26', 'Di27', 'Mi28', 'Do29', 'Fr30', 'Sa31', 'So1']);
+    const saturday = chips()[5];
+    expect(saturday.className).toContain('today');
+    expect(saturday.getAttribute('aria-pressed')).toBe('true');
+    expect(saturday.querySelectorAll('.calendar-chip-dots i.planned')).toHaveLength(1);
+    expect(chips()[0].querySelectorAll('.calendar-chip-dots i')).toHaveLength(0);
+    expect(container.querySelectorAll('.calendar-day')).toHaveLength(7);
+    expect(day('2026-01-26').querySelector('.calendar-day-free').textContent).toBe('frei');
+    expect(day('2026-01-31').querySelector('.calendar-day-free')).toBeNull();
+    expect(day('2026-01-31').querySelector('.calendar-planned-workout').textContent).toContain('Samstagsrunde');
+    expect(container.querySelector('.calendar-summary-planned').textContent).toContain('1 Einheit');
+    click(chips()[1]);
+    expect(day('2026-01-27').classList.contains('selected')).toBe(true);
+    expect(chips()[5].getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('weeks change with the arrows, a swipe and the month picker, and Heute comes back', async () => {
+    await renderCalendar();
+    click(container.querySelector('[aria-label="Nächste Woche"]'));
+    expect(title()).toMatch(/^KW 6 2\. – 8\. Feb\.?$/);
+    expect(chips().some(chip => chip.className.includes('selected'))).toBe(false);
+    const phone = container.querySelector('.calendar-phone');
+    act(() => { Simulate.touchStart(phone, { touches: [{ clientX: 50, clientY: 300 }] }); Simulate.touchEnd(phone, { changedTouches: [{ clientX: 250, clientY: 310 }] }); });
+    expect(title()).toMatch(/^KW 5 /);
+    act(() => { Simulate.touchStart(phone, { touches: [{ clientX: 50, clientY: 300 }] }); Simulate.touchEnd(phone, { changedTouches: [{ clientX: 90, clientY: 500 }] }); });
+    expect(title()).toMatch(/^KW 5 /);  // scrolling down is no swipe
+    act(() => Simulate.change(container.querySelector('select[aria-label="Monat wählen"]'), { target: { value: '2' } }));
+    expect(title()).toMatch(/^KW 10 2\. – 8\. März?\.?$/);
+    expect(container.querySelector('select[aria-label="Monat wählen"]').value).toBe('2');
+    act(() => Simulate.change(container.querySelector('select[aria-label="Jahr wählen"]'), { target: { value: '2025' } }));
+    expect(title()).toMatch(/^KW 10 3\. – 9\. März?\.?$/);
+    click(button('Heute'));
+    expect(title()).toMatch(/^KW 5 /);
+    expect(chips()[5].getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('plus on a day of another week opens the builder on that date', async () => {
+    await renderCalendar();
+    click(container.querySelector('[aria-label="Nächste Woche"]'));
+    click(day('2026-02-04').querySelector('.calendar-add-workout'));
+    expect(container.querySelector('.workout-dialog input[type="date"]').value).toBe('2026-02-04');
+  });
+});

@@ -21,6 +21,7 @@
 /* Month and year pickers; week label and weekday names only show in the phone layout. */
 .calendar-pickers { display: flex; gap: 6px; }
 .calendar-week-label, .calendar-day-weekday { display: none; }
+.calendar-strip { display: none; }
 
 /* Phone: a list of weeks. Each week starts with its label and totals, then the days one below the other. */
 @media (max-width: 700px) {
@@ -51,4 +52,26 @@
   .calendar .calendar-summary dl { flex-direction: row; flex-wrap: wrap; gap: 4px 14px; padding-top: 0; border-top: 0; flex-basis: 100%; }
   .calendar .calendar-summary dl > div { gap: 4px; }
   .calendar .calendar-week-label { order: -2; }
+
+  /* One week at a time: a strip of the seven days, then the days one below the other (App: phoneCalendar). */
+  .calendar-phone .calendar-toolbar h2 span { margin-left: 6px; font-family: var(--font-body); font-size: 14px; color: var(--muted); }
+  .calendar-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; padding: 0 12px 12px; }
+  .calendar-chip { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 7px 0 8px; border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--ink); font: inherit; cursor: pointer; touch-action: manipulation; }
+  .calendar-chip-weekday { font-size: 11px; font-weight: 600; color: var(--muted); }
+  .calendar-chip-number { font-size: 17px; line-height: 1.2; }
+  .calendar-chip-dots { display: flex; gap: 3px; height: 7px; margin-top: 3px; }
+  .calendar-chip-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--dot); }
+  .calendar-chip-dots i.planned { background: transparent; border: 1.5px solid var(--dot); }
+  .calendar-chip.today { border-color: var(--accent); }
+  .calendar-chip.today .calendar-chip-number { color: var(--accent-text); font-weight: 600; }
+  .calendar-chip.selected { background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); }
+  .calendar-chip.selected .calendar-chip-weekday, .calendar-chip.selected.today .calendar-chip-number { color: inherit; }
+  .calendar-chip.selected .calendar-chip-dots i { border-color: var(--btn-fg); }
+  .calendar-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .calendar-phone .calendar-week { border-top: 1px solid var(--ink); }
+  .calendar-phone .calendar-day { scroll-margin-top: 120px; }
+  .calendar-phone .calendar-day.selected { background: var(--surface); }
+  .calendar-phone .calendar-day-number { margin-right: 0; }
+  .calendar-phone .calendar-day-free { font-size: 13px; color: var(--muted-2); }
+  .calendar-phone .calendar-add-workout { margin-left: auto; }
 }
