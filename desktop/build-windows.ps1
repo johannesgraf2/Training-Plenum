@@ -37,8 +37,9 @@ try {
 } finally {
     Remove-Item Env:TRAINHUB_HOME -ErrorAction SilentlyContinue
 }
-Get-Content -LiteralPath (Join-Path $smokeHome 'training-plenum.log') -ErrorAction SilentlyContinue
-if ($process.ExitCode) { throw "Smoke test failed ($($process.ExitCode))" }
+$log = Get-Content -LiteralPath (Join-Path $smokeHome 'training-plenum.log') -Raw -ErrorAction SilentlyContinue
+Write-Output $log
+if ($process.ExitCode -ne 0 -or $log -notmatch 'Smoke test ok') { throw "Smoke test failed ($($process.ExitCode))" }
 
 $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
 if (-not $iscc) { $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe' }
