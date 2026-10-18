@@ -495,8 +495,31 @@ class CoachAPITests(unittest.TestCase):
         decision = {'week': self.week, 'targetHours': round(237 / 60, 2), 'focus': 'Basis', 'hinweise': [], 'sessions': sessions}
         response, _ = self.propose({'kind': 'week', 'week': self.week}, decision, expected=400)
         self.assertIn('länger als der lange Lauf der Woche (So)', response['error'])
+        # In a running plan an easy run lasts at most an hour; a longer one is the long run.
         sessions[2] = self.session('so', 'sun', 80, 'run_easy')
-        self.propose({'kind': 'week', 'week': self.week}, {**decision, 'targetHours': round(225 / 60, 2), 'sessions': sessions})
+        response, _ = self.propose({'kind': 'week', 'week': self.week},
+                                   {**decision, 'targetHours': round(225 / 60, 2), 'sessions': sessions}, expected=400)
+        self.assertIn('höchstens eine Stunde, länger ist es der lange Lauf (So)', response['error'])
+        sessions[2] = self.session('so', 'sun', 55, 'run_strides')
+        self.propose({'kind': 'week', 'week': self.week}, {**decision, 'targetHours': 3.33, 'sessions': sessions})
+
+    def test_a_running_plan_hands_the_coach_its_week_pattern(self):
+        body = {'kind': 'week', 'week': self.week}
+        answer = {'week': self.week, 'targetHours': 1, 'focus': 'Schwelle', 'hinweise': [], 'sessions': [self.session()]}
+        self.block('schwelle', ('build', 'build', 'build', 'recovery'))
+        # Only the context matters here; the one-session answers miss the block minimums.
+        _, provider = self.propose(body, answer, expected=400)
+        self.assertNotIn('runWeek', provider.generate.call_args.args[3])  # Rides and runs: the coach plans freely.
+        self.client.put('/api/athlete-profile', json={'goal': {'sports': ['run']}, 'availability': {
+            'trainingDaysPerWeek': 3, 'longDays': ['sun'], 'preferredWeeklyHours': 4,
+            'defaultAvailability': {'mon': 0, 'tue': 90, 'wed': 60, 'thu': 90, 'fri': 0, 'sat': 120, 'sun': 150}}})
+        self.block('schwelle', ('build', 'build', 'build', 'recovery'), hours=4)
+        _, provider = self.propose(body, {**answer, 'sessions': [self.session(day='tue', template='run_easy')]}, expected=400)
+        pattern = provider.generate.call_args.args[3]['runWeek']
+        self.assertEqual([(s['day'], s['role'], s['template']) for s in pattern['sessions']],
+                         [('tue', 'key', 'run_threshold'), ('thu', 'easy', 'run_strides'), ('sun', 'long', 'run_long')])
+        self.assertEqual((pattern['sessions'][0]['params']['intervals'], pattern['sessions'][0]['params']['workMin']), (3, 8))
+        self.assertEqual(pattern['totalHours'], 4)
 
     def test_no_two_rest_days_in_a_row_when_the_athlete_asks(self):
         self.block()
@@ -992,7 +1015,7 @@ class CoachAPITests(unittest.TestCase):
         self.assertEqual(calls[0]['periodization'], {'source': 'athlete', 'backwardsFromEvent': True, 'loadWeeks': 3,
                                                      'deloadWeeks': 1, 'taperWeeks': None, 'cycles': [],
                                                      'startHours': 5, 'peakHours': 5.5, 'deloadShare': 0.6,
-                                                     'maxRisePerLoadWeek': 0.05})
+                                                     'maxRisePerLoadWeekPercent': 5})
         self.assertIn('trainingBase', calls[0])
         self.assertTrue(self.client.get('/api/coach/today').get_json()['onboarded'])
         overview = self.client.get('/api/coach/plan/weeks').get_json()

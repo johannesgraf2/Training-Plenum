@@ -69,6 +69,8 @@ class BlockRuleTests(unittest.TestCase):
         goal = profile(goal={'date': '2026-10-25'})
         with self.assertRaisesRegex(CoachError, '30 % weniger'):
             check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=goal)
+        # Before an own taper block (the race a week later) the last week needs no taper drop.
+        check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=profile(goal={'date': '2026-11-01'}))
         race[-1]['targetHours'] = 4.2
         check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=goal)
         check_block('wettkampfspezifisch', None, race, start=MONDAY, profile=profile(goal={'date': '2026-10-24'}))  # Saturday race

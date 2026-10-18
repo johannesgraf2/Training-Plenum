@@ -83,14 +83,20 @@ TEMPLATES = {
                       'hint': 'Threshold reps with 1-2 min jogging recovery, e.g. 3x6 -> 3x8 -> 3x10 min, 2-3 km reps (about 8-14 min), '
                               'or intervals 1 for a continuous tempo run of 15-30 min; set durationMin for the whole run.'},
     'run_long': _steady('Langer Lauf', 'run', 90, [45, MAX_RUN_MINUTES], .72, [.60, .80]),
-    # A long run with marathon-pace blocks near its end, e.g. „30 km: 20 L + 8 MP + 2 L“; the easy running comes first.
-    'run_long_mp': {'name': 'Langer Lauf mit Marathontempo', 'sport': 'run', 'kind': 'intervals', 'fuel': 'intense', 'embed': 'before',
-                    'hint': 'Long run with marathon-pace (MP) blocks late in the run: intervals blocks of workMin at MP with '
-                            'recoveryMin easy between, the rest easy before; progress MP time, e.g. 40 -> 50 -> 2x30 -> 80 min, '
-                            'last big one about 3 weeks before the race.',
+    # A long run with race-pace blocks near its end, e.g. „30 km: 20 L + 8 MP + 2 L“; the easy running comes first.
+    'run_long_mp': {'name': 'Langer Lauf mit Renntempo', 'sport': 'run', 'kind': 'intervals', 'fuel': 'intense', 'embed': 'before',
+                    'work': 'Renntempo',
+                    'hint': 'Long run with race-pace blocks (marathon or half-marathon pace) late in the run: intervals blocks of '
+                            'workMin at race pace with recoveryMin easy between, the rest easy before; progress race-pace time, '
+                            'e.g. 40 -> 50 -> 2x30 -> 80 min for a marathon, last big one about 3 weeks before the race.',
                     'defaults': {'durationMin': 150, 'intervals': 1, 'workMin': 40, 'recoveryMin': 10, 'intensity': .84},
                     'params': {'durationMin': [60, MAX_RUN_MINUTES], 'intervals': [1, 4], 'workMin': [10, 120], 'recoveryMin': [2, 20],
-                               'intensity': [.80, .88]}},
+                               'intensity': [.78, .92]}},
+    # Race pace inside an easy run, e.g. „50 min, darin 2×10 min HM-Tempo“; one interval is a continuous block.
+    'run_tempo': {**_intervals('Lauf mit Renntempo', 'run', 2, 10, 2, .87, [.78, .97]), 'work': 'Renntempo',
+                  'hint': 'Race-pace block inside an easy run: half marathon e.g. 2x8 -> 2x10 -> 3x8 min, marathon one block '
+                          'of 20 -> 30 min, 5/10 km reps of 3-5 min; intensity is the race pace from runWeek. Set durationMin '
+                          'for the whole run.'},
     # Easy runs with short fast touches; they count as easy.
     'run_strides': {'name': 'Lockerer Lauf mit Steigerungen', 'sport': 'run', 'kind': 'sprints', 'fuel': 'easy', 'pick': 'Steigerung',
                     'hint': 'Easy run with 4-10 strides of 15-30 s (fast but relaxed, not a sprint), full easy jogging between.',
@@ -131,6 +137,9 @@ TEMPLATES = {
 }
 
 TEMPLATES['run_threshold']['params']['intervals'] = [1, 12]  # One interval is a continuous tempo run.
+TEMPLATES['run_tempo']['params'].update(intervals=[1, 12], workMin=[1, 60])  # Marathon pace in one block of up to an hour.
+# Easy rides and runs are named by their duration: a run over an hour is a long run, a ride over three hours.
+LONG_SESSION = {'run': (60, 'Lockerer Lauf', 'Langer Lauf'), 'ride': (180, 'Grundlagenausdauer Rad', 'Lange Ausfahrt')}
 
 PARAM_NAMES = ('durationMin', 'intervals', 'workMin', 'recoveryMin', 'intensity',
                'sets', 'reps', 'workSec', 'restSec', 'setRestMin', 'cadence')
@@ -225,7 +234,10 @@ def _seconds(steps):
 
 
 def _label(template, spec, e):
-    """Name with the structure, e.g. „VO2-Mikrointervalle Rad 3×13×30/15“."""
+    """Name with the structure, e.g. „VO2-Mikrointervalle Rad 3×13×30/15“; easy rides and runs by their duration."""
+    if spec['kind'] == 'steady' and spec.get('fuel') != 'recovery' and spec['sport'] in LONG_SESSION:
+        minutes, short, long = LONG_SESSION[spec['sport']]
+        return long if e['durationMin'] > minutes else short
     if spec['kind'] == 'intervals':
         return f"{spec['name']} {e['workMin']} min" if e['intervals'] == 1 else f"{spec['name']} {e['intervals']}×{e['workMin']} min"
     if spec['kind'] == 'sprints':
@@ -327,7 +339,7 @@ def render_session(template, params, date, ftp=None, max_hr=None, threshold_pace
         steps.append(step('Hauptteil', (effective['durationMin'] - warmup - cooldown) * 60,
                           'active', effective['intensity']))
     elif spec['kind'] == 'intervals':
-        work_name = 'Marathontempo' if long_mp else 'Tempo' if effective['intervals'] == 1 else 'Intervall'
+        work_name = spec.get('work') or ('Tempo' if effective['intervals'] == 1 else 'Intervall')
         for interval in range(effective['intervals']):
             number = f' {interval + 1}' if effective['intervals'] > 1 else ''
             steps.append(step(f'{work_name}{number}{cadence}', effective['workMin'] * 60, 'interval', effective['intensity']))

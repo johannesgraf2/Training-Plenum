@@ -18,24 +18,26 @@ from ai_provider import (DEFAULT_MODEL, REASONING_EFFORTS, ProviderError, decryp
                          get_provider, key_file, usage_cost, validate_model, validate_reasoning_effort)
 from athlete_context import build_snapshot, run_threshold_pace, session_pattern, summarize_period, training_background
 from coach_blocks import (BLOCK_RESPONSE_SCHEMA, BLOCK_TYPES, DELOAD_PHASES, GROUPS, SECONDARY_FOCUS, SITUATIONS, block_for_week,
-                          block_guidance, block_status, easy_runs_over_long_run, block_type, catalog as block_catalog, check_block, check_choice, check_event_rules, check_formats,
+                          LONG_RUNS, block_guidance, block_status, easy_runs_over_long_run, easy_runs_too_long, block_type, catalog as block_catalog, check_block, check_choice, check_event_rules, check_formats,
                           check_options, check_week_rules,
-                          interval_formats, migrate_plan, new_block, place_block, public_blocks, rule_texts)
+                          interval_formats, migrate_plan, new_block, place_block, public_blocks, rule_texts, run_focus)
 from coach_domain import (CoachError, DAYS, DAY_NAMES, DEFAULT_PROFILE, MAX_EVENTS, WEEK_OVERRIDE_SCHEMA, DAILY_SCHEMA,
                           CHECK_IN_SCHEMA, apply_patch, complete_event, complete_profile, day_date, effective_availability, iso_week,
                           min_ride_minutes, num, obj, plan_settings, preferred_hours, response_schemas, rest_day_pairs, text,
                           onboarded, ten_k_pace, threshold_pace, update_profile, validate, week_events, week_season, week_start)
 from coach_chat import (MAX_HISTORY, MESSAGE_SCHEMA, apply_settings, check_ref, compact_session,
                         response_schema as chat_response_schema, week_lines)
-from coach_plan import (ADAPT_AREAS, ADAPT_SCHEMA, ATHLETE_HOURS_TOLERANCE, DELOAD_SHARE, FRAME_RESPONSE_SCHEMA, MAX_WEEKLY_RISE, PHASE_EDIT_SCHEMA,
+from coach_plan import (ADAPT_AREAS, ADAPT_SCHEMA, ATHLETE_HOURS_TOLERANCE, FRAME_RESPONSE_SCHEMA, MAX_WEEKLY_RISE, PHASE_EDIT_SCHEMA,
                         REFRAME_AREAS, REVIEW_SCHEMA, VOLUME_SCHEMA, adapt_response_schema, adopt_blocks, align_frame, check_frame,
-                        check_tests, check_volume, cut_frame, deviation, due_weeks, edit_phases, frame_blocks, frame_cycles,
+                        a_events, check_tests, check_volume, cut_frame, deload_share, deviation, due_weeks, edit_phases,
+                        frame_blocks, frame_cycles,
                         frame_hint, group_sessions, horizon, horizon_weeks, outline_changes, plan_span, plan_volume, plan_weeks,
                         reference_monday, replan_date, required_tests, shape_volume)
 from coach_volume import (INSTRUCTIONS as VOLUME_INSTRUCTIONS, RECOMMENDATION_SCHEMA, base_hours, guarded, input_key,
                           recommendation_input, rule_recommendation)
 from coach_season import (EDIT_SCHEMA, SEASON_RESPONSE_SCHEMA, check_options as check_season_options, check_order,
                           check_season, first_monday, new_season, public_season, season_frame, typical_season, with_fixed)
+from coach_runs import run_week
 from coach_templates import SESSION_SCHEMA, TEMPLATES, TemplateError, flat_steps, render_session, template_catalog
 from workout_export import WorkoutError, validate_workout
 from coach_wellness import (SPORT_NOUNS, blocked_sports, check_in_averages, heal, injury_label, public_injury, readiness,
@@ -635,10 +637,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         record.plan = packed({key: value for key, value in plan.items() if key != 'revision'})
         record.revision += 1
 
-    def season_catalog():
-        result = block_catalog()
+    def season_catalog(sports=()):
+        """The block catalog with guidance; a running plan gets the running guidance and block lengths."""
+        result = block_catalog(sports)
         for item in result['blockTypes']:
-            item['guidance'] = BLOCK_TYPES[item['id']]['guidance']
+            item['guidance'] = block_guidance(item['id'], sports)
         return result
 
     def compact_season(plan, today):
@@ -805,6 +808,11 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             if longer:
                 names = ', '.join(DAY_NAMES[s['day']] for s in value['sessions'] if s['id'] in longer)
                 raise CoachError(f'Kein lockerer Lauf ist länger als der lange Lauf der Woche ({names}).')
+            if run_focus(current_profile['goal']['sports']):
+                longer = easy_runs_too_long(value['sessions']) - (easy_runs_too_long(list(previous.values())) - changed_ids)
+                if longer:
+                    names = ', '.join(DAY_NAMES[s['day']] for s in value['sessions'] if s['id'] in longer)
+                    raise CoachError(f'Ein lockerer Lauf dauert höchstens eine Stunde, länger ist es der lange Lauf ({names}).')
         days_limit = current_profile['availability']['trainingDaysPerWeek']
         if days_limit:
             fixed_days = {f['day'] for f in fixed}
@@ -1049,6 +1057,17 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'block.guidance in workedOutWeeks holds for every new or changed session; when the athlete asks to work a week '
         'out anew, rebuild it like a freshly planned week. No easy run (run_easy, run_strides, run_hill_sprints) is longer '
         'than the long run of its week; the server rejects it. '
+        'runWeek (running plans) is the week TrainHub lays out from the block, its progression and the week\'s hours: '
+        'run days, the key session, the long run and the easy runs with templates, params and durations (role and minutes '
+        'only explain them); racePaceIntensity is the race pace as run intensity. Take its sessions over as the week (same '
+        'ids, days, templates and params) and set targetHours to their total, also when it lies below '
+        'blockWeek.targetHours. Change it only where feedback, check-ins, complaints, events, fixedSessions, requiredTests '
+        'or the athlete\'s message require it, and then keep its shape: one key session, the long run as the longest run, '
+        'easy runs of at most an hour (the server rejects longer ones). A week to rebuild with runWeek takes it over the '
+        'same way. '
+        'hinweise of a week are at most three short German notes on what matters in it (how to run the key session, what '
+        'changed against the week before); never explain the planner\'s rules, shares or percentages and do not repeat '
+        'notes of earlier weeks. '
         'Use unique short session ids. A patch contains only changed sessions, with matching sessionId/id; remove uses session:null. '
         'The hinweise of a patch replace the notes of its week: keep the notes that still hold and drop those about removed '
         'or replaced sessions. '
@@ -1110,7 +1129,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'recovery and rebuilding; after the last A event uebergang and then grundlage up to the plan end. Without an A event '
         'plan towards goal.type (vo2max, threshold or fitness) without wettkampfspezifisch or taper. targetHours stay within '
         'weeklyLimits[].maxHours, follow preferredHours and build up gradually from recent training. typicalBuildUp shows '
-        'usual phase lengths up to the first A event. B and C events are handled week by week. purpose is one short German '
+        'usual phase lengths up to the first A event; for a running goal it is the running build-up (half marathon and '
+        'marathon: grundlage, schwelle, wettkampfspezifisch; 5 and 10 km also vo2max): keep its phases and lengths unless '
+        'the training so far argues against them. B and C events are handled week by week. purpose is one short German '
         'sentence per phase, focus a short German phrase per week, rationale one or two German sentences. '
         'requiredTests lists threshold tests the athlete asked for (bike_ftp_test, run_test_30): in the week task plan each '
         'exactly once on a rested day without a hard session the day before; until then targets of that sport are open. '
@@ -1154,7 +1175,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
         'stays clean up to the event. Every phase with a load/deload rhythm consists of whole cycles: deload weeks are '
         'exactly the cycle ends, phase changes come after a deload week, and the peak volume is the last load week before '
         'the final deload (peakWeek). The server aligns the phases to these cycles and sets their target hours: the first '
-        'load week at periodization.startHours, each load week at most periodization.maxRisePerLoadWeek over the one before '
+        'load week at periodization.startHours, each load week at most periodization.maxRisePerLoadWeekPercent percent over '
+        'the one before '
         'and evenly up to periodization.peakHours in the last load week before the taper, a cycle starting again at the '
         'level of the last load week, deloads at periodization.deloadShare of it, never above weeklyLimits.maxHours; write '
         'rationale and focus to fit that curve. '
@@ -1245,14 +1267,53 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             context['elapsedDays'] = DAYS[:first_day.weekday()]
         context['recentPattern'] = session_pattern(load_rows(), zone(), today)
         context['blockHistory'] = block_history(plan, block, week)
+        if before is None:
+            pattern = run_pattern(plan, current_profile, week, block, number, before, first_day)
+            if pattern:
+                context['runWeek'] = pattern
         return context
+
+    def run_pattern(plan, current_profile, week, block, number, planned, first_day):
+        """The week TrainHub lays out for a running plan (coach_runs.run_week), or None for other plans."""
+        if not run_focus(current_profile['goal']['sports']):
+            return None
+        monday = week_start(week)
+        availability = current_profile['availability']
+        fixed_days = {item['day'] for item in fixed_sessions(week, planned)}
+        dates = {day: (monday + timedelta(days=index)).isoformat() for index, day in enumerate(DAYS)}
+        event_days = {day for day, stamp in dates.items() for e in current_profile['events']
+                      if e['startDate'] <= stamp <= (e['endDate'] or e['startDate'])}
+        available = {day: item['maxMinutes'] for day, item in effective_availability(current_profile, week).items()
+                     if item['maxMinutes'] and day not in fixed_days | event_days and day_date(dates[day]) >= first_day}
+        goal = next((e for e in a_events(current_profile) if e['startDate'] >= monday.isoformat()), None)
+        race_day = next((day for day, stamp in dates.items() if goal and goal['startDate'] == stamp), None)
+        longs = []  # Long runs of the weeks planned before, oldest first: (deload week, minutes).
+        for key in sorted(k for k in plan['weeks'] if k < week):
+            minutes = max((s['rendered']['durationMin'] or 0 for s in plan['weeks'][key]['sessions'] if s['template'] in LONG_RUNS),
+                          default=None)
+            other, other_number = block_for_week(plan['blocks'], week_start(key))
+            if minutes and other and other_number <= len(other['weeks']):
+                longs.append((other['weeks'][other_number - 1]['phase'] in DELOAD_PHASES, minutes))
+        days = availability['trainingDaysPerWeek']
+        if days:
+            days -= len(fixed_days)
+            if days <= 0:
+                return None
+        block_week = block['weeks'][number - 1]
+        pattern = run_week(block['blockType'], block['weeks'], number, block_week['targetHours'], available,
+                           training_days=days, long_days=availability['longDays'], rest_days=availability['restDays'],
+                           event=goal, race_day=race_day, threshold_pace=threshold_pace(current_profile),
+                           previous_long=next((m for deload, m in reversed(longs) if not deload), None),
+                           longest_long=max((m for _, m in longs), default=None),
+                           intervals_known=current_profile['background']['intervals'].get('run', True))
+        return {'source': 'calculated', **pattern} if pattern else None
 
     def finish_week(decision, before, week, kind, current_profile, plan, first_day):
         """The AI week or patch applied and checked; days before first_day must stay as they were."""
         if decision['week'] != week:
             raise CoachError('Die AI-Antwort gehört nicht zur angefragten Woche.')
         after = apply_patch(before, decision) if kind == 'patch' else \
-            {key: decision[key] for key in ('week', 'targetHours', 'focus', 'sessions')}
+            {key: decision[key] for key in ('week', 'focus', 'sessions')} | {'targetHours': round(decision['targetHours'], 2)}
         previous = {s['id']: s for s in (before or {}).get('sessions', [])}
         early = 'Vor dem Planstart sind keine Einheiten vorgesehen.' if first_day > datetime.now(zone()).date() else None
         for s in after['sessions']:
@@ -1775,7 +1836,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                                'athleteWish': {'source': 'athlete', 'text': e['description']}}
                               for e in current_profile['events'] if first.isoformat() <= e['startDate'] <= last.isoformat()],
                    'weeklyLimits': weekly, 'typicalBuildUp': frame_hint(settings, current_profile),
-                   'blockCatalog': season_catalog(), 'requiredTests': required_tests(current_profile),
+                   'blockCatalog': season_catalog(current_profile['goal']['sports']),
+                   'requiredTests': required_tests(current_profile),
                    'thresholds': {'source': 'athlete', 'ftp': user().ftp, 'thresholdPaceSecPerKm': threshold_pace(current_profile),
                                   'tenKPaceSecPerKm': ten_k_pace(current_profile)},
                    'trainingBase': {'source': current_profile['background']['source'] or 'athlete',
@@ -1783,8 +1845,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                    'periodization': {'source': 'athlete', 'backwardsFromEvent': True, 'loadWeeks': 3, 'deloadWeeks': 1,
                                      'taperWeeks': settings.get('taperWeeks'),
                                      'cycles': frame_cycles(settings, current_profile),
-                                     'startHours': base, 'peakHours': peak, 'deloadShare': DELOAD_SHARE,
-                                     'maxRisePerLoadWeek': round(MAX_WEEKLY_RISE - 1, 2)},
+                                     'startHours': base, 'peakHours': peak, 'deloadShare': deload_share(current_profile),
+                                     'maxRisePerLoadWeekPercent': round((MAX_WEEKLY_RISE - 1) * 100)},
                    'previousBlocks': [previous_block(b, plan, rows, today) for b in plan['blocks']
                                       if day_date(b['startDate']) < first][-3:],
                    'snapshot': snapshot()}
@@ -2438,6 +2500,9 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
             item['elapsedDays'] = DAYS[:first_day.weekday()]
         if rebuild:
             item['rebuild'] = True
+            pattern = run_pattern(plan, current_profile, key, block, number, value, first_day) if block else None
+            if pattern:
+                item['runWeek'] = pattern
         return item
 
     def plan_context(plan, current_profile, today):

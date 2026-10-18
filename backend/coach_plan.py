@@ -12,11 +12,12 @@ import copy
 import uuid
 from datetime import timedelta
 
-from coach_blocks import (BLOCK_TYPES, DELOAD_PHASES, SECONDARY_FOCUS, SELECTABLE, check_block, new_block,
-                          suggested_rhythm)
+from coach_blocks import (BLOCK_TYPES, DELOAD_PHASES, SECONDARY_FOCUS, SELECTABLE, check_block, min_weeks, new_block,
+                          run_focus, suggested_rhythm)
 from coach_domain import (BLOCK_WEEKS_SCHEMA, DAYS, HINWEISE_SCHEMA, CoachError, day_date, effective_availability, iso_week,
                           minutes_of, num, obj, preferred_hours, text, week_start)
-from coach_season import dated, typical_season
+from coach_runs import distance_class
+from coach_season import RUN_SHARE, dated, typical_season
 
 HORIZON = 3
 MAX_PHASES = 40
@@ -220,7 +221,14 @@ def frame_hint(settings, profile):
     if event is None:
         return None
     weeks = min(total, (day_date(event['startDate']) - first).days // 7 + 1)
-    return {'event': event['title'], 'weeks': weeks, 'segments': typical_season(weeks)}
+    if not run_focus(profile['goal']['sports']):
+        return {'event': event['title'], 'weeks': weeks, 'segments': typical_season(weeks)}
+    # Running: the build-up up to the taper the cycles leave room for, then the taper.
+    taper = min(settings.get('taperWeeks') or DEFAULT_TAPER_WEEKS, max(0, weeks - 6))
+    shares = RUN_SHARE['short' if distance_class(event) == 'short' else 'long']
+    segments = typical_season(weeks - taper, shares=shares, sports=profile['goal']['sports']) + \
+        ([{'blockType': 'taper', 'weeks': taper}] if taper else [])
+    return {'event': event['title'], 'weeks': weeks, 'segments': segments}
 
 
 # --- Load/deload rhythm up to each A event ---------------------------------------------------------
@@ -284,12 +292,12 @@ def align_frame(phases, settings, profile):
         while indices and not rhythmic(indices[-1]):
             indices.pop()
         if indices and all(rhythmic(i) for i in indices):
-            _align_stretch(result, [phases[i] for i in indices], indices, spans, entries)
+            _align_stretch(result, [phases[i] for i in indices], indices, spans, entries, profile['goal']['sports'])
         begin = spans[last][1]
     return result
 
 
-def _align_stretch(result, stretch, indices, spans, entries):
+def _align_stretch(result, stretch, indices, spans, entries, sports=()):
     """Puts the phases of one stretch on whole cycles; a moved week keeps its outline only inside its own phase."""
     low, high = spans[indices[0]][0], spans[indices[-1]][1]
     sizes = cycle_lengths(high - low)
@@ -301,7 +309,8 @@ def _align_stretch(result, stretch, indices, spans, entries):
     for n, phase in enumerate(stretch[:-1]):
         spec, first = BLOCK_TYPES[phase['blockType']], ends[chosen[-1]] if chosen else low
         options = range(chosen[-1] + 1 if chosen else 0, len(ends) - (len(stretch) - 1 - n))
-        chosen.append(min(options, key=lambda c: (not spec['minWeeks'] <= ends[c] - first <= spec['maxWeeks'],
+        shortest = min_weeks(phase['blockType'], sports)
+        chosen.append(min(options, key=lambda c: (not shortest <= ends[c] - first <= spec['maxWeeks'],
                                                   abs(ends[c] - spans[indices[n]][1]))))
     chosen.append(len(ends) - 1)
     start = low
@@ -321,6 +330,8 @@ def _align_stretch(result, stretch, indices, spans, entries):
 # Load weeks rise at most this much over the load week before; a cycle starts again at the level of the last one.
 MAX_WEEKLY_RISE = 1.05
 DELOAD_SHARE = .6
+# Running plans deload by about a quarter, as usual in running.
+RUN_DELOAD_SHARE = .75
 TAPER_STEP = .8
 TRANSITION_SHARE = .5
 VOLUME_SCALE = (.7, 1.3)
@@ -398,13 +409,19 @@ def week_kinds(types, settings, profile, chosen=None):
     return kinds
 
 
+def deload_share(profile):
+    """Share of the last load week in a deload week."""
+    return RUN_DELOAD_SHARE if run_focus(profile['goal']['sports']) else DELOAD_SHARE
+
+
 def volume_curve(kinds, settings, profile, base, peak, caps):
     """Hours per plan week before the athlete's scale and own hours.
 
     Per stretch up to an A event (and after the last one up to the plan end) the first load week starts at the training
     base and the load weeks rise evenly, at most 5 % over the load week before, so the peak (the recommended peak week,
     within the time of that week) comes only with the last load week of the stretch. A load week after a deload starts
-    again at the level of the last load week. Deloads take 60 % of the last load week, each taper week 80 % of the week
+    again at the level of the last load week. Deloads take 60 % of the last load week (75 % in running plans), each taper
+    week 80 % of the week
     before and a transition week half of the last level."""
     ends = sorted(week for _, week in anchored_events(settings, profile))
     stretches, low = [], 0
@@ -426,7 +443,8 @@ def volume_curve(kinds, settings, profile, base, peak, caps):
                 level = start if level is None else level * rate if kinds[index - 1] == 'load' else level
                 hours = level
             elif kind == 'deload':
-                hours = (level or start) * DELOAD_SHARE
+                # A deload in the week of an A event is its taper: at most the usual 60 %, also in running plans.
+                hours = (level or start) * (min(DELOAD_SHARE, deload_share(profile)) if index in ends else deload_share(profile))
             elif kind == 'taper':
                 hours = (previous if previous is not None else level or start) * TAPER_STEP
             elif kind == 'transition':

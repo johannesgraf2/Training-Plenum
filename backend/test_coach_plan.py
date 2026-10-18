@@ -79,6 +79,18 @@ class PlanFrameTests(unittest.TestCase):
     def test_hint_shows_the_usual_build_up_to_the_first_a_event(self):
         hint = frame_hint(self.settings, self.profile)
         self.assertEqual((hint['event'], hint['weeks'], sum(s['weeks'] for s in hint['segments'])), ('Rennen', 13, 13))
+        # Running goals: a half marathon or marathon builds on a threshold block and ends with the taper; the base may be
+        # shorter than in cycling.
+        self.profile['goal']['sports'] = ['run']
+        self.profile['events'][0].update(sport='run', subtype='halfMarathon')
+        hint = frame_hint({**self.settings, 'taperWeeks': None}, self.profile)
+        self.assertEqual([(s['blockType'], s['weeks']) for s in hint['segments']],
+                         [('grundlage', 4), ('schwelle', 4), ('wettkampfspezifisch', 3), ('taper', 2)])
+        long = {**self.settings, 'startDate': '2026-09-21'}  # 17 weeks
+        self.assertEqual([(s['blockType'], s['weeks']) for s in frame_hint(long, self.profile)['segments']],
+                         [('grundlage', 5), ('schwelle', 5), ('wettkampfspezifisch', 5), ('taper', 2)])
+        self.profile['events'][0]['subtype'] = '10k'
+        self.assertIn('vo2max', [s['blockType'] for s in frame_hint(self.settings, self.profile)['segments']])
 
 
 class RhythmTests(unittest.TestCase):

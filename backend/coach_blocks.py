@@ -22,8 +22,9 @@ EASY_DAYS_AFTER = {'miniTaper': 2, 'trainThrough': 2, 'replaceHard': 1, 'easy': 
 SHORT_QUALITY_MINUTES = 75
 
 _SPORT = {sport: {key for key, spec in TEMPLATES.items() if spec['sport'] == sport} for sport in ('ride', 'run')}
-# A long run with marathon-pace blocks is tempo work: it counts toward the quality and threshold-work limits.
-_TEMPO = {'bike_tempo', 'bike_sweetspot', 'run_long_mp'}
+# Race-pace runs (also a long run with race-pace blocks) are tempo work: they count toward the quality and threshold-work
+# limits.
+_TEMPO = {'bike_tempo', 'bike_sweetspot', 'run_long_mp', 'run_tempo'}
 _THRESHOLD = {'bike_threshold', 'bike_threshold_intervals', 'run_threshold'}
 _VO2 = {'bike_vo2', 'bike_vo2_micro', 'run_vo2', 'run_vo2_short'}
 GROUPS = {
@@ -115,36 +116,44 @@ BLOCK_TYPES = {
     'custom': _block('Eigener Block', 'Aus einem früheren Makroplan übernommen.', None, 1, 52,
                      last_week_deload=False, rhythm=False, selectable=False),
 }
-# Running plans (run without ride among the goal sports) build around one key session per week inside a longer run; the
-# block minimums made for two hard rides per week then ask for one.
+# Running plans (run without ride among the goal sports) follow the week TrainHub lays out (coach_runs.run_week): one key
+# session, a long run and short easy runs. The block minimums made for two hard rides per week then ask for one.
 RUN_GUIDANCE = {
-    'general': 'Running plan: one key session per week (for example Tuesday) inside a longer run (set durationMin, for example '
-               '60-75 min with 3x8 min threshold); every other run is easy; one long run at the weekend, about a quarter to a '
-               'third of the weekly running time, growing by about 10 min per load week. Vary easy runs (short 30-45 min '
-               'recovery runs, one medium-long run midweek); no easy run is longer than the long run. Deload weeks have about '
-               '20-25 % less volume, a shorter long run and an easier key session. Jogging recoveries: threshold 1-2 min, VO2 '
-               '2-3 min. Strides (run_strides) and hill sprints (run_hill_sprints) are easy runs, not quality.',
+    'general': 'Running plan: runWeek is the week TrainHub lays out for it (days, the key session along its progression, '
+               'the long run and the easy runs with their durations). One key session per week, the long run at the '
+               'weekend as the longest run (with three run days about 40 % of the week), the other runs easy and short '
+               '(30-60 min), one of them with strides or hill sprints. No easy run is longer than 60 minutes or the long '
+               'run. Deload weeks keep this shape with an easier key session and a shorter long run. Jogging recoveries: '
+               'threshold 1-2 min, VO2 2-3 min. Strides (run_strides) and hill sprints (run_hill_sprints) are easy runs, '
+               'not quality.',
     'wiedereinstieg': 'Easy runs only, strides from the second week; lengthen the long run gradually.',
-    'grundlage': 'Key session alternates run_strides (6x20 s) and run_hill_sprints (6x10 s, walk or jog down); late in the block '
-                 'at most one short threshold run (3x6 min, 2 min jog). The long run grows week by week.',
-    'aufbau': 'One key session per load week, alternating threshold (3x8 -> 3x10 min) and VO2 (5x3 -> 5x4 min).',
-    'vo2max': 'One VO2 session per load week: run_vo2 with 800-1000 m reps (about 3-4 min) and 2-3 min jog, progressing '
-              '5x3 -> 5x4 -> 6x4 min, or a gentle fartlek 6x1 min at 10 km pace with 2 min easy; run_vo2_short (30/30) as a '
-              'variation. Deload weeks keep strides or one short threshold run.',
-    'schwelle': 'One threshold session per load week: 3x8 -> 3x10 min, 2-3 km reps (8-14 min) with 90 s-2 min jog, or a '
-                'continuous tempo run of 20-30 min (intervals 1); progress time at threshold toward about 30 min, not pace.',
-    'wettkampfspezifisch': 'Marathon: one threshold session per week (1.5-3 km reps with 90 s jog) and every other week a long '
-                           'run with marathon-pace blocks (run_long_mp), progressing about 40 -> 50 -> 2x30 -> 80 min MP; an '
-                           'occasional VO2 touch (5x1000 m); a half marathon 6-8 weeks out fits as a B event; the last big '
+    'grundlage': 'Key session: short reps just below threshold pace (run_threshold, for example 6x2 -> 5x3 -> 5x4 -> 4x5 min '
+                 'with 1-2 min jog), so the threshold block can start at 3x8 min; one easy run with strides or hill sprints '
+                 'in turn; the long run grows week by week.',
+    'aufbau': 'Key session alternating threshold (3x8 -> 3x10 min) and VO2 (5x3 -> 5x4 min).',
+    'vo2max': 'Key session run_vo2 with 800-1000 m reps (about 3-4 min) and 2-3 min jog, progressing 5x3 -> 6x3 -> 5x4 -> '
+              '6x4 min; deload weeks keep a shorter VO2 session.',
+    'schwelle': 'Key session: threshold reps 3x8 -> 3x10 -> 3x12 min with 2 min jog, later 4x10 and 2x15 -> 2x20 min; '
+                'progress time at threshold toward about 40 min, not pace.',
+    'wettkampfspezifisch': 'Half marathon and marathon: key session long threshold reps; a second run with a race-pace '
+                           'block (run_tempo) and every other long run with race-pace blocks at its end (run_long_mp). '
+                           '5 and 10 km: key session reps at race pace (run_tempo), easy runs with strides. The last big '
                            'specific long run about 3 weeks before the race.',
-    'taper': 'Volume falls clearly; key sessions become short marathon-pace work (2x3 km MP, in race week 3x1 km MP, as '
-             'run_threshold at MP intensity) plus strides; the long run shortens.',
+    'taper': 'Volume falls clearly; the key session becomes short race-pace work (run_tempo, for example 3x8 min, in race '
+             'week 3x3 min) plus strides; the long run shortens, in race week the race replaces it.',
     'uebergang': 'Easy runs, cross-training or rest only.',
 }
 
 
 EASY_RUNS = {'run_easy', 'run_strides', 'run_hill_sprints'}
 LONG_RUNS = {'run_long', 'run_long_mp'}
+# An easy run lasts up to an hour; a longer one is the long run of its week (and is named so).
+EASY_RUN_MINUTES = 60
+
+
+def easy_runs_too_long(sessions):
+    """Ids of easy runs over an hour in a running plan."""
+    return {s['id'] for s in sessions if s['template'] in EASY_RUNS and (s['rendered']['durationMin'] or 0) > EASY_RUN_MINUTES + 0.01}
 
 
 def easy_runs_over_long_run(sessions):
@@ -158,6 +167,15 @@ def easy_runs_over_long_run(sessions):
 def run_focus(sports):
     """Whether the plan is a running plan: run without ride among the goal sports."""
     return 'run' in sports and 'ride' not in sports
+
+
+# Running plans may start with a shorter base, so a 14-week half-marathon plan still has room for a threshold block.
+RUN_MIN_WEEKS = {'grundlage': 4}
+
+
+def min_weeks(identity, sports=()):
+    spec = block_type(identity)
+    return RUN_MIN_WEEKS.get(identity, spec['minWeeks']) if run_focus(sports) else spec['minWeeks']
 
 
 def block_guidance(identity, sports):
@@ -230,7 +248,7 @@ def block_type(identity):
 def rule_texts(identity, sports=()):
     """German, human-readable rules; also shown to the AI as block guidance."""
     spec = block_type(identity)
-    texts = [f"{spec['minWeeks']}–{spec['maxWeeks']} Wochen"]
+    texts = [f"{min_weeks(identity, sports)}–{spec['maxWeeks']} Wochen"]
     texts += [f"Keine {GROUP_NAMES[group]}" for group in spec['forbidden']]
     texts += [f"Höchstens {n}× {GROUP_NAMES[group]} pro Woche" for group, n in spec['maxPerWeek'].items()]
     texts += [f"Mindestens {n}× {GROUP_NAMES[group]} pro Belastungswoche" for group, n in minimum_per_load_week(spec, sports).items()]
@@ -251,12 +269,12 @@ def rule_texts(identity, sports=()):
     return texts
 
 
-def catalog():
+def catalog(sports=()):
     return {'blockTypes': [{'id': key, 'name': spec['name'], 'summary': spec['summary'], 'defaultWeeks': spec['defaultWeeks'],
-                            'minWeeks': spec['minWeeks'], 'maxWeeks': spec['maxWeeks'], 'endsByGoal': spec['endsByGoal'],
-                            'rules': rule_texts(key),
+                            'minWeeks': min_weeks(key, sports), 'maxWeeks': spec['maxWeeks'], 'endsByGoal': spec['endsByGoal'],
+                            'rules': rule_texts(key, sports),
                             'suggestedRhythm': suggested_rhythm(spec['defaultWeeks'], key),
-                            'rhythms': {str(n): suggested_rhythm(n, key) for n in range(spec['minWeeks'], spec['maxWeeks'] + 1)},
+                            'rhythms': {str(n): suggested_rhythm(n, key) for n in range(min_weeks(key, sports), spec['maxWeeks'] + 1)},
                             'formats': [f for f, value in INTERVAL_FORMATS.items() if key in value['blockTypes']]}
                            for key, spec in BLOCK_TYPES.items() if spec['selectable']],
             'secondaryFocus': [{'id': key, 'name': value['name']} for key, value in SECONDARY_FOCUS.items()]}
@@ -278,9 +296,9 @@ def check_choice(identity, secondary, weeks, *, start, profile):
     """An athlete's own block choice, checked before any paid provider call."""
     if identity not in SELECTABLE:
         raise CoachError('Bitte einen Blocktyp aus dem Katalog wählen.')
-    spec = BLOCK_TYPES[identity]
-    if not isinstance(weeks, int) or not spec['minWeeks'] <= weeks <= spec['maxWeeks']:
-        raise CoachError(f"Ein Block „{spec['name']}“ dauert {spec['minWeeks']}–{spec['maxWeeks']} Wochen.")
+    spec, low = BLOCK_TYPES[identity], min_weeks(identity, profile['goal']['sports'])
+    if not isinstance(weeks, int) or not low <= weeks <= spec['maxWeeks']:
+        raise CoachError(f"Ein Block „{spec['name']}“ dauert {low}–{spec['maxWeeks']} Wochen.")
     outline = [{'week': i + 1, 'phase': 'recovery' if deload else 'build', 'targetHours': 0, 'focus': ''}
                for i, deload in enumerate(suggested_rhythm(weeks, identity))]
     check_block(identity, secondary, outline, start=start, profile=profile)
@@ -320,17 +338,20 @@ def check_block(identity, secondary, weeks, *, start, profile, max_streak=MAX_LO
         raise CoachError('Kraft als Nebenschwerpunkt benötigt die hinterlegte Krafttraining-Verfügbarkeit.')
     if secondary == 'laufen' and 'run' not in profile['goal']['sports']:
         raise CoachError('Laufen als Nebenschwerpunkt braucht Laufen bei deinen Sportarten im Profil.')
-    name = spec['name']
-    if not spec['minWeeks'] <= len(weeks) <= spec['maxWeeks']:
-        raise CoachError(f"Ein Block „{name}“ dauert {spec['minWeeks']}–{spec['maxWeeks']} Wochen.")
+    name, low = spec['name'], min_weeks(identity, profile['goal']['sports'])
+    if not low <= len(weeks) <= spec['maxWeeks']:
+        raise CoachError(f"Ein Block „{name}“ dauert {low}–{spec['maxWeeks']} Wochen.")
+    in_goal_week = False
     if spec['endsByGoal']:
         goal = profile['goal']['date']
         if not goal:
             raise CoachError(f'Für einen Block „{name}“ bitte ein Zieldatum im Profil speichern.')
         goal_day = day_date(goal)
         # Blocks run Monday to Sunday, so an event on a Saturday still ends its block that week.
-        if start + timedelta(weeks=len(weeks)) - timedelta(days=1) > goal_day + timedelta(days=6 - goal_day.weekday()):
+        last_day = start + timedelta(weeks=len(weeks)) - timedelta(days=1)
+        if last_day > goal_day + timedelta(days=6 - goal_day.weekday()):
             raise CoachError(f'Der Block „{name}“ muss spätestens in der Woche des Zieldatums enden.')
+        in_goal_week = last_day >= goal_day - timedelta(days=goal_day.weekday())
     deloads = [w['phase'] in DELOAD_PHASES for w in weeks]
     if spec['deloadOnly'] and not all(deloads):
         raise CoachError(f'Im Block „{name}“ ist jede Woche eine Entlastungswoche.')
@@ -342,7 +363,8 @@ def check_block(identity, secondary, weeks, *, start, profile, max_streak=MAX_LO
             streak = 0 if deload else streak + 1
             if streak > max_streak:
                 raise CoachError(f'Nach höchstens {max_streak} Belastungswochen folgt eine Entlastungswoche.')
-    if spec['taperDrop'] and len(weeks) > 1:
+    # The taper of a race-specific block is its race week; before an own taper block it ends like any block.
+    if spec['taperDrop'] and len(weeks) > 1 and in_goal_week:
         peak = max(w['targetHours'] for w in weeks[:-1])
         if weeks[-1]['targetHours'] > peak * (1 - spec['taperDrop']) + 1e-9:
             raise CoachError(f"Die letzte Woche braucht mindestens {round(spec['taperDrop'] * 100)} % weniger Umfang.")

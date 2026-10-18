@@ -220,11 +220,11 @@ class UltraAndPaceTests(unittest.TestCase):
         # „20 min zusammenhängend S, Rest L“: one interval is a continuous tempo run.
         tempo = render_session('run_threshold', {'intervals': 1, 'workMin': 20, 'durationMin': 60}, DAY)
         self.assertEqual((tempo['name'], [n for n in names(tempo) if n.startswith('Tempo')]), ('Schwellenlauf 20 min', ['Tempo']))
-        # „32 km: 16 L + 6 MP + 2 L + 6 MP + 2 L“: the easy running comes first, the marathon-pace blocks late.
+        # „32 km: 16 L + 6 MP + 2 L + 6 MP + 2 L“: the easy running comes first, the race-pace blocks late.
         long = render_session('run_long_mp', {'durationMin': 180, 'intervals': 2, 'workMin': 30, 'recoveryMin': 10}, DAY,
                               max_hr=190, threshold_pace=270)
-        self.assertEqual(long['name'], 'Langer Lauf mit Marathontempo 2×30 min')
-        self.assertEqual(names(long), ['Aufwärmen', 'Locker', 'Marathontempo 1', 'Locker', 'Marathontempo 2', 'Abwärmen'])
+        self.assertEqual(long['name'], 'Langer Lauf mit Renntempo 2×30 min')
+        self.assertEqual(names(long), ['Aufwärmen', 'Locker', 'Renntempo 1', 'Locker', 'Renntempo 2', 'Abwärmen'])
         self.assertEqual([s['duration']['value'] // 60 for s in long['workout']['steps']], [10, 90, 30, 10, 30, 10])
         mp = long['workout']['steps'][2]['target']
         self.assertTrue(270 < mp['low'] < mp['high'] < 300)  # Marathon pace sits a little slower than threshold pace.
@@ -234,6 +234,24 @@ class UltraAndPaceTests(unittest.TestCase):
         self.assertEqual((strides['name'], repeat['count'], repeat['steps'][1]['name'], repeat['steps'][1]['target']),
                          ('Lockerer Lauf mit Steigerungen 6×20 s', 6, 'Steigerung', {'type': 'none'}))
         self.assertEqual(render_session('run_hill_sprints', {}, DAY)['name'], 'Lockerer Lauf mit Bergsprints 6×10 s')
+        # „50 min, darin 2 × 10 min HM-Tempo“: race pace inside an easy run; one block is a continuous race-pace run.
+        tempo = render_session('run_tempo', {'intervals': 2, 'workMin': 10, 'recoveryMin': 2, 'durationMin': 50,
+                                             'intensity': .893}, DAY, max_hr=190, threshold_pace=285)
+        self.assertEqual((tempo['name'], tempo['durationMin']), ('Lauf mit Renntempo 2×10 min', 50))
+        self.assertEqual([n for n in names(tempo) if n.startswith('Renntempo')], ['Renntempo 1', 'Renntempo 2'])
+        pace = next(s for s in tempo['workout']['steps'] if s['name'] == 'Renntempo 1')['target']
+        self.assertTrue(pace['low'] < 284 < pace['high'])  # 1:39:50 over 21.1 km is 4:44 min/km.
+        marathon = render_session('run_tempo', {'intervals': 1, 'workMin': 30, 'durationMin': 50}, DAY)
+        self.assertEqual(marathon['name'], 'Lauf mit Renntempo 30 min')
+
+    def test_easy_rides_and_runs_are_named_by_their_duration(self):
+        # A run over an hour is a long run, a ride over three hours a long ride, whatever the template.
+        name = lambda template, minutes: render_session(template, {'durationMin': minutes}, DAY)['name']
+        self.assertEqual([name('run_easy', 45), name('run_easy', 60), name('run_easy', 65), name('run_long', 50), name('run_long', 95)],
+                         ['Lockerer Lauf', 'Lockerer Lauf', 'Langer Lauf', 'Lockerer Lauf', 'Langer Lauf'])
+        self.assertEqual([name('bike_z2', 120), name('bike_z2', 180), name('bike_long', 150), name('bike_z2_long', 240)],
+                         ['Grundlagenausdauer Rad', 'Grundlagenausdauer Rad', 'Grundlagenausdauer Rad', 'Lange Ausfahrt'])
+        self.assertEqual(name('bike_recovery', 60), 'Regeneration Rad')
         with self.assertRaises(TemplateError):
             render_session('bike_vo2', {'intervals': 1}, DAY)  # A single interval stays a running tempo run.
 

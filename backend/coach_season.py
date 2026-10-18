@@ -9,7 +9,7 @@ the normal block flow; the season plan is a roadmap, not a commitment.
 import uuid
 from datetime import timedelta
 
-from coach_blocks import BLOCK_TYPES, SECONDARY_FOCUS, SELECTABLE, block_type
+from coach_blocks import BLOCK_TYPES, SECONDARY_FOCUS, SELECTABLE, block_type, min_weeks
 from coach_domain import HINWEISE_SCHEMA, CoachError, day_date, num, obj, text
 
 MAX_SEGMENTS = 20
@@ -21,6 +21,9 @@ TAPER_TYPE = 'taper'
 # Aufbau and Übergang are no season stages.
 SEASON_RANK = {'wiedereinstieg': 0, 'grundlage': 1, 'vo2max': 2, 'schwelle': 2, FINAL_TYPE: 3, TAPER_TYPE: 4}
 TYPICAL_SHARE = {'grundlage': .35, 'vo2max': .2, 'schwelle': .25, FINAL_TYPE: .2}
+# Running goals: half marathon and marathon build on threshold work without a VO2max block; 5 and 10 km keep one after it.
+RUN_SHARE = {'long': {'grundlage': .35, 'schwelle': .35, FINAL_TYPE: .3},
+             'short': {'grundlage': .3, 'schwelle': .25, 'vo2max': .25, FINAL_TYPE: .2}}
 
 SEGMENT_SCHEMA = obj({
     'blockType': {'type': 'string', 'enum': SELECTABLE},
@@ -119,28 +122,30 @@ def ends_with_final(segments):
     return types[-1:] == [FINAL_TYPE] or types[-2:] == [FINAL_TYPE, TAPER_TYPE]
 
 
-def typical_season(weeks, after=None):
+def typical_season(weeks, after=None, shares=None, sports=()):
     """Grundlage → VO2max → Schwelle → Wettkampfspezifisch with lengths filling exactly `weeks`.
 
     `after` is the last fixed block: stages before it are skipped unless the rest cannot fill the season. Short
-    seasons drop stages from the front; seasons beyond every maximum get further base blocks."""
+    seasons drop stages from the front; seasons beyond every maximum get further base blocks. shares replace the
+    stages and their shares (RUN_SHARE for running goals); sports set the shortest blocks (coach_blocks.min_weeks)."""
+    shares = shares or TYPICAL_SHARE
     rank = SEASON_RANK.get(after, -1)
-    types = [t for t in TYPICAL_SHARE
+    types = [t for t in shares
              if SEASON_RANK[t] > rank or (SEASON_RANK[t] == rank and (t != after or t == 'grundlage'))]
     if not types or sum(BLOCK_TYPES[t]['maxWeeks'] for t in types) < weeks and 'grundlage' not in types:
-        types = list(TYPICAL_SHARE)
-    while len(types) > 1 and sum(BLOCK_TYPES[t]['minWeeks'] for t in types) > weeks:
+        types = list(shares)
+    while len(types) > 1 and sum(min_weeks(t, sports) for t in types) > weeks:
         types.pop(0)
-    share = sum(TYPICAL_SHARE[t] for t in types)
-    low, high = (lambda t: BLOCK_TYPES[t]['minWeeks']), (lambda t: BLOCK_TYPES[t]['maxWeeks'])
-    lengths = {t: min(max(round(weeks * TYPICAL_SHARE[t] / share), low(t)), high(t)) for t in types}
+    share = sum(shares[t] for t in types)
+    low, high = (lambda t: min_weeks(t, sports)), (lambda t: BLOCK_TYPES[t]['maxWeeks'])
+    lengths = {t: min(max(round(weeks * shares[t] / share), low(t)), high(t)) for t in types}
     while (diff := weeks - sum(lengths.values())) != 0:
         step = 1 if diff > 0 else -1
         candidates = [t for t in types if low(t) <= lengths[t] + step <= high(t)]
         if not candidates:
             break
         # Grow the stage furthest below its share, shrink the one furthest above.
-        pick = (min if step > 0 else max)(candidates, key=lambda t: lengths[t] / TYPICAL_SHARE[t])
+        pick = (min if step > 0 else max)(candidates, key=lambda t: lengths[t] / shares[t])
         lengths[pick] += step
     segments = [{'blockType': t, 'weeks': lengths[t]} for t in types]
     if diff > 0 and types[0] == 'grundlage':  # Every stage at its maximum: the base grows by further blocks.
