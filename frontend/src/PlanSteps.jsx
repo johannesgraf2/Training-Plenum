@@ -14,6 +14,11 @@ const typeName = type => BACKGROUND_TYPES.find(([key]) => key === type)?.[1];
 // Sports of the plan: ride and run from the goal, strength through the gym setting.
 export const planSports = profile => [...profile.goal.sports.filter(s => ['ride', 'run'].includes(s)), ...(profile.preferences.gymAvailability ? ['strength'] : [])];
 const TYPE_OF_SPORT = { ride: 'ride', run: 'run', swim: 'swim', strength: 'other', xcski: 'xcski', hyrox: 'hyrox' };
+// The longest run of the last six weeks: the first long run of the plan starts a little beyond it. Stored as minutes.
+const LONGEST_RUN = [['0', 'Noch keiner'], ['40', 'Bis 45 min'], ['60', '45–75 min'], ['90', '75–105 min'], ['120', '105–135 min'], ['150', 'Länger']];
+const longestBucket = minutes => minutes == null ? null : String(minutes <= 0 ? 0 : minutes <= 45 ? 40 : minutes <= 75 ? 60 : minutes <= 105 ? 90 : minutes <= 135 ? 120 : 150);
+const durationText = minutes => minutes >= 60 ? `${Math.floor(minutes / 60)}:${String(Math.round(minutes % 60)).padStart(2, '0')} h` : `${Math.round(minutes)} min`;
+const longestRunText = minutes => minutes == null ? null : minutes <= 0 ? 'keiner' : durationText(minutes);
 
 // --- B1 Background ------------------------------------------------------------------------------
 
@@ -21,14 +26,20 @@ export function BackgroundStep({ ctx }) {
   const { profile, background } = ctx.data;
   const sports = profile.sports.filter(s => ['ride', 'run'].includes(s));
   const intervalSports = sports.length ? sports : ['ride'];
+  const runs = sports.includes('run');
+  const dataRun = background.longest?.run;
   const fromData = { type: TYPE_OF_SPORT[background.mainSport] || null, weeklyHours: background.weeklyHours,
-    intervals: Object.fromEntries(intervalSports.map(s => [s, !!background.intervals[s]])) };
+    intervals: Object.fromEntries(intervalSports.map(s => [s, !!background.intervals[s]])),
+    longest: runs && background.hasData ? { run: dataRun?.minutes ?? 0 } : {} };
   const stored = profile.background?.source ? profile.background : null;
-  const [value, setValue] = useState(() => stored ? { ...fromData, ...stored, intervals: { ...fromData.intervals, ...stored.intervals } } : fromData);
+  const [value, setValue] = useState(() => stored ? { ...fromData, ...stored, intervals: { ...fromData.intervals, ...stored.intervals },
+    longest: { ...fromData.longest, ...stored.longest } } : fromData);
   const [editing, setEditing] = useState(!background.hasData || stored?.source === 'athlete');
   const set = patch => setValue(v => ({ ...v, ...patch }));
   // Without data the slider starts at 0 h, which is an answer too.
-  const save = source => ctx.complete('background', { background: { type: value.type, weeklyHours: value.weeklyHours ?? (source === 'athlete' ? 0 : null), intervals: value.intervals, source } });
+  const save = source => ctx.complete('background', { background: { type: value.type, weeklyHours: value.weeklyHours ?? (source === 'athlete' ? 0 : null), intervals: value.intervals,
+    longest: runs ? { run: value.longest?.run ?? null } : {}, source } });
+  const longestRun = value.longest?.run;
   const hours = value.weeklyHours ?? 0;
   const lastInterval = sport => background.intervals[sport] ? `ja, zuletzt am ${dateLabel(background.intervals[sport])}` : 'nein';
   return <>
@@ -40,6 +51,7 @@ export function BackgroundStep({ ctx }) {
         <div><dt>Zuletzt</dt><dd>{typeName(fromData.type) || 'Gemischt'}</dd></div>
         <div><dt>Ø pro Woche (6 Wochen)</dt><dd>{hoursLabel(background.weeklyHours || 0)}{background.best4WeekHours != null && <small> · stärkste 4 Wochen {hoursLabel(background.best4WeekHours)}</small>}</dd></div>
         {intervalSports.map(sport => <div key={sport}><dt>Intervalle {SPORT_NAMES[sport]} (21 Tage)</dt><dd>{lastInterval(sport)}</dd></div>)}
+        {runs && <div><dt>Längster Lauf (6 Wochen)</dt><dd>{dataRun ? `${durationText(dataRun.minutes)} am ${dateLabel(dataRun.date)}` : 'keiner'}</dd></div>}
       </dl>
     </section>}
     {editing && <>
@@ -55,8 +67,15 @@ export function BackgroundStep({ ctx }) {
       </div>
       <h3>Hast du in den letzten 21 Tagen Intervalle trainiert?</h3>
       {intervalSports.map(sport => <YesNo key={sport} label={SPORT_NAMES[sport]} value={value.intervals[sport]} onChange={yes => set({ intervals: { ...value.intervals, [sport]: yes } })} />)}
+      {runs && <>
+        <h3>Wie lang war dein längster Lauf in den letzten 6 Wochen?</h3>
+        <p className="coach-muted">Dein erster langer Lauf im Plan liegt knapp darüber und wird dann Woche für Woche länger.</p>
+        <Tiles label="Längster Lauf in den letzten 6 Wochen" single items={LONGEST_RUN} isOn={key => longestBucket(longestRun) === key}
+          onToggle={key => set({ longest: { ...value.longest, run: Number(key) } })} />
+      </>}
     </>}
-    <StepFooter onBack={ctx.back} onNext={editing ? () => save('athlete') : () => save('calculated')} nextLabel={editing ? 'Weiter' : 'Stimmt so'} disabled={!value.type} busy={ctx.busy}>
+    <StepFooter onBack={ctx.back} onNext={editing ? () => save('athlete') : () => save('calculated')} nextLabel={editing ? 'Weiter' : 'Stimmt so'}
+      disabled={!value.type || (editing && runs && longestRun == null)} busy={ctx.busy}>
       {background.hasData && !editing && <button type="button" onClick={() => setEditing(true)}>Korrigieren</button>}
     </StepFooter>
   </>;
@@ -491,13 +510,15 @@ export function ReadyStep({ ctx }) {
   const { restDays, longDays, noConsecutiveRestDays } = weekDraft(profile.availability);
   const inPlan = settings ? events.filter(e => (e.endDate || e.startDate) >= settings.startDate && e.startDate <= settings.endDate) : [];
   const intervals = Object.entries(background.intervals || {}).map(([sport, yes]) => `${SPORT_NAMES[sport]} ${yes ? 'ja' : 'nein'}`).join(', ');
+  const longestRun = longestRunText(background.longest?.run);
   const start = () => ctx.run('Wird gespeichert …', async () => { await ctx.saveProfile({}, 'ready'); ctx.go('creating'); });
   // Everything is saved with its step already; marking this step lets the wizard open here again.
   const saveForLater = () => ctx.run('Wird gespeichert …', async () => { await ctx.saveProfile({}, 'ready'); ctx.close(); });
   return <>
     <h2>Bereit</h2>
     <p>Überprüfe deine Einstellungen und ich lege los.</p>
-    <Summary title="Bisherige Aktivität" step="background" ctx={ctx}><p>{[typeName(background.type), background.weeklyHours != null && `Ø ${hoursLabel(background.weeklyHours)} pro Woche`, intervals && `Intervalle: ${intervals}`].filter(Boolean).join(' · ') || 'Noch offen'}</p></Summary>
+    <Summary title="Bisherige Aktivität" step="background" ctx={ctx}><p>{[typeName(background.type), background.weeklyHours != null && `Ø ${hoursLabel(background.weeklyHours)} pro Woche`, intervals && `Intervalle: ${intervals}`,
+      longestRun && `längster Lauf: ${longestRun}`].filter(Boolean).join(' · ') || 'Noch offen'}</p></Summary>
     <Summary title="Enthaltene Sportarten" step="planSports" ctx={ctx}><div className="onboarding-chips">{sports.map(sport =>
       <span key={sport} className="onboarding-chip">{SPORT_NAMES[sport]}{profile.metrics[sport] && sport !== 'strength' ? ` · ${METRIC_NAMES[profile.metrics[sport]]}` : ''}</span>)}</div></Summary>
     <Summary title="Verfügbarkeiten" step="availability" ctx={ctx}>

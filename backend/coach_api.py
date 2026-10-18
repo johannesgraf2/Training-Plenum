@@ -1305,7 +1305,8 @@ def register_coach(app, db, User, Activity, PlannedWorkout, user_id, load_rows, 
                            event=goal, race_day=race_day, threshold_pace=threshold_pace(current_profile),
                            previous_long=next((m for deload, m in reversed(longs) if not deload), None),
                            longest_long=max((m for _, m in longs), default=None),
-                           intervals_known=current_profile['background']['intervals'].get('run', True))
+                           intervals_known=current_profile['background']['intervals'].get('run', True),
+                           recent_long=current_profile['background'].get('longest', {}).get('run'))
         return {'source': 'calculated', **pattern} if pattern else None
 
     def finish_week(decision, before, week, kind, current_profile, plan, first_day):

@@ -20,7 +20,9 @@ LONG_CAP = {'short': 90, 'half': 120, 'marathon': 180, 'ultra': 210}
 LONG_SHARE = {1: 1, 2: .55, 3: .44, 4: .37, 5: .32, 6: .28, 7: .25}
 LONG_MIN = 60          # A long run in a load week lasts at least an hour (from half-marathon distance on).
 LONG_RISE = 15         # Most a load week's long run grows over the one before.
-LONG_START = 100       # The first long run of a plan lasts at most 1:40 h and grows from there.
+LONG_START = 100       # Without a known longest run the first long run lasts at most 1:40 h and grows from there.
+LONG_FIRST_STEP = 10   # The first long run goes this far beyond the athlete's longest run of the last weeks.
+LONG_FIRST_NONE = 45   # The first long run of someone who has not run lately.
 LONG_TOLERANCE = 10    # How far the coach may lengthen the laid-out long run.
 DELOAD_LONG = .8       # A deload week's long run against the last load week's.
 TAPER_LONG = (.75, .6)  # Long runs of the taper weeks before race week against the longest long run.
@@ -133,6 +135,13 @@ def minimum_minutes(session):
         (20 if session['template'] == 'run_long_mp' else 0)
 
 
+def first_long(recent_long):
+    """The most the first long run of a plan lasts: a little beyond the athlete's longest run of the last weeks."""
+    if recent_long is None:
+        return LONG_START
+    return LONG_FIRST_NONE if recent_long <= 0 else max(LONG_FIRST_NONE, _round5(recent_long + LONG_FIRST_STEP))
+
+
 def easy_touch(block_type, number, deload, race_week, key_template=None):
     """The fast touch of the special easy run: in base blocks Lauf-ABC and strides in turn, hill sprints about every
     fourth week (never twice in a week); elsewhere strides."""
@@ -193,13 +202,15 @@ def key_session(block_type, load_index, deload, distance, race, *, taper_index=N
 
 
 def run_week(block_type, block_weeks, number, target_hours, available, *, training_days=None, long_days=(), rest_days=(),
-             event=None, race_day=None, threshold_pace=None, previous_long=None, longest_long=None, intervals_known=True):
+             event=None, race_day=None, threshold_pace=None, previous_long=None, longest_long=None, intervals_known=True,
+             recent_long=None):
     """The week pattern of a running plan: sessions in the schema of a week answer plus each session's role.
 
     block_weeks are the block's weeks (phase per week), number the week in the block, available the usable days with
     their minutes (no elapsed, event or fixed-session days), training_days the run days the athlete wants, race_day the day
-    of the A event when it falls in this week, previous_long the last load week's long run and longest_long the longest
-    long run so far (minutes). None for blocks without a running pattern."""
+    of the A event when it falls in this week, previous_long the last load week's long run, longest_long the longest
+    long run so far and recent_long the athlete's longest run of the last weeks before the plan (minutes, 0 for none,
+    None when unknown). None for blocks without a running pattern."""
     if block_type == 'custom':
         return None
     phase = block_weeks[number - 1]['phase']
@@ -232,7 +243,8 @@ def run_week(block_type, block_weeks, number, target_hours, available, *, traini
             chosen = {**chosen, 'key': None, 'easy': sorted([*chosen['easy'], chosen['key']], key=DAYS.index)}
         sessions = _durations(chosen, key, total, days, available, cap=cap, deload=deload, block_type=block_type,
                               distance=distance, race=race, load_index=load_index, number=number,
-                              previous_long=previous_long, longest_long=longest_long, race_week=bool(race_day))
+                              previous_long=previous_long, longest_long=longest_long, race_week=bool(race_day),
+                              recent_long=recent_long)
         if sessions is not None:
             return {'sessions': sessions, 'totalHours': round(sum(s['minutes'] for s in sessions) / 60, 2),
                     'racePaceIntensity': race if distance else None}
@@ -240,7 +252,7 @@ def run_week(block_type, block_weeks, number, target_hours, available, *, traini
 
 
 def _durations(chosen, key, total, days, available, *, cap, deload, block_type, distance, race, load_index, number,
-               previous_long, longest_long, race_week):
+               previous_long, longest_long, race_week, recent_long=None):
     """Sessions with durations, or None when the easy runs would get too short for this many run days."""
     result = []
     long_minutes = 0
@@ -252,7 +264,7 @@ def _durations(chosen, key, total, days, available, *, cap, deload, block_type, 
         if previous_long:
             long_minutes = min(long_minutes, _round5(previous_long * DELOAD_LONG) if deload else previous_long + LONG_RISE)
         elif not longest_long:
-            long_minutes = min(long_minutes, LONG_START)
+            long_minutes = min(long_minutes, first_long(recent_long))
         if block_type == 'taper' and longest_long:
             long_minutes = min(long_minutes, _round5(longest_long * TAPER_LONG[min(number, len(TAPER_LONG)) - 1]))
         if block_type == 'uebergang':

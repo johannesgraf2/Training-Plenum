@@ -365,10 +365,16 @@ def training_background(rows, zone, today, ftp=None, max_hr=None):
         if sport and seconds is not None and seconds >= INTERVAL_SECONDS and day.isoformat() > intervals.get(sport, ''):
             intervals[sport] = day.isoformat()
     capacity = _capacity(dated, today)
+    longest = {}
+    for day, row in since(42):
+        sport = PROFILE_SPORT.get(row['sport'])
+        if sport in ('ride', 'run') and valid(row.get('seconds')) and row['seconds'] / 60 > longest.get(sport, {}).get('minutes', 0):
+            longest[sport] = {'minutes': round(row['seconds'] / 60), 'date': day.isoformat()}
     return {'source': 'calculated', 'asOf': today.isoformat(), 'hasData': bool(dated), 'recentSports': recent,
             'mainSport': PROFILE_SPORT.get(main), 'weeklyHours': round(sum(hours.values()) / 6, 1) if hours else None,
-            'best4WeekHours': capacity['max4WeekAverageHours'], 'intervals': intervals,
-            'definition': 'Sports with activities in the last 90 days; main sport and weekly hours over the last 42 days; '
+            'best4WeekHours': capacity['max4WeekAverageHours'], 'intervals': intervals, 'longest': longest,
+            'definition': 'Sports with activities in the last 90 days; main sport, weekly hours and the longest ride and run '
+                          'over the last 42 days; '
                           'intervals mean at least 10 min at >= 90 % FTP (rides) or >= 80 % max HR in the last 21 days.'}
 
 

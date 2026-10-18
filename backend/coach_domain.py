@@ -122,6 +122,8 @@ THRESHOLD_SCHEMA['properties']['run'] = {**obj({'source': {'enum': [None, *THRES
 BACKGROUND_TYPES = ['ride', 'run', 'swim', 'triShort', 'triLong', 'duathlon', 'hyrox', 'xcski', 'other']
 BACKGROUND_SCHEMA = obj({'type': {'enum': [None, *BACKGROUND_TYPES]}, 'weeklyHours': num(0, 80, True),
                          'intervals': {**obj({sport: {'type': 'boolean'} for sport in PROFILE_SPORTS}), 'required': []},
+                         # Longest session of the last six weeks per sport in minutes (0: none); the long run starts from it.
+                         'longest': {**obj({sport: num(0, 900, True, True) for sport in ('ride', 'run')}), 'required': []},
                          'source': {'enum': [None, 'calculated', 'athlete']}})
 # Onboarding steps the athlete has finished; the wizard resumes at the first open one. 'created' follows the plan creation.
 ONBOARDING_STEPS = ['sports', 'sources', 'thresholds', 'provider', 'background', 'goal', 'planSports', 'period', 'availability',
@@ -136,7 +138,7 @@ DEFAULT_PROFILE = {
                      'restDays': [], 'longDays': []},
     'preferences': {'preferredRestDay': None, 'preferredLongSessionDay': None, 'gymAvailability': False, 'dailyCheckIn': True},
     'limitations': {'notes': ''}, 'currentState': {'notes': ''},
-    'background': {'type': None, 'weeklyHours': None, 'intervals': {}, 'source': None}, 'onboarding': {'completed': []},
+    'background': {'type': None, 'weeklyHours': None, 'intervals': {}, 'longest': {}, 'source': None}, 'onboarding': {'completed': []},
     'weeklyOverrides': [], 'dailyOverrides': [], 'checkIns': [], 'injuries': [], 'events': [],
 }
 PROFILE_SCHEMA = obj({

@@ -405,8 +405,10 @@ class PlanInputTests(unittest.TestCase):
         value = update_profile(value, {'background': {'type': 'ride', 'weeklyHours': 7.8, 'intervals': {'ride': True}, 'source': 'calculated'},
                                        'onboarding': {'completed': ['sports', 'sources']}})
         value = update_profile(value, {'background': {'weeklyHours': 6}})  # fields left out keep their value
-        self.assertEqual(value['background'], {'type': 'ride', 'weeklyHours': 6, 'intervals': {'ride': True}, 'source': 'calculated'})
+        self.assertEqual(value['background'], {'type': 'ride', 'weeklyHours': 6, 'intervals': {'ride': True}, 'longest': {}, 'source': 'calculated'})
+        self.assertEqual(update_profile(value, {'background': {'longest': {'run': 75}}})['background']['longest'], {'run': 75})
         for bad in ({'background': {'type': 'golf'}}, {'background': {'intervals': {'golf': True}}},
+                    {'background': {'longest': {'run': -5}}}, {'background': {'longest': {'swim': 30}}},
                     {'onboarding': {'completed': ['done']}}, {'onboarding': {'completed': ['sports', 'sports']}}):
             with self.subTest(value=bad), self.assertRaises(CoachError):
                 update_profile(value, bad)

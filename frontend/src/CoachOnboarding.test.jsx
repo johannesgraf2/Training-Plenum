@@ -138,7 +138,7 @@ test('a new athlete with data goes from A1 to the created plan', async () => {
   expect(container.textContent).toContain('Radfahrer');
   expect(container.textContent).toContain('ja, zuletzt am 03.10.');
   await click(button('Stimmt so'));
-  expect(server.profile.background).toEqual({ type: 'ride', weeklyHours: 7.8, intervals: { ride: true }, source: 'calculated' });
+  expect(server.profile.background).toEqual({ type: 'ride', weeklyHours: 7.8, intervals: { ride: true }, longest: {}, source: 'calculated' });
 
   // B2: the A event NorthCape 4000.
   expect(heading()).toBe('Dein Ziel');
@@ -256,8 +256,11 @@ test('without data part B asks instead of prefilling and thresholds can be teste
   await click(button('Eine halbe Stunde mehr'));
   await click(buttonIn('Laufen', 'Ja'));
   await click(buttonIn('Rad', 'Nein'));
+  // Runners say how long their longest run was lately; the first long run of the plan builds on it.
+  expect(button('Weiter').disabled).toBe(true);
+  await click(buttonIn('Längster Lauf in den letzten 6 Wochen', '45–75 min'));
   await click(button('Weiter'));
-  expect(server.profile.background).toEqual({ type: 'run', weeklyHours: 1, intervals: { ride: false, run: true }, source: 'athlete' });
+  expect(server.profile.background).toEqual({ type: 'run', weeklyHours: 1, intervals: { ride: false, run: true }, longest: { run: 60 }, source: 'athlete' });
   // B2: a goal without event.
   await click(buttonIn('Ziel ohne Event', 'Schwelle erhöhen'));
   await click(button('Weiter'));

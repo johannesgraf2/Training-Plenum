@@ -275,6 +275,9 @@ class ThresholdPaceTests(unittest.TestCase):
         self.assertEqual(result['recentSports'], ['ride', 'run', 'strength', 'swim'])  # walking is no profile sport
         self.assertEqual((result['hasData'], result['mainSport'], result['weeklyHours']), (True, 'ride', 0.8))  # 5 h / 6 weeks
         self.assertEqual(result['intervals'], {'ride': '2026-09-15', 'run': '2026-09-12'})  # 5 min hard is no interval session
+        # The longest ride and run of the last six weeks; the May run is too old.
+        self.assertEqual(result['longest'], {'ride': {'minutes': 60, 'date': '2026-09-15'}, 'run': {'minutes': 60, 'date': '2026-09-12'}})
         self.assertEqual(training_background(rows, 'Europe/Berlin', TODAY)['intervals'], {})  # no thresholds, no intervals
         empty = training_background([], 'Europe/Berlin', TODAY)
-        self.assertEqual((empty['hasData'], empty['recentSports'], empty['mainSport'], empty['weeklyHours']), (False, [], None, None))
+        self.assertEqual((empty['hasData'], empty['recentSports'], empty['mainSport'], empty['weeklyHours'], empty['longest']),
+                         (False, [], None, None, {}))

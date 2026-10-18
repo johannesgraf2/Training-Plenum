@@ -83,6 +83,10 @@ class RunWeekTests(unittest.TestCase):
             previous = by_role(week, 'long')['minutes']
         self.assertEqual([by_role(w, 'long')['minutes'] for w in weeks], [100, 115, 130, 135])
         self.assertTrue(all(s['minutes'] <= 60 for w in weeks for s in w['sessions'] if s['role'] == 'easy'))
+        # With the longest run of the last weeks known, the first long run lies a little beyond it.
+        first = lambda recent: by_role(run_week('grundlage', [{'phase': 'build'}] * 4, 1, 6.1, days, training_days=4,
+                                                long_days=['sun'], event=MARATHON, recent_long=recent), 'long')['minutes']
+        self.assertEqual([first(None), first(0), first(40), first(72), first(150)], [100, 45, 50, 80, 135])  # 135: share of 6.1 h
         # The coach may lengthen the laid-out long run a little, not fill the week's hours with it.
         rendered = lambda minutes: [{'template': 'run_long', 'rendered': {'durationMin': minutes}}]
         self.assertIsNone(long_run_excess(rendered(110), weeks[0]))
