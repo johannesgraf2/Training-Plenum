@@ -63,7 +63,7 @@ export default function UserMenu({ apiBase = '', user, onSaved, onOpenCoachProfi
   async function toggle() {
     if (open) { setOpen(false); return; }
     setDraft(draftFrom(user)); setError(''); setOpen(true);
-    // FTP/HFmax can also change in the dashboard settings; show the stored values.
+    // FTP/HFmax can also be set from the dashboard cards; show the stored values.
     try {
       const response = await fetch(`${apiBase}/api/user`);
       if (response.ok) { const fresh = await response.json(); setDraft(draftFrom(fresh)); onSaved?.(fresh, false); }

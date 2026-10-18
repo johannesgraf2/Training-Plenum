@@ -75,7 +75,8 @@ test('settings can be supplied later and saving refreshes the charts', async () 
   data.settings = { ftp: null, maxHr: null };
   await render();
   expect(host.querySelector('svg[aria-label="TSS pro Woche"]')).toBeNull();
-  await click('FTP & Zonen');
+  expect(Array.from(host.querySelectorAll('button')).some(button => button.textContent === 'FTP & Zonen')).toBe(false);
+  await click('HFmax oder FTP hinterlegen →');
   const inputs = host.querySelectorAll('input');
   await act(async () => Simulate.change(inputs[0], { target: { value: '320' } }));
   await act(async () => Simulate.change(inputs[1], { target: { value: '191' } }));

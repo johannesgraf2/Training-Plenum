@@ -9,7 +9,6 @@
 .athlete-dashboard button { font-family: inherit; cursor: pointer; }
 .athlete-dashboard button:disabled { opacity: .4; cursor: default; }
 .athlete-dashboard :is(button, select, input, summary, svg g):focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
-.analysis-settings-button { border: 1px solid var(--ink); background: transparent; border-radius: 2px; min-height: 40px; padding: 10px 16px; color: var(--ink); font-size: 13px; font-weight: 500; }
 .analysis-settings { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; background: var(--bg-edf3fc); border: 1px solid var(--bd-cfdef3); padding: 20px; border-radius: 4px; margin-bottom: 20px; }
 .analysis-settings > div { flex: 1; min-width: 230px; }
 .analysis-settings h3 { font-size: 14px; margin: 0 0 7px; }
