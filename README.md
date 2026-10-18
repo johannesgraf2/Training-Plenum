@@ -196,7 +196,7 @@ Am einfachsten: `TrainingPlenum-Setup-<Version>.exe` von der [Releases-Seite](..
 - **Bisherige Daten übernehmen** (vorher per `start-local.ps1` genutzt): beide Versionen beenden, dann nach `%LOCALAPPDATA%\Training Plenum` kopieren: `backend\data\trainhub.db` und `.run\ai-encryption-key.txt` in den Unterordner `data`, den Inhalt von `backend\uploads` in den Unterordner `uploads`.
 - Windows SmartScreen kann beim ersten Start warnen, weil der Installer nicht signiert ist: **Weitere Informationen → Trotzdem ausführen**.
 
-**Installer selbst bauen** (Python 3.12, Node.js und [Inno Setup 6](https://jrsoftware.org/isdl.php)): `.\desktop\build-windows.ps1 -Version 1.2.3`, das Ergebnis liegt in `dist/`. GitHub Actions baut ihn bei jedem Tag `v*` und hängt ihn an das Release (`.github/workflows/windows-app.yml`).
+**Installer selbst bauen** (Python 3.12, Node.js und [Inno Setup 6](https://jrsoftware.org/isdl.php)): `.\desktop\build-windows.ps1 -Version 1.2.3`, das Ergebnis liegt in `dist/`. GitHub Actions baut ihn bei jedem Tag wie `v1.2.3` oder `1.2.3` und hängt ihn an das Release; für ein schon bestehendes Release den Workflow „Windows-App“ von Hand mit dem Tag als „release“ starten (`.github/workflows/windows-app.yml`).
 
 ### Start unter Windows (aus dem Quellcode)
 

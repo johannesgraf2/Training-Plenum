@@ -1,12 +1,17 @@
-# Builds the Windows installer. A tag v1.2.3 also publishes it as a GitHub release.
+# Builds the Windows installer. A tag v1.2.3 (or 1.2.3) also attaches it to that GitHub release; for a release whose
+# tag already exists, run the workflow by hand with that tag as "release".
 name: Windows-App
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', '[0-9]*']
     branches: ['**']
     paths: ['desktop/**', 'backend/desktop.py', '.github/workflows/windows-app.yml']
   workflow_dispatch:
+    inputs:
+      release:
+        description: Tag eines bestehenden Releases, an das der Installer gehängt wird (leer = nur bauen)
+        required: false
 
 permissions:
   contents: write
@@ -16,6 +21,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -27,7 +34,9 @@ jobs:
       - name: Version
         id: version
         run: |
-          $version = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}'.TrimStart('v') } else { "1.0.0-$('${{ github.sha }}'.Substring(0, 7))" }
+          $tag = if ('${{ inputs.release }}') { '${{ inputs.release }}' } elseif ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}' } else { '' }
+          $version = if ($tag) { $tag.TrimStart('v') } else { "1.0.0-$('${{ github.sha }}'.Substring(0, 7))" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
           "value=$version" >> $env:GITHUB_OUTPUT
       - name: Desktop tests
         working-directory: backend
@@ -41,7 +50,8 @@ jobs:
           name: TrainingPlenum-Setup-${{ steps.version.outputs.value }}
           path: dist/TrainingPlenum-Setup-*.exe
       - name: Release
-        if: github.ref_type == 'tag'
+        if: steps.version.outputs.tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: dist/TrainingPlenum-Setup-*.exe
